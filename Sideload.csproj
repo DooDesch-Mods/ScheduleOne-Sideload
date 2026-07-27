@@ -1,0 +1,214 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Shared release hardening: strip Release debug info + assembly identity, cuts AV false positives (see Workspace/build/Hardening.props). -->
+  <Import Project="$(MSBuildThisFileDirectory)../Workspace/build/Hardening.props" Condition="Exists('$(MSBuildThisFileDirectory)../Workspace/build/Hardening.props')" />
+  <Import Project="$(MSBuildThisFileDirectory)Workspace/build/Hardening.props" Condition="Exists('$(MSBuildThisFileDirectory)Workspace/build/Hardening.props')" />
+
+  <!-- Optional Snitch profiler in Debug builds (no-op when the Snitch host is absent). Exists-guarded so a fresh
+       clone without the Workspace checkout still compiles. -->
+  <Import Project="$(MSBuildThisFileDirectory)../Workspace/build/Snitch.props" Condition="Exists('$(MSBuildThisFileDirectory)../Workspace/build/Snitch.props')" />
+
+  <!--
+    Sideload - HTML/CSS/JS renderer for Schedule I mod UIs.
+    Turns a folder of index.html / app.css / app.js into real uGUI elements and TextMeshPro: HTML instead of nested
+    panels, CSS instead of sizeDelta arithmetic. No browser, no native code, no subprocess - AngleSharp for the DOM
+    and selectors, an own flexbox, Jint for JavaScript, one UI shader for radius/border/shadow.
+    The core mounts into any RectTransform; the in-game phone is the first host, not the foundation.
+    Design decisions and their rationale: Workspace/docs/Sideload/ARCHITECTURE.md
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Sideload</RootNamespace>
+    <AssemblyName>Sideload</AssemblyName>
+    <NeutralLanguage>en-US</NeutralLanguage>
+    <Version>1.0.0</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+    <!-- Copy PackageReference assemblies (AngleSharp) to the output so they can be deployed to UserLibs. -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <!-- A RID is required to get the WINDOWS implementation of RID-specific packages. Without it MSBuild copies the
+         lib/ facade of System.Text.Encoding.CodePages, which loads and then fails with a FileLoadException at
+         runtime. SelfContained stays off and the RID is kept out of the output path so the deploy paths do not move. -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+    <!-- Suppress MSB3277/MSB3245 noise from il2cpp interop transitive refs -->
+    <NoWarn>$(NoWarn);MSB3277;MSB3245</NoWarn>
+
+    <WorkspaceLibPath Condition="'$(WorkspaceLibPath)' == ''">$(MSBuildThisFileDirectory)../Workspace/lib</WorkspaceLibPath>
+    <!-- Local default is the _MPTest copy; the MCP build tool overrides this with the active test slot. -->
+    <ModsDirectory Condition="'$(ModsDirectory)' == ''">$(MSBuildThisFileDirectory)../_MPTest/Schedule I/Mods</ModsDirectory>
+    <UserLibsDirectory Condition="'$(UserLibsDirectory)' == ''">$(MSBuildThisFileDirectory)../_MPTest/Schedule I/UserLibs</UserLibsDirectory>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net6.0'">
+    <Backend>il2cpp</Backend>
+    <DefineConstants>$(DefineConstants);IL2CPP</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup>
+    <GameManagedPath>$(WorkspaceLibPath)/$(Backend)/game</GameManagedPath>
+    <MelonLoaderPath>$(WorkspaceLibPath)/$(Backend)/melonloader</MelonLoaderPath>
+  </PropertyGroup>
+
+  <!-- On CI the build-libs repo is checked out into ./Workspace; keep that tree out of the default compile glob. -->
+  <ItemGroup>
+    <Compile Remove="Workspace/**/*.cs" />
+    <!-- Sideload.Api/Sideload.cs is the modder shim, kept here so a standalone checkout of this repo contains the
+         file its README tells modders to take. It is something this project SHIPS, not something it compiles:
+         built into Sideload.dll it would be a second, dead copy of a type the host already provides. -->
+    <Compile Remove="Sideload.Api/**/*.cs" />
+  </ItemGroup>
+
+  <!-- Mod loader references -->
+  <ItemGroup>
+    <Reference Include="MelonLoader">
+      <HintPath>$(MelonLoaderPath)/MelonLoader.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(MelonLoaderPath)/0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- IL2CPP references -->
+  <ItemGroup Condition="'$(Backend)' == 'il2cpp'">
+    <Reference Include="Il2CppInterop.Runtime">
+      <HintPath>$(MelonLoaderPath)/Il2CppInterop.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Il2Cppmscorlib">
+      <HintPath>$(GameManagedPath)/Il2Cppmscorlib.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Il2CppSystem">
+      <HintPath>$(GameManagedPath)/Il2CppSystem.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(GameManagedPath)/Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Il2CppScheduleOne.Core">
+      <HintPath>$(GameManagedPath)/Il2CppScheduleOne.Core.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(GameManagedPath)/UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UI">
+      <HintPath>$(GameManagedPath)/UnityEngine.UI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UIModule">
+      <HintPath>$(GameManagedPath)/UnityEngine.UIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>$(GameManagedPath)/UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>$(GameManagedPath)/UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- Texture2D.LoadImage, for an app's icon.png (Phone/AppIconSprite.cs). -->
+    <Reference Include="UnityEngine.ImageConversionModule">
+      <HintPath>$(GameManagedPath)/UnityEngine.ImageConversionModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- InputActionReference, so the "Turn" hint can be handed the game's own rotate actions and draw whatever key
+         the player has them bound to (Phone/TurnPrompt.cs). -->
+    <Reference Include="Unity.InputSystem">
+      <HintPath>$(GameManagedPath)/Unity.InputSystem.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- The UI box shader ships as an AssetBundle embedded in this DLL (Paint/BoxMaterial.cs).
+         UnityEngine.AssetBundle.LoadFromMemory is STRIPPED from this IL2CPP build ("Method unstripping failed" at
+         runtime), so loading goes through MelonLoader's Il2CppAssetBundleManager, which calls the native icall
+         directly. Same reason S1API's AssetLoader uses it. -->
+    <Reference Include="UnityEngine.AssetBundleModule">
+      <HintPath>$(GameManagedPath)/UnityEngine.AssetBundleModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.Il2CppAssetBundleManager">
+      <HintPath>$(MelonLoaderPath)/UnityEngine.Il2CppAssetBundleManager.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Unity.TextMeshPro">
+      <HintPath>$(GameManagedPath)/Unity.TextMeshPro.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- FaceInfo and the glyph metrics TMP exposes live here, so anything reading font metrics needs it. -->
+    <Reference Include="UnityEngine.TextCoreFontEngineModule">
+      <HintPath>$(GameManagedPath)/UnityEngine.TextCoreFontEngineModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- s1.css: the game's design tokens as CSS variables, generated from Workspace/ui/Theme.cs. Embedded here rather
+       than in each app, so `<link rel="stylesheet" href="s1.css">` resolves for every app from every mod. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Assets/s1.css">
+      <LogicalName>Sideload.Assets.s1.css</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <!-- Debug self-test app bundle (Devtools/SelfTestApp.cs). Explicit logical names so the resource path stays stable
+       regardless of MSBuild's folder-to-namespace mangling. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Assets/selftest/*">
+      <LogicalName>Sideload.Assets.selftest.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <!-- Assets/Bundles/sideload-ui: precompiled UI box shader AssetBundle, built by
+       Workspace/tools/sideload-ui-bundle (Unity 2022.3.32f1, menu Build > Sideload UI Bundle).
+       Exists-guarded so a fresh clone without the bundle still compiles; Paint/BoxMaterial.cs then
+       falls back to flat fills. -->
+  <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory)Assets/Bundles/sideload-ui')">
+    <EmbeddedResource Include="Assets/Bundles/sideload-ui">
+      <LogicalName>Sideload.Assets.Bundles.sideload-ui</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+  <!-- AngleSharp 1.1.2 is MIT and pure-managed, so it loads in MelonLoader's .NET 6 runtime as-is. It is deployed to
+       UserLibs as its own DLL rather than merged into Sideload.dll: merging third-party assemblies is what triggered
+       the Nexus heuristic false positive on Personify. -->
+  <ItemGroup>
+    <PackageReference Include="AngleSharp" Version="1.1.2" />
+    <!-- Jint 3.x (BSD-2, pure managed, Esprima as its parser) runs the app's JavaScript. Pinned to the 3 line because
+         4.x targets net8.0 and MelonLoader hosts .NET 6; its netstandard2.0 asset would load but is not worth the
+         risk for a scripting engine that has to be reliable. Esprima.dll comes along as its transitive dependency. -->
+    <PackageReference Include="Jint" Version="3.1.5" />
+    <!-- AngleSharp resolves text encodings through this at parse time. Pinned to 6.0.0 to match MelonLoader's .NET 6
+         runtime: the 8.0.0 assembly refuses to load there, even the RID-specific Windows build and even via an
+         explicit Assembly.LoadFrom. It is NOT copied to the output and is NOT shipped - Microsoft.NETCore.App 6.0
+         already carries it, so the SDK resolves the conflict in favour of the shared framework that MelonLoader
+         hosts. The reference stays so the compile-time and runtime versions cannot drift apart. -->
+    <PackageReference Include="System.Text.Encoding.CodePages" Version="6.0.0" />
+  </ItemGroup>
+
+  <!--
+    NOTE: there is intentionally NO reference to Sideload.Api here. The modder shim is fully decoupled from the host:
+    it locates Sideload.Bridge.SideloadBridge by reflection and everything crosses as BCL types, so the two
+    assemblies share no type. The host publishes the bridge; modders consume the shim.
+  -->
+
+  <Target Name="PostBuild" AfterTargets="Build" Condition="'$(OS)' == 'Windows_NT'">
+    <Exec Condition="Exists('$(ModsDirectory)')" Command="cmd /c if exist &quot;$(ModsDirectory)&quot; copy /Y &quot;$(TargetPath)&quot; &quot;$(ModsDirectory)&quot;" ContinueOnError="true" />
+    <!-- Every runtime dependency goes to UserLibs so MelonLoader can resolve it. Enumerated rather than named one by
+         one: a package's transitive dependencies are easy to miss, and missing one only shows up at runtime. -->
+    <ItemGroup>
+      <SideloadRuntimeDeps Include="$(TargetDir)*.dll" Exclude="$(TargetPath)" />
+    </ItemGroup>
+    <Copy SourceFiles="@(SideloadRuntimeDeps)" DestinationFolder="$(UserLibsDirectory)" Condition="Exists('$(UserLibsDirectory)')" ContinueOnError="true" />
+  </Target>
+
+</Project>

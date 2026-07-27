@@ -1,0 +1,60 @@
+/* Sideload design tokens - the game's own palette as CSS variables.
+ *
+ * GENERATED from Workspace/ui/Theme.cs by Workspace/tools/gen-s1-css.py. Editing this file is pointless: the next run
+ * overwrites it. Change Theme.cs, which is also what the uGUI side reads, and the two can never drift apart.
+ *
+ * Import it and an app looks like the rest of the game without inventing a palette:
+ *
+ *   <link rel="stylesheet" href="s1.css">
+ *   .card { background: var(--bg-elevated); border: 1px solid var(--hairline); color: var(--text-primary); }
+ *
+ * An app is free to ignore it - WhatsDab does, because the phone's native apps are light while the menu design system
+ * is dark. Use it when your app belongs to the menus, not when it belongs to the phone.
+ */
+
+:root {
+  --bg-deep:          #0B0C10;                /* deepest well */
+  --bg-base:          #101218;                /* opaque screen background */
+  --bg-panel:         #161922;                /* docked regions (opaque so busy backgrounds don't bleed through) */
+  --bg-elevated:      #1D212C;                /* cards, popovers, toasts */
+  --surface-input:    #0D0F15;                /* deliberately darker than panels -> input contrast */
+  --clear:            rgba(0, 0, 0, 0.00);
+  --hairline:         rgba(255, 255, 255, 0.08);
+  --hairline-strong:  rgba(255, 255, 255, 0.14);
+  --scrim-panel:      rgba(16, 18, 24, 0.82); /* BgBase @ 82% */
+  --scrim-row:        rgba(29, 33, 44, 0.72); /* BgElevated @ 72% */
+  --text-primary:     #ECEDF1;
+  --text-muted:       #8A8F9E;
+  --text-disabled:    #565B68;
+  --accent:           #5E6AD2;
+  --accent-hover:     #6E79DB;
+  --accent-pressed:   #4C57BC;
+  --accent-subtle:    #20223A;                /* selected-row fill */
+  --accent-border:    #7C86E8;                /* focus / selection ring */
+  --button:           #333643;                /* a touch lighter than panels -> affordance */
+  --danger:           #C84A54;
+  --danger-text:      #F1707A;
+  --danger-subtle:    #2A1518;
+  --warning:          #C9912E;
+  --warning-text:     #E6B450;
+  --warning-subtle:   #2A2212;
+  --success:          #2FA877;
+  --success-text:     #5FD09A;
+  --success-subtle:   #122A20;
+  --info:             #3D7FC0;
+  --info-text:        #6FA8E6;
+  --info-subtle:      #122031;
+
+  /* --- radius, spacing, motion --------------------------------------------------------------------------------- */
+  --radius-sm:       4px;
+  --radius-md:       6px;    /* Theme.RadiusMd - matches the generated rounded sprite */
+  --radius-lg:       12px;
+  --radius-pill:     999px;
+
+  --fade:            120ms;  /* Theme.Fade - the interaction-state duration the design system uses */
+}
+
+/* The state transition the design system asks for, so a control written against these tokens already feels right. */
+.s1-interactive {
+  transition: var(--fade) ease-out;
+}

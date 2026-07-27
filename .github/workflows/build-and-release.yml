@@ -1,0 +1,265 @@
+name: Build and Release on Tag
+
+# Push a tag "vX.Y.Z" (matching <Version> in Sideload.csproj) and this builds Release, publishes a GitHub
+# Release, and uploads to Thunderstore + Nexus. Mirrors the Siesta pipeline.
+#
+# One-time setup:
+#   - Private build-libs repo  ${owner}/ScheduleOne-Workspace  must contain:
+#       lib/il2cpp/game        (game managed DLLs incl. Assembly-CSharp, Il2CppScheduleOne.Core, Il2Cppmscorlib,
+#                               Il2CppSystem, Unity.TextMeshPro, and the Unity modules Sideload references:
+#                               CoreModule, UI, UIModule, TextRenderingModule, InputLegacyModule,
+#                               AssetBundleModule, TextCoreFontEngineModule)
+#       lib/il2cpp/melonloader (MelonLoader, 0Harmony, Il2CppInterop.Runtime, UnityEngine.Il2CppAssetBundleManager)
+#   - Secrets: WORKSPACE_TOKEN (SSH deploy key for that repo), THUNDERSTORE_TOKEN, NEXUSMODS_API_KEY.
+#   - Repo/org variable NEXUS_FILE_GROUP_ID = the Nexus mod's file group id (the Nexus upload job is skipped
+#     until this is set, so GitHub + Thunderstore releases work immediately).
+#   - thunderstore/icon.png must be exactly 256x256 (Thunderstore requirement).
+#   - AngleSharp and Jint (with its transitive Esprima) are NuGet PackageReferences restored by `dotnet build`.
+#     They are shipped as their own DLLs rather than merged into Sideload.dll, and they must reach the player:
+#     UserLibs/ in the Thunderstore package, mods/ in the Nexus package (see the Nexus step for why). Core.cs
+#     probes both locations. System.Text.Encoding.CodePages is referenced but deliberately NOT shipped - it is
+#     part of Microsoft.NETCore.App 6.0, the framework MelonLoader's runtimeconfig asks for.
+#
+# The dependency copy below globs every DLL in the build output except Sideload.dll rather than naming the
+# three. A package's transitive dependencies are easy to miss, and a missing one only shows up at runtime.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version-check.outputs.version }}
+      notes: ${{ steps.changelog.outputs.notes }}
+      notes_bbcode: ${{ steps.changelog.outputs.notes_bbcode }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout Workspace repository (build libs)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/ScheduleOne-Workspace
+          path: Workspace
+          ssh-key: ${{ secrets.WORKSPACE_TOKEN }}
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            6.0.x
+            8.0.x
+
+      - name: Verify version in csproj matches the tag
+        id: version-check
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          CS_VERSION=$(grep -oPm1 "(?<=<Version>)[^<]+" Sideload.csproj)
+          if [ "$TAG_VERSION" != "$CS_VERSION" ]; then
+            echo "Version mismatch: Tag version is $TAG_VERSION, but csproj version is $CS_VERSION"
+            exit 1
+          fi
+          echo "version=$TAG_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Extract release notes from CHANGELOG.md
+        id: changelog
+        run: |
+          # Single source of truth is the hand-maintained CHANGELOG.md. Pull out the section for
+          # this version; it is reused for the GitHub release body and the Nexus file description.
+          VERSION="${{ steps.version-check.outputs.version }}"
+          SECTION=$(awk -v v="$VERSION" 'index($0,"## ["v"]")==1{grab=1;next} index($0,"## [")==1{if(grab)exit} grab{print}' CHANGELOG.md)
+          if [ -z "$SECTION" ]; then
+            echo "::warning::No CHANGELOG.md section found for $VERSION"
+            SECTION="See CHANGELOG.md for details."
+          fi
+          # Markdown notes - GitHub renders Markdown in release bodies.
+          {
+            echo "notes<<CHANGELOG_EOF"
+            echo "$SECTION"
+            echo "CHANGELOG_EOF"
+          } >> "$GITHUB_OUTPUT"
+          # Nexus file descriptions use BBCode, not Markdown. Convert "### Heading" to [b]Heading[/b],
+          # "- item" bullets to [list]/[*], drop inline-code backticks, and join wrapped bullet lines.
+          BBCODE=$(printf '%s\n' "$SECTION" | awk '
+            function flush(){ if(buf!=""){ printf "[*]%s\n", buf; buf="" } }
+            BEGIN{ inlist=0; buf="" }
+            {
+              line=$0; gsub(/`/,"",line); sub(/[ \t]+$/,"",line)
+              if (line ~ /^### /){ flush(); if(inlist){print "[/list]"; inlist=0} h=line; sub(/^### /,"",h); printf "[b]%s[/b]\n", h; next }
+              if (line ~ /^- /){ flush(); if(!inlist){print "[list]"; inlist=1} buf=line; sub(/^- /,"",buf); next }
+              if (line ~ /^[ \t]*$/){ next }
+              sub(/^[ \t]+/,"",line); if(buf!="") buf=buf " " line; else printf "%s\n", line
+            }
+            END{ flush(); if(inlist) print "[/list]" }')
+          {
+            echo "notes_bbcode<<CHANGELOG_EOF"
+            echo "$BBCODE"
+            echo "CHANGELOG_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build the project (Release, IL2CPP)
+        run: dotnet build Sideload.csproj --configuration Release /p:WorkspaceLibPath="${{ github.workspace }}/Workspace/lib"
+
+      - name: Prepare release directory
+        run: |
+          mkdir -p release release/UserLibs
+          cp bin/Release/net6.0/Sideload.dll release/
+          # Every other assembly in the build output is a runtime dependency (AngleSharp, Jint, Esprima).
+          # MelonLoader resolves them from UserLibs, which is also where Sideload's own preload looks first.
+          find bin/Release/net6.0 -maxdepth 1 -name '*.dll' ! -name 'Sideload.dll' -exec cp {} release/UserLibs/ \;
+          echo "Shipping these support assemblies under UserLibs/:"
+          ls -la release/UserLibs/
+          # A package with no dependency DLLs would install and then fail to build a single page, silently.
+          if [ -z "$(ls -A release/UserLibs)" ]; then
+            echo "No runtime dependencies were copied - the package would not load. Failing the build."
+            exit 1
+          fi
+          if [ -d "thunderstore" ]; then
+            cp -r thunderstore/* release/ 2>/dev/null || true
+            if [ -f "release/manifest.json" ]; then
+              sed -i "s/\"version_number\": \".*\"/\"version_number\": \"${{ steps.version-check.outputs.version }}\"/" release/manifest.json
+            fi
+          fi
+          # Ship LICENSE + the maintained CHANGELOG inside the package.
+          [ -f "LICENSE.md" ] && cp LICENSE.md release/ || true
+          [ -f "CHANGELOG.md" ] && cp CHANGELOG.md release/ || true
+          # Recreate README.md as UTF-8 without BOM (Thunderstore renders it on the mod page).
+          if [ -f "thunderstore/README.md" ]; then
+            cat thunderstore/README.md | iconv -f UTF-8 -t UTF-8//IGNORE > release/README.md 2>/dev/null || \
+            sed '1s/^\xEF\xBB\xBF//' thunderstore/README.md > release/README.md || \
+            cp thunderstore/README.md release/README.md
+          fi
+
+      # -r, not -j: the flat "junk paths" zip the single-DLL mods use would drop the UserLibs/ folder and the
+      # dependencies would land at the archive root, where r2modman puts them next to the DLL in Mods/.
+      # manifest.json, icon.png and README.md still sit at the archive root, which is what Thunderstore requires.
+      - name: Create release ZIP (Thunderstore + GitHub; manifest/icon at root, dependencies under UserLibs/)
+        run: cd release && zip -r "../Sideload_${{ steps.version-check.outputs.version }}.zip" . && cd ..
+
+      - name: Upload Release ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sideload
+          path: "Sideload_${{ steps.version-check.outputs.version }}.zip"
+
+      # Nexus is installed through Vortex, whose Schedule 1 extension deploys relative to the game root and
+      # maps loose non-.md files at the archive root (manifest.json, icon.png) to a bare "mods" path - which
+      # lands a FILE named "mods" in the game folder, replacing the real Mods DIRECTORY and wiping other mods.
+      # So Nexus gets its own archive: the payload under mods/, and none of the Thunderstore-only files.
+      # The support DLLs go under mods/ too, not UserLibs/: that extension misroutes a UserLibs/ folder into
+      # MelonLoader/, so shipping them beside the mod is the reliable placement (same call Inkubator makes for
+      # ImageSharp). Sideload's own preload probes UserLibs first and its own folder second, so both land right.
+      - name: Create Nexus/Vortex ZIP (payload under mods/ so the Schedule 1 Vortex extension installs cleanly)
+        run: |
+          mkdir -p nexus/mods
+          cp release/Sideload.dll nexus/mods/
+          cp release/UserLibs/*.dll nexus/mods/
+          for f in README.md CHANGELOG.md LICENSE.md; do
+            [ -f "release/$f" ] && cp "release/$f" nexus/ || true
+          done
+          (cd nexus && zip -r "../Sideload_${{ steps.version-check.outputs.version }}_nexus.zip" .)
+
+      - name: Upload Nexus ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sideload-nexus
+          path: "Sideload_${{ steps.version-check.outputs.version }}_nexus.zip"
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download built ZIP
+        uses: actions/download-artifact@v4
+        with:
+          name: Sideload
+
+      - name: Extract DLL from ZIP
+        run: |
+          unzip -q "Sideload_${{ needs.build.outputs.version }}.zip" -d release/
+          ls -la release/
+
+      # The raw DLL alone is not installable for this mod, so the GitHub Release carries the full zip as well.
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            release/Sideload.dll
+            Sideload_${{ needs.build.outputs.version }}.zip
+          body: |
+            ## Changes in ${{ needs.build.outputs.version }}
+
+            ${{ needs.build.outputs.notes }}
+
+            Installing by hand: `Sideload.dll` goes into `Mods/`, and everything from `UserLibs/` in the zip
+            goes into the game's `UserLibs/` folder.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  thunderstore:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download built ZIP
+        uses: actions/download-artifact@v4
+        with:
+          name: Sideload
+
+      - name: Extract ZIP for Thunderstore
+        run: |
+          mkdir -p thunderstore-package
+          unzip -q "Sideload_${{ needs.build.outputs.version }}.zip" -d thunderstore-package/
+
+      - name: Upload to Thunderstore
+        uses: GreenTF/upload-thunderstore-package@v4.3
+        with:
+          token: ${{ secrets.THUNDERSTORE_TOKEN }}
+          community: schedule-i
+          repo: thunderstore.io
+          namespace: DooDesch
+          name: Sideload
+          description: Write a mod interface as HTML, CSS and JavaScript. Sideload renders the web bundle into real Unity UI and puts it on the in game phone.
+          version: ${{ needs.build.outputs.version }}
+          path: thunderstore-package
+          deps: |
+            LavaGang-MelonLoader-0.7.3
+          categories: |
+            Mods
+
+  nexus:
+    needs: build
+    runs-on: ubuntu-latest
+    # Skipped until the Nexus mod page exists and its file group id is set as the repo/org variable.
+    if: ${{ vars.NEXUS_FILE_GROUP_ID != '' }}
+    steps:
+      - name: Download Nexus ZIP
+        uses: actions/download-artifact@v4
+        with:
+          name: Sideload-nexus
+
+      - name: Upload to Nexus Mods
+        uses: Nexus-Mods/upload-action@v1.0.0-beta.9
+        with:
+          api_key: ${{ secrets.NEXUSMODS_API_KEY }}
+          file_id: ${{ vars.NEXUS_FILE_GROUP_ID }}
+          filename: "Sideload_${{ needs.build.outputs.version }}_nexus.zip"
+          version: ${{ needs.build.outputs.version }}
+          display_name: "Sideload ${{ needs.build.outputs.version }}"
+          description: ${{ needs.build.outputs.notes_bbcode }}
+          category: main
+          archive_existing_version: true
+          update_mod_version: true
+          primary_mod_manager_download: true
+          allow_mod_manager_download: true

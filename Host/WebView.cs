@@ -1,0 +1,865 @@
+using System.Text;
+using AngleSharp.Dom;
+using AngleSharp.Html.Parser;
+using Sideload.Bundle;
+using Sideload.Css;
+using Sideload.Dom;
+using Sideload.Input;
+using Sideload.Layout;
+using Sideload.Paint;
+using Sideload.Script;
+using UnityEngine;
+using UnityEngine.UI;
+using Object = UnityEngine.Object;
+
+namespace Sideload.Host
+{
+    /// <summary>
+    /// A mounted app: one web bundle rendered into one RectTransform. This is the whole public surface of the engine
+    /// and knows nothing about the phone - the phone adapter is just the first caller. Later hosts (main menu pages,
+    /// Hotline panels, screens in the world) mount the same way.
+    /// </summary>
+    public sealed class WebView
+    {
+        /// <summary>Short side of the CSS viewport. The host rect is scaled so that a stylesheet can always assume a
+        /// 400px-wide phone, whatever the real panel measures (see decision 5 in ARCHITECTURE.md).</summary>
+        private const float ReferenceShortSide = 400f;
+
+        /// <summary>Every live view, so the mod's update loop can drive their timers and pending rebuilds. A view
+        /// whose root has been destroyed drops out on the next tick.</summary>
+        private static readonly List<WebView> _live = new List<WebView>();
+
+        private readonly AppBundle _bundle;
+        private readonly RectTransform _host;
+        private readonly RectTransform _root;
+        private readonly string _appId;
+
+        private bool _built;
+        private bool _rebuildQueued;
+        private bool _resizeQueued;
+
+#if DEBUG
+        private HotReload _watcher;
+#endif
+
+        private IDocument _document;
+        private Stylesheet _sheet;
+        private StyleContext _context;
+        private Interaction _interaction;
+        private ScriptHost _script;
+        private Dictionary<IElement, Painter.PaintedBox> _painted;
+        private Dictionary<IElement, RectTransform> _survivors;
+        private LayoutNode _tree;
+        private IElement _focused;
+        private IElement _pinToEnd;
+
+        /// <summary>The style each interactive box was last painted with, so a transition knows where it is coming
+        /// from. Only elements that actually change state ever land in here.</summary>
+        private readonly Dictionary<IElement, ComputedStyle> _styleWas = new();
+
+        /// <summary>This view's form controls. Per view, not process-wide: two apps are mounted at once and each has
+        /// its own document, so a shared map would hand one app's field to the other's script.</summary>
+        private readonly Dictionary<IElement, Il2CppTMPro.TMP_InputField> _inputs = new();
+
+        // Live numbers for the dev overlay. Cheap to keep and the only way to see, from inside the game, whether a
+        // page is rebuilding once per change or once per frame.
+        private int _renders;
+        private int _reloads;
+        private float _lastRenderMs;
+        private int _boxes;
+
+        private WebView(RectTransform host, RectTransform root, AppBundle bundle, string appId)
+        {
+            _host = host;
+            _root = root;
+            _bundle = bundle;
+            _appId = appId;
+        }
+
+        /// <summary>The node everything of this view lives under. Destroying it disposes the view.</summary>
+        public RectTransform Root => _root;
+
+        /// <summary>Every live view, for the dev overlay.</summary>
+        internal static IReadOnlyList<WebView> Live => _live;
+
+        internal string AppId => _appId;
+
+        // Read by the Snitch panel. Exposed as plain numbers rather than as a formatted string so the host can graph
+        // them over time, which is what turns "renders 13" into "this page rebuilds every frame".
+        internal int BoxCount => _boxes;
+
+        internal int RenderCount => _renders;
+
+        internal int ReloadCount => _reloads;
+
+        internal float LastRenderMs => _lastRenderMs;
+
+        /// <summary>Ablation lever: stop rendering entirely, so what is left of the frame time is the game's.</summary>
+        internal static bool RenderingDisabled;
+
+        /// <summary>A few lines of live state, for the dev overlay.</summary>
+        internal string Stats =>
+            $"{_appId}  {_root.sizeDelta.x:0}x{_root.sizeDelta.y:0}css @{_root.localScale.x:0.00}x\n" +
+            $"  {_boxes} boxes, {_sheet?.Rules.Count ?? 0} rules, {_painted?.Count ?? 0} wired\n" +
+            $"  renders {_renders} ({_lastRenderMs:0.0} ms)   reloads {_reloads}\n" +
+            $"  script: {(_script == null ? "none" : _script.Failed ? "FAILED - " + _script.LastError : "ok")}";
+
+        internal static WebView Mount(RectTransform host, AppBundle bundle, string appId)
+        {
+            if (host == null)
+            {
+                Core.Log?.Error("[Sideload] mount target is null - nothing will render.");
+                return null;
+            }
+
+            RectTransform root = UiFactory.Rect("sideload-view", host);
+            var view = new WebView(host, root, bundle, appId);
+            _live.Add(view);
+            return view;
+        }
+
+        /// <summary>Drive every live view one frame: script timers first, then any rebuild those timers asked for.</summary>
+        internal static void TickAll(float deltaSeconds)
+        {
+            for (int i = _live.Count - 1; i >= 0; i--)
+            {
+                WebView view = _live[i];
+                if (view._root == null)
+                {
+                    // The panel is gone, so this view never renders again - let go of the engine and, with it, this
+                    // page's subscription to host events.
+                    view._script?.Dispose();
+                    view._script = null;
+                    _live.RemoveAt(i);
+                    continue;
+                }
+
+                try { view.Tick(deltaSeconds); }
+                catch (Exception e) { Core.Log?.Error("[Sideload] view tick failed: " + e); }
+            }
+        }
+
+        /// <summary>
+        /// Build the page if it has not been built yet. Deferred on purpose: a panel that has never been shown has no
+        /// laid-out rect, so measuring at mount time would read zeroes.
+        /// </summary>
+        internal void EnsureBuilt()
+        {
+            if (_built) return;
+            _built = true;
+
+            try { Build(); }
+            catch (Exception e)
+            {
+                Core.Log?.Error("[Sideload] building the page failed: " + e);
+                ShowError(e.Message);
+            }
+        }
+
+        private void Tick(float deltaSeconds)
+        {
+            if (RenderingDisabled) return;
+
+#if DEBUG
+            if (_watcher != null && _watcher.ShouldReload(deltaSeconds)) { Reload(); return; }
+#endif
+
+            Transitions.Tick(deltaSeconds);
+            _script?.Tick(deltaSeconds);
+
+            // A resize lays the page out too, so it subsumes whatever rebuild was pending.
+            if (_resizeQueued)
+            {
+                _resizeQueued = false;
+                _rebuildQueued = false;
+                Resize();
+                return;
+            }
+
+            if (!_rebuildQueued) return;
+            _rebuildQueued = false;
+            Rebuild();
+        }
+
+        /// <summary>
+        /// Throw the whole page away and build it again from disk - what a file in the override folder changing
+        /// means, and what `Page.reload` means to an attached inspector. Unlike a rebuild this drops the script
+        /// engine too, because the script itself may be what changed - carrying its state over would leave listeners
+        /// from the previous version attached.
+        /// </summary>
+        internal void Reload()
+        {
+            Core.Log?.Msg("[Sideload] reloading the page from disk.");
+
+            for (int i = _root.childCount - 1; i >= 0; i--) Object.Destroy(_root.GetChild(i).gameObject);
+
+            _script?.Dispose();
+
+            _built = false;
+            _reloads++;
+            _rebuildQueued = false;
+            _script = null;
+            _painted = null;
+            _focused = null;
+
+            EnsureBuilt();
+        }
+
+        // --------------------------------------------------------- devtools protocol --
+        //
+        // The smallest surface the CDP server needs: read the page, mark it dirty, reload it. Not Debug-only,
+        // because the server itself ships in every build and is gated by a preference instead (Config.Preferences).
+
+        /// <summary>The parsed page. Null until the view has been built.</summary>
+        internal IDocument Document => _document;
+
+        /// <summary>The page's script engine, for evaluating in its own context. Null until the view has been
+        /// built.</summary>
+        internal ScriptHost Script => _script;
+
+        /// <summary>The parsed stylesheet the cascade runs against, so the inspector can show which rules matched.
+        /// Null until the view has been built.</summary>
+        internal Stylesheet Sheet => _sheet;
+
+        /// <summary>Orientation and live interaction state, the two inputs the cascade needs besides the sheet. The
+        /// inspector has to resolve against the same context or it would report a style the page is not wearing.</summary>
+        internal StyleContext StyleContext => _context;
+
+        /// <summary>The document was changed from outside the script. Queues the same deferred re-render a script
+        /// mutation does, so a burst of edits costs one rebuild.</summary>
+        internal void MarkDirty() => QueueRebuild();
+
+        /// <summary>
+        /// The host rect is about to change shape. Deferred to the next tick rather than applied on the spot, because
+        /// the caller may be a script running inside the very build that is about to render: re-laying out underneath
+        /// it would render twice and leave the second pass measuring a viewport from before the change.
+        /// </summary>
+        internal void QueueResize() => _resizeQueued = true;
+
+        /// <summary>
+        /// The host rect changed shape - re-measure the viewport, flip the orientation the cascade sees, and lay the
+        /// page out again. Deliberately not a reload: the document, the script and everything the page was showing
+        /// survive a rotation, which is the difference between turning a phone and restarting an app.
+        /// </summary>
+        private void Resize()
+        {
+            if (!_built || _root == null || _document == null || _context == null) return;
+
+            Rect hostRect = _host.rect;
+            float hostW = hostRect.width, hostH = hostRect.height;
+            if (hostW < 1f || hostH < 1f) return;
+
+            float scale = Math.Min(hostW, hostH) / ReferenceShortSide;
+            float cssW = hostW / scale, cssH = hostH / scale;
+
+            if (Mathf.Approximately(cssW, _root.sizeDelta.x) && Mathf.Approximately(cssH, _root.sizeDelta.y)) return;
+
+            Orientation was = _context.Orientation;
+
+            _root.sizeDelta = new Vector2(cssW, cssH);
+            _root.localScale = new Vector3(scale, scale, 1f);
+            _context.Orientation = cssW >= cssH ? Orientation.Landscape : Orientation.Portrait;
+
+            Rebuild();
+            Core.Log?.Msg($"[Sideload] {_appId}: viewport is now {cssW:0.#}x{cssH:0.#} css px ({_context.Orientation}).");
+
+            // After the layout, not before: a handler that changes the document then gets one more rebuild on the
+            // next tick rather than being rendered away by this one.
+            //
+            // The event exists because `@media` can only move boxes. A page whose SHAPE changes with the orientation -
+            // two panes side by side becoming one pane at a time - also has state to decide, and it cannot decide it
+            // from a stylesheet: which of the two panes the player should land on is a question about what they were
+            // just looking at.
+            if (was != _context.Orientation)
+                _script?.Dispatch(_document?.Body ?? _document?.DocumentElement, "orientationchange",
+                                  value: _context.Orientation == Orientation.Portrait ? "portrait" : "landscape");
+        }
+
+        private void Build()
+        {
+            Rect hostRect = _host.rect;
+            float hostW = hostRect.width, hostH = hostRect.height;
+            if (hostW < 1f || hostH < 1f)
+            {
+                Core.Log?.Warning($"[Sideload] host rect is {hostW}x{hostH} - the page cannot be sized yet.");
+                return;
+            }
+
+            // One CSS pixel is `scale` device units, so every stylesheet works against the same 400px short side.
+            float scale = Math.Min(hostW, hostH) / ReferenceShortSide;
+            float cssW = hostW / scale, cssH = hostH / scale;
+
+            _root.anchorMin = _root.anchorMax = new Vector2(0.5f, 0.5f);
+            _root.pivot = new Vector2(0.5f, 0.5f);
+            _root.anchoredPosition = Vector2.zero;
+            _root.sizeDelta = new Vector2(cssW, cssH);
+            _root.localScale = new Vector3(scale, scale, 1f);
+
+#if DEBUG
+            _watcher ??= HotReload.Start(_bundle?.OverrideRoot, _appId);
+#endif
+
+            string html = _bundle?.ReadText("index.html");
+            if (string.IsNullOrEmpty(html)) { ShowError("index.html not found in bundle or override"); return; }
+
+            _document = new HtmlParser().ParseDocument(html);
+
+            string tooBig = TooLargeToRender(_document);
+            if (tooBig != null) { ShowError(tooBig); return; }
+            _sheet = CssParser.Parse(CollectCss(_document));
+
+            _interaction = new Interaction(OnStateChanged, OnClicked);
+            _context = new StyleContext
+            {
+                Orientation = cssW >= cssH ? Orientation.Landscape : Orientation.Portrait,
+                StateOf = _interaction.StateOf,
+            };
+
+            // The script runs BEFORE the first render, not after: it may build half the page and it registers the
+            // click listeners that decide which boxes need a hit target. Rendering first would either miss those or
+            // force a second full pass one frame later.
+            _script = new ScriptHost(_appId, _document, QueueRebuild, Focus, PinToEnd);
+            RunScripts(_document);
+
+            Render(cssW, cssH, hostW, hostH, scale);
+            _rebuildQueued = false;   // the render above already covers whatever the script just changed
+
+            Core.Log?.Msg($"[Sideload] page built: viewport {cssW:0.#}x{cssH:0.#} css px at {scale:0.###}x, " +
+                          $"{_sheet.Rules.Count} rule(s).");
+        }
+
+        /// <summary>Elements a page may contain. Generous - the largest app here is under a hundred - but finite.</summary>
+        private const int MaxElements = 20000;
+
+        /// <summary>
+        /// How deeply a page may nest. Styling, tree building and painting are each RECURSIVE, so nesting is bounded
+        /// by the managed stack rather than by memory - and blowing that stack takes the process down before any
+        /// error page can be shown. A page has to be refused before it is walked, not while.
+        /// </summary>
+        private const int MaxDepth = 200;
+
+        /// <summary>Null when the document is fine, otherwise the message to show instead of rendering it.</summary>
+        private static string TooLargeToRender(IDocument document)
+        {
+            IElement root = document?.Body ?? document?.DocumentElement;
+            if (root == null) return null;
+
+            int count = 0;
+
+            // Iterative on purpose: a recursive check would hit the very stack limit it exists to protect.
+            var stack = new Stack<(IElement Element, int Depth)>();
+            stack.Push((root, 1));
+
+            while (stack.Count > 0)
+            {
+                (IElement element, int depth) = stack.Pop();
+
+                if (++count > MaxElements)
+                    return $"the page has more than {MaxElements} elements - refusing to render it";
+
+                if (depth > MaxDepth)
+                    return $"the page nests deeper than {MaxDepth} elements - refusing to render it";
+
+                foreach (IElement child in element.Children) stack.Push((child, depth + 1));
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Style, lay out, paint. Split out of <see cref="Build"/> because a script mutation has to redo exactly this
+        /// and nothing else - the document, the stylesheet and the engine all survive.
+        /// </summary>
+        private void Render(float cssW, float cssH, float hostW, float hostH, float scale)
+        {
+            long started = System.Diagnostics.Stopwatch.GetTimestamp();
+            _interaction.ResetForRender(_document);
+            Transitions.Clear();
+            _styleWas.Clear();
+
+            Dictionary<IElement, ComputedStyle> styles = StyleResolver.Resolve(_document, _sheet, _context);
+
+            IElement body = _document.Body ?? _document.DocumentElement;
+            LayoutNode tree = DomBuilder.Build(body, styles);
+            if (tree == null) { ShowError("the document has no renderable content"); return; }
+
+            var measure = new TmpMeasure(_root);
+            FlexLayout.Compute(tree, cssW, cssH, measure);
+
+            _painted = Painter.Paint(tree, _root, new Vector2(cssW, cssH),
+                                     _inputs, OnInputChanged, OnInputSubmitted, _survivors);
+            _survivors = null;
+
+            WireInteraction(styles);
+            ApplyPin();
+
+            foreach (KeyValuePair<IElement, Painter.PaintedBox> pair in _painted)
+                if (styles.TryGetValue(pair.Key, out ComputedStyle painted)) _styleWas[pair.Key] = painted;
+
+            _tree = tree;
+            _renders++;
+            _boxes = CountNodes(tree);
+            _lastRenderMs = (System.Diagnostics.Stopwatch.GetTimestamp() - started)
+                            * 1000f / System.Diagnostics.Stopwatch.Frequency;
+
+#if DEBUG
+            Devtools.LayoutOverlay.Dump(tree, cssW, cssH, hostW, hostH, scale);
+#endif
+        }
+
+        /// <summary>
+        /// The script changed the document. Re-rendering is deferred to the next tick rather than done on the spot so
+        /// that a handler touching twenty nodes rebuilds the page once, not twenty times.
+        /// </summary>
+        private void QueueRebuild() => _rebuildQueued = true;
+
+        /// <summary>
+        /// Throw the uGUI objects away and build them again from the mutated document. Two things must survive that,
+        /// because losing either one is immediately obvious to the player: where each scrollable box was scrolled to,
+        /// and which field had the caret.
+        /// </summary>
+        private void Rebuild()
+        {
+            if (_root == null || _document == null) return;
+
+            try
+            {
+                Dictionary<IElement, float> scroll = CaptureScroll();
+                _survivors = RescueControls();
+
+                for (int i = _root.childCount - 1; i >= 0; i--)
+                {
+                    GameObject child = _root.GetChild(i).gameObject;
+                    if (!IsRescued(child)) Object.Destroy(child);
+                }
+
+                float scale = _root.localScale.x;
+                Render(_root.sizeDelta.x, _root.sizeDelta.y, _root.sizeDelta.x * scale, _root.sizeDelta.y * scale, scale);
+
+                RestoreScroll(scroll);
+            }
+            catch (Exception e)
+            {
+                Core.Log?.Error("[Sideload] rebuilding the page failed: " + e);
+            }
+        }
+
+        /// <summary>
+        /// Lift every form control out of the doomed hierarchy and park it directly under the view root, so the
+        /// wholesale destroy below cannot take it with it. Whichever ones the new tree still wants get slotted back
+        /// into place; anything left over is cleaned up afterwards.
+        /// </summary>
+        private Dictionary<IElement, RectTransform> RescueControls()
+        {
+            var rescued = new Dictionary<IElement, RectTransform>();
+            if (_painted == null) return rescued;
+
+            foreach (KeyValuePair<IElement, Painter.PaintedBox> pair in _painted)
+            {
+                if (!_inputs.ContainsKey(pair.Key) || pair.Value.Rect == null) continue;
+
+                pair.Value.Rect.SetParent(_root, worldPositionStays: false);
+                rescued[pair.Key] = pair.Value.Rect;
+            }
+            return rescued;
+        }
+
+        private bool IsRescued(GameObject candidate)
+        {
+            if (_survivors == null) return false;
+
+            foreach (KeyValuePair<IElement, RectTransform> pair in _survivors)
+                if (pair.Value != null && pair.Value.gameObject == candidate) return true;
+            return false;
+        }
+
+        private Dictionary<IElement, float> CaptureScroll()
+        {
+            var offsets = new Dictionary<IElement, float>();
+            if (_painted == null) return offsets;
+
+            foreach (KeyValuePair<IElement, Painter.PaintedBox> pair in _painted)
+            {
+                if (pair.Value.Rect == null) continue;
+
+                var scroll = pair.Value.Rect.GetComponentInChildren<ScrollRect>();
+                if (scroll != null) offsets[pair.Key] = scroll.verticalNormalizedPosition;
+            }
+            return offsets;
+        }
+
+        private void RestoreScroll(Dictionary<IElement, float> offsets)
+        {
+            if (offsets == null || _painted == null) return;
+
+            foreach (KeyValuePair<IElement, float> pair in offsets)
+            {
+                if (!_painted.TryGetValue(pair.Key, out Painter.PaintedBox box) || box.Rect == null) continue;
+
+                var scroll = box.Rect.GetComponentInChildren<ScrollRect>();
+                if (scroll == null) continue;
+
+                // A box the script pinned to its end wins over where it happened to be scrolled a moment ago.
+                scroll.verticalNormalizedPosition = ReferenceEquals(pair.Key, _pinToEnd) ? 0f : pair.Value;
+            }
+        }
+
+        /// <summary>A box asked to sit at its end but had no scroll area last time round - a chat that just grew past
+        /// its box is exactly that case, so it has to be handled outside the restore path too.</summary>
+        private void ApplyPin()
+        {
+            if (_pinToEnd == null || _painted == null) return;
+
+            if (_painted.TryGetValue(_pinToEnd, out Painter.PaintedBox box) && box.Rect != null)
+            {
+                var scroll = box.Rect.GetComponentInChildren<ScrollRect>();
+                if (scroll != null) scroll.verticalNormalizedPosition = 0f;
+            }
+
+            _pinToEnd = null;
+        }
+
+        /// <summary>
+        /// Pin interaction states on an element, for the Styles pane's `:hov` toggles. Names are the CSS pseudo-class
+        /// spellings DevTools sends (`hover`, `active`, `focus`); an empty list clears them.
+        /// </summary>
+        internal void ForcePseudoState(IElement element, IEnumerable<string> pseudoClasses)
+        {
+            if (element == null || _interaction == null) return;
+
+            StateFlags flags = StateFlags.None;
+            foreach (string name in pseudoClasses ?? Array.Empty<string>())
+            {
+                switch ((name ?? "").Trim().ToLowerInvariant())
+                {
+                    case "hover": flags |= StateFlags.Hover; break;
+                    case "active": flags |= StateFlags.Active; break;
+                    case "focus" or "focus-visible" or "focus-within": flags |= StateFlags.Focus; break;
+                }
+            }
+
+            _interaction.Force(element, flags);
+        }
+
+        /// <summary>Remember that a box wants to sit at its end; applied by the next render, which is when the
+        /// ScrollRect that will actually hold the content exists.</summary>
+        private void PinToEnd(IElement element) => _pinToEnd = element;
+
+        /// <summary>Put the caret in a field, from script (`el.focus()`) or after a rebuild.</summary>
+        private void Focus(IElement element)
+        {
+            if (element == null || !_inputs.TryGetValue(element, out Il2CppTMPro.TMP_InputField field) || field == null) return;
+
+            _focused = element;
+            field.ActivateInputField();
+        }
+
+        /// <summary>
+        /// Give pointer handling to the elements that can react to it: anything a state rule targets, the controls
+        /// that are interactive by nature, and anything the script listens to. Everything else stays inert and lets
+        /// the pointer through.
+        /// </summary>
+        private void WireInteraction(Dictionary<IElement, ComputedStyle> styles)
+        {
+            HashSet<IElement> stateful = StyleResolver.StatefulElements(_document, _sheet, _context.Orientation);
+
+            foreach (IElement control in _document.QuerySelectorAll("button, a, input, textarea"))
+                stateful.Add(control);
+
+            // A script that listens on a plain div still needs that div to receive the pointer.
+            if (_script != null)
+                foreach (IElement clickable in _script.ElementsListeningFor("click"))
+                    stateful.Add(clickable);
+
+            int wired = 0;
+            foreach (IElement element in stateful)
+            {
+                if (!_painted.TryGetValue(element, out Painter.PaintedBox box)) continue;
+
+                bool disabled = element.HasAttribute("disabled");
+
+                // Form controls already own a Selectable; their handlers have to share its GameObject, otherwise a
+                // child hit target eats the click before the field can take focus.
+                bool isFormControl = element.LocalName.Equals("input", StringComparison.OrdinalIgnoreCase)
+                                     || element.LocalName.Equals("textarea", StringComparison.OrdinalIgnoreCase);
+
+                _interaction.Attach(box.Rect, element, disabled, ownGameObject: isFormControl);
+                wired++;
+            }
+
+            Core.Log?.Msg($"[Sideload] interaction wired on {wired} element(s).");
+        }
+
+        /// <summary>
+        /// An element's hover/press state changed: recompute the cascade and repaint just that box. The layout is
+        /// deliberately left alone, which is why state rules are a paint-only feature - a `:hover` that changed the
+        /// width would need a full reflow and is not supported.
+        /// </summary>
+        private void OnStateChanged(IElement element)
+        {
+            try
+            {
+                Dictionary<IElement, ComputedStyle> styles = StyleResolver.Resolve(_document, _sheet, _context);
+                if (!styles.TryGetValue(element, out ComputedStyle style)) return;
+                if (!_painted.TryGetValue(element, out Painter.PaintedBox box)) return;
+
+                // Through the transition runner rather than straight to the paint: with no `transition` declared it
+                // repaints at once, exactly as before, and with one it animates from the style the box has now.
+                _styleWas.TryGetValue(element, out ComputedStyle previous);
+                Transitions.To(box, previous, style);
+                _styleWas[element] = style;
+            }
+            catch (Exception e)
+            {
+                Core.Log?.Warning("[Sideload] restyle failed: " + e.Message);
+            }
+        }
+
+        private void OnClicked(IElement element)
+        {
+            if (element == null) return;
+            if (_inputs.ContainsKey(element)) _focused = element;
+
+            _script?.Dispatch(element, "click");
+        }
+
+        /// <summary>A painted input field reports every keystroke. The value is mirrored onto the element so that
+        /// `el.value` reads it and a rebuild does not lose what the player typed.</summary>
+        private void OnInputChanged(IElement element, string value)
+        {
+            if (element == null) return;
+
+            element.SetAttribute("value", value ?? "");
+            _focused = element;
+            _script?.Dispatch(element, "input", value);
+        }
+
+        /// <summary>
+        /// Run the page's scripts in document order: `&lt;script src&gt;` resolved from the bundle, inline `&lt;script&gt;`
+        /// as written. A page with no script tag still gets `app.js` if the bundle has one, so the simplest possible
+        /// app is three files and no boilerplate.
+        /// </summary>
+        private void RunScripts(IDocument document)
+        {
+            bool any = false;
+
+            foreach (IElement tag in document.QuerySelectorAll("script"))
+            {
+                string src = tag.GetAttribute("src");
+
+                if (string.IsNullOrEmpty(src))
+                {
+                    if (string.IsNullOrWhiteSpace(tag.TextContent)) continue;
+                    _script.Run(tag.TextContent, "<inline script>");
+                    any = true;
+                    continue;
+                }
+
+                string code = _bundle?.ReadText(src.TrimStart('/'));
+                if (code == null) { Core.Log?.Warning($"[Sideload] script not found: {src}"); continue; }
+
+                _script.Run(code, src);
+                any = true;
+            }
+
+            if (any) return;
+
+            string fallback = _bundle?.ReadText("app.js");
+            if (fallback != null) _script.Run(fallback, "app.js");
+        }
+
+#if DEBUG
+        /// <summary>The most recently mounted view - what the debug harness pokes at.</summary>
+        internal static WebView Newest => _live.Count > 0 ? _live[_live.Count - 1] : null;
+
+        /// <summary>Debug-only: click the first element matching a CSS selector, through the real pointer path rather
+        /// than by calling its handler.</summary>
+        internal void DebugClick(string selector)
+        {
+            IElement element = _document?.QuerySelector(selector);
+            if (element == null || _painted == null
+                || !_painted.TryGetValue(element, out Painter.PaintedBox box) || box.Rect == null)
+            {
+                Core.Log?.Warning($"[Sideload/probe] '{selector}' is not painted.");
+                return;
+            }
+
+            Canvas canvas = box.Rect.GetComponentInParent<Canvas>();
+            Camera camera = canvas != null && canvas.renderMode != RenderMode.ScreenSpaceOverlay ? canvas.worldCamera : null;
+            Vector3 world = box.Rect.TransformPoint(box.Rect.rect.center);
+
+            Devtools.ClickProbe.ClickAt(RectTransformUtility.WorldToScreenPoint(camera, world), selector);
+        }
+
+        /// <summary>Debug-only: run a snippet against the page's own engine, so the harness can set up a state that
+        /// would otherwise need a keyboard.</summary>
+        internal void DebugEval(string code) => _script?.Run(code, "<probe>");
+
+        /// <summary>Debug-only: evaluate a snippet and hand back what it produced, so a tool can report the answer
+        /// rather than only whether the page survived.</summary>
+        internal string DebugEvaluate(string code, out bool failed)
+        {
+            failed = false;
+            return _script == null ? "" : _script.Evaluate(code, out failed);
+        }
+
+        /// <summary>Debug-only: rebuild the page from disk right now, as a file change would.</summary>
+        internal void DebugReload() => Reload();
+
+        /// <summary>Debug-only: re-render from the document already in memory, keeping the script and its state.</summary>
+        internal void DebugRebuild() => Rebuild();
+
+        /// <summary>Debug-only: write the tree that was actually laid out to the log. Rebuilding one here would
+        /// report zeroes, because a fresh tree has not been through the layout pass.</summary>
+        internal void DebugDumpLayout()
+        {
+            if (_tree == null) return;
+
+            float scale = _root.localScale.x;
+            Devtools.LayoutOverlay.Dump(_tree, _root.sizeDelta.x, _root.sizeDelta.y,
+                                        _root.sizeDelta.x * scale, _root.sizeDelta.y * scale, scale);
+        }
+
+        /// <summary>The same watcher state without the overlay's colour markup.</summary>
+        internal string WatchReportPlain() => _watcher == null
+            ? $"not watching - create Mods/{_appId}/ to edit live"
+            : $"watching Mods/{_appId}/";
+
+        /// <summary>What the hot-reload watcher is doing, for the dev overlay.</summary>
+        internal string WatchReport() => _watcher == null
+            ? $"<color=#8A8F9E>not watching - create Mods/{_appId}/ to edit live</color>"
+            : $"<color=#7CE08A>watching Mods/{_appId}/</color>";
+
+        /// <summary>
+        /// Debug-only: the same numbers <see cref="Stats"/> renders, as a flat map of BCL values. It sits beside the
+        /// string version so the two cannot drift, and it exists because an agent driving the MCP bridge needs the
+        /// figures as data - reading them back out of the formatted overlay text would be guesswork.
+        /// </summary>
+        internal Dictionary<string, object> DebugStats() => new Dictionary<string, object>
+        {
+            ["appId"] = _appId,
+            ["built"] = _built,
+            ["viewportCssWidth"] = _root == null ? 0f : _root.sizeDelta.x,
+            ["viewportCssHeight"] = _root == null ? 0f : _root.sizeDelta.y,
+            ["scale"] = _root == null ? 0f : _root.localScale.x,
+            ["boxes"] = _boxes,
+            ["rules"] = _sheet?.Rules.Count ?? 0,
+            ["wiredElements"] = _painted?.Count ?? 0,
+            ["renders"] = _renders,
+            ["lastRenderMs"] = _lastRenderMs,
+            ["reloads"] = _reloads,
+            ["scriptStatus"] = _script == null ? "none" : _script.Failed ? "failed" : "ok",
+            ["scriptError"] = _script?.LastError ?? "",
+            ["watchingOverride"] = _watcher != null,
+            ["overrideRoot"] = _bundle?.OverrideRoot ?? "",
+        };
+#endif
+
+        /// <summary>
+        /// Enter was pressed in a field. Delivered as a `keydown` with `key === "Enter"`, the spelling the DOM uses,
+        /// so a page written for a browser works unchanged - and so more keys can be added later without changing
+        /// what an app already listens for.
+        ///
+        /// The caret is put back afterwards: a single-line TMP field deactivates itself on Enter, and a chat that
+        /// drops focus after every message is unusable. A handler that moves focus elsewhere still wins, because
+        /// this runs first.
+        /// </summary>
+        private void OnInputSubmitted(IElement element, string value)
+        {
+            if (element == null) return;
+
+            element.SetAttribute("value", value ?? "");
+            _script?.Dispatch(element, "keydown", value, "Enter");
+
+            _focused = element;
+            Focus(element);
+        }
+
+        /// <summary>
+        /// Offer the page a back - right-click or Escape, the two the game raises together. Returns true when a
+        /// handler called <c>preventDefault()</c>, which means the page navigated somewhere and the app must stay
+        /// open; false means nobody wanted it and the host should close.
+        ///
+        /// Dispatched at &lt;body&gt;, where <c>document.addEventListener</c> binds, so a page listens the same way it
+        /// listens for anything else. A page with no handler behaves exactly as it did before this existed.
+        /// </summary>
+        internal bool DispatchBack(string source)
+        {
+            IElement body = _document?.Body ?? _document?.DocumentElement;
+            if (body == null || _script == null) return false;
+
+            return _script.Dispatch(body, "back", source: source ?? "").DefaultPrevented;
+        }
+
+        /// <summary>Stylesheets in document order: every &lt;link&gt; resolved from the bundle, then every inline
+        /// &lt;style&gt;, so a page can override what it imports.</summary>
+        private string CollectCss(IDocument document)
+        {
+            var sb = new StringBuilder();
+
+            foreach (IElement link in document.QuerySelectorAll("link"))
+            {
+                string rel = link.GetAttribute("rel");
+                if (rel == null || !rel.Contains("stylesheet", StringComparison.OrdinalIgnoreCase)) continue;
+
+                string href = link.GetAttribute("href");
+                if (string.IsNullOrEmpty(href)) continue;
+
+                string path = href.TrimStart('/');
+                string css = _bundle?.ReadText(path) ?? Framework(path);
+
+                if (css == null) { Core.Log?.Warning($"[Sideload] stylesheet not found: {href}"); continue; }
+                sb.AppendLine(css);
+            }
+
+            foreach (IElement style in document.QuerySelectorAll("style"))
+                sb.AppendLine(style.TextContent);
+
+            return sb.ToString();
+        }
+
+        private static int CountNodes(LayoutNode node)
+        {
+            int n = 1;
+            foreach (LayoutNode child in node.Children) n += CountNodes(child);
+            return n;
+        }
+
+        /// <summary>
+        /// A stylesheet the FRAMEWORK ships, reached by name from any app: `s1.css` holds the game's design tokens,
+        /// so an app that wants to look like the rest of the menus links it instead of copying a palette that would
+        /// then drift. An app's own file of the same name still wins, because the bundle is asked first.
+        /// </summary>
+        private static string Framework(string path)
+        {
+            string resource = "Sideload.Assets." + path.Replace('/', '.');
+
+            using Stream stream = typeof(WebView).Assembly.GetManifestResourceStream(resource);
+            if (stream == null) return null;
+
+            using var reader = new StreamReader(stream);
+            return reader.ReadToEnd();
+        }
+
+        /// <summary>Fail-soft: a broken page shows what went wrong instead of a black screen.</summary>
+        private void ShowError(string message)
+        {
+            Core.Log?.Warning("[Sideload] " + message);
+
+            for (int i = _root.childCount - 1; i >= 0; i--) Object.Destroy(_root.GetChild(i).gameObject);
+
+            RectTransform panel = UiFactory.Rect("sideload-error", _root);
+            UiFactory.Stretch(panel);
+            UiFactory.Fill(panel, new Color(0.165f, 0.082f, 0.094f, 1f));   // --danger-subtle
+
+            RectTransform label = UiFactory.Rect("message", panel);
+            UiFactory.Stretch(label, top: 24f, right: 24f, bottom: 24f, left: 24f);
+
+            var tmp = label.gameObject.AddComponent<Il2CppTMPro.TextMeshProUGUI>();
+            tmp.text = "Sideload\n\n" + message;
+            tmp.fontSize = 18f;
+            tmp.color = new Color(0.945f, 0.439f, 0.478f, 1f);              // --danger-text
+            tmp.raycastTarget = false;
+        }
+    }
+}

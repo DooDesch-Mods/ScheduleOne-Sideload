@@ -1,0 +1,180 @@
+:root {
+  --bg-base:     #101218;
+  --bg-panel:    #161922;
+  --bg-elevated: #1D212C;
+  --text:        #ECEDF1;
+  --text-muted:  #8A8F9E;
+  --accent:      #5E6AD2;
+  --success:     #2FA877;
+  --warning:     #C9912E;
+  --danger:      #C84A54;
+  --hairline:    #2A2E3A;
+  --radius:      12px;
+}
+
+body {
+  /* Fill the viewport so percentage heights below have a definite basis - the same reason every web page sets this. */
+  height: 100%;
+  font-family: game-ui;
+  font-size: 15px;
+  color: var(--text);
+}
+
+.screen {
+  width: 100%;
+  height: 100%;
+  padding: 16px;
+  gap: 12px;
+  background: var(--bg-base);
+}
+
+.bar {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px;
+}
+
+.title {
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.badge {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.card {
+  padding: 14px;
+  border-radius: var(--radius);
+  background: linear-gradient(#1D212C, #161922);
+  border: 1px solid var(--hairline);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+
+.row {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+}
+
+.row.gap { gap: 10px; }
+
+.grow { flex: 1; }
+
+.dot {
+  width: 34px;
+  height: 34px;
+  border-radius: 17px;
+  background: var(--accent);
+}
+
+.label { font-weight: 600; }
+
+.muted {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.pill {
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--success);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.body { line-height: 1.45; }
+
+.accent { color: var(--accent); }
+
+.btn {
+  flex: 1;
+  height: 54px;
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--hairline);
+  color: var(--text);
+  font-weight: 600;
+  /* Both axes: the label centres horizontally through text-align and vertically through align-items. */
+  text-align: center;
+  align-items: center;
+
+  /* Colours and the transform ease; nothing that could move a sibling is animated. */
+  transition: 160ms ease-out;
+}
+
+.btn:hover  { background: #262B38; border-color: #7C86E8; transform: translateY(-2px) scale(1.03); }
+.btn:active { background: #0D0F15; border-color: var(--accent); transform: scale(0.97); transition: 60ms ease-out; }
+
+.btn.primary          { background: var(--accent); border-color: var(--accent); }
+.btn.primary:hover    { background: #6E79DB; border-color: #9AA3F0; }
+.btn.primary:active   { background: #4C57BC; }
+
+.btn:disabled {
+  background: var(--bg-panel);
+  border-color: var(--hairline);
+  color: #565B68;
+}
+
+.list {
+  height: 96px;
+  overflow: auto;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 10px;
+  background: var(--bg-panel);
+  border: 1px solid var(--hairline);
+}
+
+.item.muted {
+  background: transparent;
+  border: 1px dashed var(--hairline);
+}
+
+.item.done {
+  color: #565B68;
+  background: #14171F;
+}
+
+/* Toggled from script on <body>, so one class swaps the accent across the whole page. */
+.accent-mode .title { color: var(--accent); }
+.accent-mode .badge { background: var(--accent); color: #F2F3FF; }
+
+.item {
+  /* Without this the items simply shrink to fit the 96px box - correct flexbox, but then nothing overflows and
+     there is nothing to scroll. */
+  flex-shrink: 0;
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.field {
+  height: 40px;
+  padding: 0 12px;
+  align-items: center;
+  border-radius: 8px;
+  background: #0D0F15;
+  border: 1px solid var(--hairline);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.field:hover { border-color: #7C86E8; }
+
+.foot {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}

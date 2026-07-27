@@ -1,0 +1,28 @@
+<link rel="stylesheet" href="app.css">
+
+<div class="screen">
+  <header class="bar">
+    <span class="title">Sideload</span>
+    <span class="badge" id="clock">--:--</span>
+  </header>
+
+  <div class="card">
+    <p class="body">Body text wraps across lines and keeps <b>bold</b>, <i>italic</i>
+      and <span class="accent">coloured</span> runs inside the same paragraph. Spaces
+      before <b>and</b> after <i>every</i> run have to survive.</p>
+  </div>
+
+  <div class="row gap">
+    <button class="btn primary" id="add">Add task</button>
+    <button class="btn" id="theme">Accent</button>
+    <button class="btn" id="clear">Clear</button>
+  </div>
+
+  <div class="list" id="tasks"></div>
+
+  <input class="field" id="entry" placeholder="Type a task, then press Add" maxlength="60">
+
+  <footer class="foot" id="status">starting up</footer>
+</div>
+
+<script src="app.js"></script>

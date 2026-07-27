@@ -1,0 +1,18 @@
+# Build output
+bin/
+obj/
+
+# IDE
+.vs/
+*.user
+*.suo
+
+# Agent / local
+.claude/
+
+# Game deploy target
+Mods/
+
+# OS
+Thumbs.db
+.DS_Store
