@@ -41,8 +41,17 @@ namespace Sideload.Phone
 
         internal string Id => _reg.Id;
 
-        /// <summary>True while this app is the one the phone currently shows.</summary>
+        /// <summary>True while this app is the one the phone has open - whether or not the phone itself is up.</summary>
         internal bool IsOpen => _panel != null && _panel.activeInHierarchy && Il2CppScheduleOne.UI.Phone.Phone.ActiveApp == _panel;
+
+        /// <summary>
+        /// True while the player can actually SEE this app. Closing the phone leaves the app panel active and still
+        /// registered as the phone's ActiveApp - vanilla's SetIsOpen(false) only raises an event - so <see cref="IsOpen"/>
+        /// stays true with the phone in the player's pocket. A mod asking "are they looking at this?" before raising a
+        /// notification would then stay silent in exactly the case the notification exists for.
+        /// </summary>
+        internal bool IsShowing =>
+            IsOpen && Il2CppScheduleOne.UI.Phone.Phone.InstanceExists && Il2CppScheduleOne.UI.Phone.Phone.Instance.IsOpen;
 
         /// <summary>
         /// Build panel and icon for one registration. Returns null (after logging) when the phone hierarchy does not
@@ -353,8 +362,7 @@ namespace Sideload.Phone
         /// </summary>
         private void OnExit(ExitAction exit)
         {
-            if (exit.Used || !IsOpen) return;
-            if (!Il2CppScheduleOne.UI.Phone.Phone.InstanceExists || !Il2CppScheduleOne.UI.Phone.Phone.Instance.IsOpen) return;
+            if (exit.Used || !IsShowing) return;
 
             exit.Used = true;
 

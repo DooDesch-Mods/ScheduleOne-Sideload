@@ -188,7 +188,7 @@ namespace Sideload
         internal static bool IsOnScreen(string appId)
         {
             Phone.PhoneAppHost host = LiveHost(appId);
-            return host != null && host.IsOpen;
+            return host != null && host.IsShowing;
         }
 
         private static Phone.PhoneAppHost LiveHost(string appId)

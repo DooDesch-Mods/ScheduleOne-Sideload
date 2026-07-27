@@ -3,6 +3,16 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.0.1] - 2026-07-27
+
+### Fixed
+
+- A mod asking `IsOnScreen` got "yes" while the phone was closed. Vanilla's `SetIsOpen(false)` leaves the app
+  panel active and still registered as the phone's `ActiveApp`, so the check that is supposed to mean "the
+  player is looking at this" stayed true with the phone in their pocket - and an app that politely asks before
+  raising a notification stayed silent in exactly the case the notification exists for. `IsOnScreen` now also
+  requires the phone itself to be open.
+
 ## [1.0.0] - 2026-07-27
 
 First release. Sideload turns a folder of `index.html` / `app.css` / `app.js` into real Unity UI, so a mod
