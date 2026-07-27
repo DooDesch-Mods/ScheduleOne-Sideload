@@ -51,7 +51,6 @@ it is off unless you switch it on. If you installed it by hand, make sure the th
 |-----------|------------------|
 | Schedule I | IL2CPP (current Steam public build) |
 | MelonLoader | `0.7.3+` |
-| Mod Manager & Phone App | [Prowiler, Nexus mods/397](https://www.nexusmods.com/schedule1/mods/397) - optional, for the in-game settings UI |
 
 Sideload has no other hard dependency. It does **not** use S1API: it patches `HomeScreen.Start` itself,
 because S1API discovers phone apps by type and Sideload declares them at runtime.
@@ -69,14 +68,13 @@ automatically and the support libraries land in the right folders.
 2. Drop **`Sideload.dll`** into your Schedule I `Mods/` folder.
 3. Drop **`AngleSharp.dll`**, **`Jint.dll`** and **`Esprima.dll`** into your Schedule I `UserLibs/` folder.
    Sideload also accepts them next to itself in `Mods/`, which is where the Nexus package puts them.
-4. (Optional) Install **Mod Manager & Phone App** for the in-game settings UI.
 
 Missing support DLLs are the one failure mode worth knowing: the log says
 `[Sideload] runtime dependency not found in UserLibs or next to the mod: <file>` and no page will build.
 
 ## Configuration
 
-Settings live in the **Mod Manager & Phone App** UI in-game, or in `UserData/MelonPreferences.cfg` under
+Settings live in `UserData/MelonPreferences.cfg` under
 `Sideload_01_Main`. Everything here is a developer tool and everything is off by default.
 
 | Setting | Default | What it does |
@@ -344,7 +342,6 @@ Honest limits, because a browser sets different expectations:
 - **DooDesch** - mod author.
 - **[AngleSharp](https://github.com/AngleSharp/AngleSharp)** (MIT) - HTML parsing, the DOM and the selector engine.
 - **[Jint](https://github.com/sebastienros/jint)** (BSD-2) and **Esprima** - the JavaScript engine and its parser.
-- **Prowiler** - Mod Manager & Phone App (in-game settings UI).
 
 ## License
 

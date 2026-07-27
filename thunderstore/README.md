@@ -43,12 +43,11 @@ step by step guide, the exact CSS subset and the layout rules that differ from a
 
 ## Requirements
 
-**Schedule I** (IL2CPP) with **MelonLoader 0.7.3+**. No S1API. Optional: **Mod Manager & Phone App** for the
-in-game settings UI.
+**Schedule I** (IL2CPP) with **MelonLoader 0.7.3+**. No S1API.
 
 ## Settings
 
-Under `Sideload_01_Main` in `UserData/MelonPreferences.cfg`, or in the Mod Manager & Phone App UI. All of it
+Under `Sideload_01_Main` in `UserData/MelonPreferences.cfg`. All of it
 is developer tooling and all of it is off by default.
 
 `DevTools` (`false`) turns on the Chrome DevTools Protocol server on `127.0.0.1`; anything that can reach
