@@ -146,6 +146,16 @@ namespace Sideload.Host
         internal void EnsureBuilt()
         {
             if (_built) return;
+
+            // Same reason the tick refuses to rebuild off screen: the text probe is a TextMeshPro under this root and
+            // it measures nonsense until Awake has run, which needs an active object. The caller opens the app first,
+            // so this only bites when something else asks for a build early.
+            if (_root == null || !_root.gameObject.activeInHierarchy)
+            {
+                Core.Log?.Warning($"[Sideload] {_appId}: asked to build while off screen - deferred until it is shown.");
+                return;
+            }
+
             _built = true;
 
             try { Build(); }
@@ -166,6 +176,15 @@ namespace Sideload.Host
 
             Transitions.Tick(deltaSeconds);
             _script?.Tick(deltaSeconds);
+
+            // Nothing is laid out while the app is off screen, and the pending flags are deliberately LEFT SET so it
+            // happens the moment it is shown again.
+            //
+            // Not an optimisation. Text is measured by a TextMeshPro probe created under this root, and TMP sets
+            // itself up in Awake, which never runs on an inactive object - so a page rebuilt while its panel is
+            // hidden measures every line about ten times too short and comes back with one character per line. A
+            // chat app hits this immediately, because messages arrive while the phone is in the player's pocket.
+            if (!_root.gameObject.activeInHierarchy) return;
 
             // A resize lays the page out too, so it subsumes whatever rebuild was pending.
             if (_resizeQueued)
