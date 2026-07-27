@@ -316,12 +316,13 @@ Honest limits, because a browser sets different expectations:
   it, `s1.setOrientation(v)` turns it, and the choice is remembered per app without you storing anything.
   A page whose SHAPE changes with the orientation also gets `orientationchange` (`e.value` is the new one),
   because which of two panes the player should land on is a question a stylesheet cannot answer.
-- **Events:** `click`, `input`, `keydown`, and a cancellable `back`. Right-click and Escape both raise
-  `back` at the document; `preventDefault()` keeps the app open so a page can step back inside itself, and
-  not taking it closes the app. `e.source` is `"rightClick"` or `"escape"`.
-- **Events dispatched:** `click`, `input`, `keydown` (Enter in a field), `back` and `orientationchange`.
-  Others are not, however plausible the name.
-- **`<img>` has no paint path.** There is no image rendering yet.
+- **Events:** `click`, `input`, `keydown` (Enter in a field), `back` and `orientationchange`. Others are not
+  dispatched, however plausible the name. Right-click and Escape both raise `back` at the document;
+  `preventDefault()` keeps the app open so a page can step back inside itself, and not taking it closes the
+  app. `e.source` is `"rightClick"` or `"escape"`.
+- **`<img>` paints a file from your bundle**, sized by CSS alone - the layout runs without Unity and cannot
+  open a PNG to learn an intrinsic size, so give it a width and a height. The aspect ratio is preserved
+  inside that box, and `color` tints the image, so one white glyph works on a dark bar and a light one.
 - **Never `await` a promise the host settles on a later frame.** `await fetch(...)` deadlocks the game;
   Jint's `await` blocks the very thread that would deliver the answer. Use `.then()` / `.catch()`.
 
