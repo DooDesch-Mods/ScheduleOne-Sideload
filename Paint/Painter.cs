@@ -249,8 +249,6 @@ namespace Sideload.Paint
             Core.Log?.Msg($"[Sideload] scroll area at ({absX:0.#},{absY:0.#}) size {node.Width:0.#}x{node.Height:0.#}, " +
                           $"content {ContentBottom(node):0.#}, clip={clip}");
 
-            // Devtools.GraphicProbe.Spawn(viewport) went here for the injected-Graphic experiment. Result is recorded
-            // in GraphicProbe itself; leaving it enabled paints a magenta quad over the page.
             return content;
         }
 

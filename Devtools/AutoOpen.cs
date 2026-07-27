@@ -107,7 +107,6 @@ namespace Sideload.Devtools
 
                 target.Open();
                 Core.Log?.Msg($"[Sideload/auto] opened '{target.Id}' for inspection.");
-                GraphicProbe.Report();
             }
             catch (Exception e)
             {

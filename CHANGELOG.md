@@ -77,7 +77,17 @@ phone is the first host; the core mounts into any RectTransform.
 - Clipping that survives a rotated panel. Scroll areas and form controls used Unity's `RectMask2D`, which
   builds its clip rectangle from world corners in fixed order and so inverts under a rotated ancestor -
   culling every masked child. Text now clips through the same sorted-corner rectangle the box meshes use.
+- `<img src="...">` paints a file from the app's bundle. Sized by CSS alone, because the layout runs without
+  Unity and cannot open a PNG to learn an intrinsic size; the aspect ratio is preserved inside the box you
+  give it, and `color` tints it, so one white glyph serves a dark bar and a light one. Sprites are cached per
+  app and dropped on reload.
+- `app.Badge(count)` puts an unread count on the app's home-screen icon - the same badge the vanilla apps
+  use - and it survives the phone being rebuilt. `app.Notify(title, subtitle)` raises one of the game's own
+  phone notifications carrying the app's icon, and `app.IsOnScreen` answers the question that has to come
+  first: whether the player is already looking.
 - `s1.css`, the game's own design tokens as CSS variables, embedded in Sideload so
   `<link rel="stylesheet" href="s1.css">` resolves for every app of every mod.
 - Fail soft error handling: broken HTML, CSS or JavaScript produces a visible error page plus a log entry
-  with `file:line`, and a throwing handler kills only that handler.
+  with `file:line`, and a throwing handler kills only that handler. A page is never laid out while its panel
+  is hidden either: text is measured by a TextMeshPro probe, TMP initialises in `Awake`, and `Awake` never
+  runs on an inactive object - so a page rebuilt off screen used to come back at one character per line.
