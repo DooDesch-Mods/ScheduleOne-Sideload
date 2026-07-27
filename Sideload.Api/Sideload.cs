@@ -38,6 +38,7 @@ namespace Sideload.Api
         private static Action<string, int> _setBadge;
         private static Action<string, string, string> _notify;
         private static Func<string, bool> _isOnScreen;
+        private static Action<string, string, byte[]> _setImage;
 
         /// <summary>True only when the Sideload host is installed AND bound. You rarely need this - the API is a safe
         /// no-op when absent; use it to decide whether to build a fallback UI instead.</summary>
@@ -98,6 +99,8 @@ namespace Sideload.Api
 
         internal static bool OnScreen(string appId) => _isOnScreen != null && _isOnScreen(appId);
 
+        internal static void SetImage(string appId, string name, byte[] png) => _setImage?.Invoke(appId, name, png);
+
         // ----- reflection handshake (runs until it binds, then latches) -----
 
         private static void EnsureBound()
@@ -122,6 +125,7 @@ namespace Sideload.Api
                 _setBadge = Get<Action<string, int>>(t, "SetBadge");
                 _notify = Get<Action<string, string, string>>(t, "Notify");
                 _isOnScreen = Get<Func<string, bool>>(t, "IsAppOnScreen");
+                _setImage = Get<Action<string, string, byte[]>>(t, "SetImage");
 
                 _bound = true;
 
@@ -272,5 +276,23 @@ namespace Sideload.Api
         /// </code>
         /// </summary>
         public bool IsOnScreen { get { return Apps.Available && Apps.OnScreen(_id); } }
+
+        /// <summary>
+        /// Hand a picture your mod produced at runtime to the page, which draws it with
+        /// <c>&lt;img src="s1://&lt;name&gt;"&gt;</c>. Null or empty bytes remove it, which is how you say "there is no
+        /// picture for this one" and let the page fall back to whatever it draws without one.
+        ///
+        /// PNG bytes rather than a texture, because this file references no Unity type and is not going to start.
+        /// Supplying the same name again replaces the picture.
+        /// <code>
+        ///   app.Image("avatar/" + steamId, pngBytes);
+        /// </code>
+        /// </summary>
+        public AppHandle Image(string name, byte[] png)
+        {
+            string id = _id;
+            Apps.WhenBound(() => Apps.SetImage(id, name, png));
+            return this;
+        }
     }
 }

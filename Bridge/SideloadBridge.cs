@@ -43,5 +43,9 @@ namespace Sideload.Bridge
         /// <summary>appId -> is this app the one on screen right now. What a mod needs to decide whether an event is
         /// worth interrupting the player for, or whether they are already looking at it.</summary>
         public static readonly Func<string, bool> IsAppOnScreen = Registry.IsOnScreen;
+
+        /// <summary>appId, name, PNG bytes. A picture the mod produced at runtime, for the page to draw with
+        /// <c>src="s1://&lt;name&gt;"</c>. Null or empty bytes remove it.</summary>
+        public static readonly Action<string, string, byte[]> SetImage = Paint.ImageCache.Supply;
     }
 }

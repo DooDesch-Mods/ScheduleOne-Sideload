@@ -289,6 +289,11 @@ app.AllowHost("api.example.com");    // one host this app's fetch may reach; "*.
 app.Orientation("landscape", "portrait");  // the ways round it may be held; the first is how it opens,
                                            // naming two lets the player turn it. Default: landscape only.
 
+app.Badge(3);                        // the unread count on the home screen icon; 0 clears it
+app.Notify("Jessi Waters", "on my way");   // one of the game's own phone notifications, with your icon
+app.Image("avatar/76561198", pngBytes);    // a runtime picture the page draws with src="s1://avatar/76561198"
+
+bool looking = app.IsOnScreen;       // is your app the one the phone is showing right now
 bool here = Apps.Available;          // only needed if you want to build a fallback UI
 ```
 
