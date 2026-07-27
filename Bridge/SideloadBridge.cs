@@ -33,5 +33,15 @@ namespace Sideload.Bridge
         /// "landscape", "portrait" or "landscape,portrait". The first is what the app opens in; naming two is what
         /// lets the player turn it. A list rather than a second delegate so this signature never has to change.</summary>
         public static readonly Action<string, string> DeclareOrientations = Registry.DeclareOrientations;
+
+        /// <summary>appId, count. The unread badge on the app's home-screen icon; zero clears it.</summary>
+        public static readonly Action<string, int> SetBadge = Registry.SetBadge;
+
+        /// <summary>appId, title, subtitle. Raises one of the game's own phone notifications, with this app's icon.</summary>
+        public static readonly Action<string, string, string> Notify = Registry.Notify;
+
+        /// <summary>appId -> is this app the one on screen right now. What a mod needs to decide whether an event is
+        /// worth interrupting the player for, or whether they are already looking at it.</summary>
+        public static readonly Func<string, bool> IsAppOnScreen = Registry.IsOnScreen;
     }
 }

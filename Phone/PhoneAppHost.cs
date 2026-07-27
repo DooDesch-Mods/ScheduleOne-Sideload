@@ -5,6 +5,7 @@ using UnityEngine.UI;
 using Il2CppInterop.Runtime;
 using Il2CppScheduleOne;
 using Il2CppScheduleOne.DevUtilities;
+using Il2CppScheduleOne.UI;
 using Il2CppScheduleOne.UI.Phone;
 using Object = UnityEngine.Object;
 
@@ -30,6 +31,8 @@ namespace Sideload.Phone
         private GameObject _icon;
         private WebView _view;
         private Transform _appsCanvas;   // kept: the orientation templates are measured off it whenever the app turns
+        private Transform _badge;        // the icon's unread badge, part of the vanilla prefab
+        private Text _badgeText;
 
         private System.Action _closeAppsHandler;
         private GameInput.ExitDelegate _exitHandler;
@@ -235,6 +238,49 @@ namespace Sideload.Phone
             // Without this the icon exists but controller and arrow-key navigation walks straight past it.
             var selectable = _icon.GetComponent<Il2CppScheduleOne.UISelectable>();
             if (selectable != null && home.uiPanel != null) home.uiPanel.AddSelectable(selectable);
+
+            // The unread badge is part of the prefab; the vanilla apps drive it through App.SetNotificationCount and
+            // nothing else. Re-applied rather than reset, because a phone rebuilt on a scene change must not silently
+            // drop a count the mod set before it.
+            _badge = _icon.transform.Find("Notifications");
+            _badgeText = _badge != null ? _badge.Find("Text")?.GetComponent<Text>() : null;
+            if (_badge == null) Core.Log?.Warning($"[Sideload] the icon prefab has no Notifications badge - '{_reg.Id}' cannot show a count.");
+
+            ApplyBadge();
+        }
+
+        /// <summary>
+        /// Put an unread count on the app's home-screen icon, or clear it with zero. Exactly what
+        /// <c>App.SetNotificationCount</c> does for a vanilla app, on the same prefab child.
+        /// </summary>
+        internal void SetBadge(int count)
+        {
+            _reg.Badge = Math.Max(0, count);
+            ApplyBadge();
+        }
+
+        private void ApplyBadge()
+        {
+            if (_badge == null) return;
+
+            if (_badgeText != null) _badgeText.text = _reg.Badge > 99 ? "99+" : _reg.Badge.ToString();
+            _badge.gameObject.SetActive(_reg.Badge > 0);
+        }
+
+        /// <summary>
+        /// Raise one of the game's own phone notifications for this app - the slide-in the vanilla apps use, with
+        /// this app's icon on it, so a message arriving while the phone is closed reads like any other.
+        /// </summary>
+        internal void Notify(string title, string subtitle)
+        {
+            try
+            {
+                if (!Il2CppScheduleOne.DevUtilities.Singleton<NotificationsManager>.InstanceExists) return;
+
+                Il2CppScheduleOne.DevUtilities.Singleton<NotificationsManager>.Instance
+                    .SendNotification(title ?? "", subtitle ?? "", AppIconSprite.For(_reg), 5f, true);
+            }
+            catch (Exception e) { Core.Log?.Error($"[Sideload] notification from '{_reg.Id}' failed: {e.Message}"); }
         }
 
         /// <summary>
@@ -250,10 +296,6 @@ namespace Sideload.Phone
 
             if (!SetIconLabel(icon.gameObject, caption))
                 Core.Log?.Warning($"[Sideload] no label found on the icon for '{appId}' - it stays unnamed.");
-
-            // The prefab ships its notification badge switched on; nothing raises notifications for a Sideload app yet.
-            Transform notifications = icon.Find("Notifications");
-            if (notifications != null) notifications.gameObject.SetActive(false);
         }
 
         /// <summary>

@@ -50,6 +50,12 @@ namespace Sideload
         /// <summary>True when this app is willing to be held the given way round.</summary>
         internal bool Supports(bool portrait) => CanTurn || DeclaredPortrait == portrait;
 
+        /// <summary>
+        /// Unread count on the home-screen icon. Held here rather than on the live host because the phone is rebuilt
+        /// on a scene change and the count is not: a mod sets it once and it survives being respawned.
+        /// </summary>
+        internal int Badge;
+
         /// <summary>Raised when <see cref="Registry.SetOrientation"/> turns a live app.</summary>
         internal Action OrientationChanged;
     }
@@ -145,6 +151,55 @@ namespace Sideload
 
             reg.Portrait = portrait;
             reg.OrientationChanged?.Invoke();
+        }
+
+        /// <summary>
+        /// Put an unread count on an app's home-screen icon, zero to clear it. Recorded even when the phone does not
+        /// exist yet, so a mod may set it during init and it appears the moment the app is spawned.
+        /// </summary>
+        internal static void SetBadge(string appId, int count)
+        {
+            AppRegistration reg = Find(appId);
+            if (reg == null) { Core.Log?.Warning($"[Sideload] badge: no app '{appId}'."); return; }
+
+            reg.Badge = Math.Max(0, count);
+
+            Phone.PhoneAppHost host = LiveHost(appId);
+            if (host != null) host.SetBadge(reg.Badge);
+        }
+
+        /// <summary>
+        /// Raise one of the game's own phone notifications for an app. Silently does nothing when the app is not on a
+        /// phone yet - a notification with nothing behind it is worse than none.
+        /// </summary>
+        internal static void Notify(string appId, string title, string subtitle)
+        {
+            Phone.PhoneAppHost host = LiveHost(appId);
+            if (host == null) return;
+
+            host.Notify(title, subtitle);
+        }
+
+        /// <summary>
+        /// Whether this app is the one the phone is showing. A mod asks before interrupting: a message arriving in
+        /// the conversation already on screen is not worth a notification, and the same message arriving while the
+        /// phone is in the player's pocket is.
+        /// </summary>
+        internal static bool IsOnScreen(string appId)
+        {
+            Phone.PhoneAppHost host = LiveHost(appId);
+            return host != null && host.IsOpen;
+        }
+
+        private static Phone.PhoneAppHost LiveHost(string appId)
+        {
+            IReadOnlyList<Phone.PhoneAppHost> hosts = Phone.HomeScreenPatch.Hosts;
+
+            for (int i = 0; i < hosts.Count; i++)
+                if (string.Equals(hosts[i].Id, appId, StringComparison.OrdinalIgnoreCase) && hosts[i].IsAlive)
+                    return hosts[i];
+
+            return null;
         }
 
         /// <summary>The registration for an id, or null. Case-insensitive, like every other id comparison here.</summary>

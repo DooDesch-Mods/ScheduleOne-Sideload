@@ -191,6 +191,9 @@ namespace Sideload.Host
         {
             Core.Log?.Msg("[Sideload] reloading the page from disk.");
 
+            // Images are cached for the session, so without this an edited PNG keeps drawing the old one.
+            Paint.ImageCache.Forget(_appId);
+
             for (int i = _root.childCount - 1; i >= 0; i--) Object.Destroy(_root.GetChild(i).gameObject);
 
             _script?.Dispose();
@@ -387,7 +390,7 @@ namespace Sideload.Host
             FlexLayout.Compute(tree, cssW, cssH, measure);
 
             _painted = Painter.Paint(tree, _root, new Vector2(cssW, cssH),
-                                     _inputs, OnInputChanged, OnInputSubmitted, _survivors);
+                                     _inputs, OnInputChanged, OnInputSubmitted, _survivors, _bundle, _appId);
             _survivors = null;
 
             WireInteraction(styles);

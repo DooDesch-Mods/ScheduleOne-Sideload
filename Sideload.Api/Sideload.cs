@@ -35,6 +35,9 @@ namespace Sideload.Api
         private static Action<string, string, string> _emit;
         private static Action<string, string> _allowHost;
         private static Action<string, string> _declareOrientations;
+        private static Action<string, int> _setBadge;
+        private static Action<string, string, string> _notify;
+        private static Func<string, bool> _isOnScreen;
 
         /// <summary>True only when the Sideload host is installed AND bound. You rarely need this - the API is a safe
         /// no-op when absent; use it to decide whether to build a fallback UI instead.</summary>
@@ -89,6 +92,12 @@ namespace Sideload.Api
 
         internal static void Orient(string appId, string orientations) => _declareOrientations?.Invoke(appId, orientations);
 
+        internal static void Badge(string appId, int count) => _setBadge?.Invoke(appId, count);
+
+        internal static void Notify(string appId, string title, string subtitle) => _notify?.Invoke(appId, title, subtitle);
+
+        internal static bool OnScreen(string appId) => _isOnScreen != null && _isOnScreen(appId);
+
         // ----- reflection handshake (runs until it binds, then latches) -----
 
         private static void EnsureBound()
@@ -110,6 +119,9 @@ namespace Sideload.Api
                 _emit = Get<Action<string, string, string>>(t, "Emit");
                 _allowHost = Get<Action<string, string>>(t, "AllowHost");
                 _declareOrientations = Get<Action<string, string>>(t, "DeclareOrientations");
+                _setBadge = Get<Action<string, int>>(t, "SetBadge");
+                _notify = Get<Action<string, string, string>>(t, "Notify");
+                _isOnScreen = Get<Func<string, bool>>(t, "IsAppOnScreen");
 
                 _bound = true;
 
@@ -216,5 +228,49 @@ namespace Sideload.Api
             Apps.WhenBound(() => Apps.Orient(id, list));
             return this;
         }
+
+        /// <summary>
+        /// The unread count on this app's home-screen icon - the same red badge the vanilla apps use. Zero clears it.
+        /// Counts above 99 read as "99+".
+        ///
+        /// Set it whenever your own count changes, not on a timer: the value is remembered across a phone rebuild, so
+        /// setting it once is enough and setting it again is cheap.
+        /// <code>
+        ///   app.Badge(unreadMessages);
+        /// </code>
+        /// </summary>
+        public AppHandle Badge(int count)
+        {
+            string id = _id;
+            Apps.WhenBound(() => Apps.Badge(id, count));
+            return this;
+        }
+
+        /// <summary>
+        /// Raise one of the game's own phone notifications - the slide-in the vanilla apps use, carrying this app's
+        /// icon. Nothing happens if the app is not on a phone yet.
+        ///
+        /// This interrupts whatever the player is doing, so spend it on what they would want to be interrupted for.
+        /// A count that can wait belongs in <see cref="Badge"/>.
+        /// <code>
+        ///   app.Notify("Jessi Waters", "on my way");
+        /// </code>
+        /// </summary>
+        public AppHandle Notify(string title, string subtitle = "")
+        {
+            string id = _id;
+            Apps.WhenBound(() => Apps.Notify(id, title, subtitle));
+            return this;
+        }
+
+        /// <summary>
+        /// Whether this app is the one the phone is showing right now. Ask before interrupting: an event the player
+        /// is already watching happen does not deserve a notification, and the same event with the phone in their
+        /// pocket does. False when Sideload is absent or the app is not on a phone yet.
+        /// <code>
+        ///   if (!app.IsOnScreen) app.Notify(sender, text);
+        /// </code>
+        /// </summary>
+        public bool IsOnScreen { get { return Apps.Available && Apps.OnScreen(_id); } }
     }
 }

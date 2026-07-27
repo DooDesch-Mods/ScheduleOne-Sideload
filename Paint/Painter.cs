@@ -42,6 +42,8 @@ namespace Sideload.Paint
 
         private static Vector2 _viewSize;
         private static RectTransform _viewRoot;
+        private static Bundle.AppBundle _bundle;   // resolves <img src="..."> against the app's own files
+        private static string _appId;
         private static Dictionary<AngleSharp.Dom.IElement, RectTransform> _reuse;
 
         /// <summary><paramref name="reuse"/> maps elements whose GameObject must SURVIVE this pass onto that object.
@@ -52,7 +54,8 @@ namespace Sideload.Paint
             Dictionary<AngleSharp.Dom.IElement, TMP_InputField> inputs,
             Action<AngleSharp.Dom.IElement, string> inputChanged,
             Action<AngleSharp.Dom.IElement, string> inputSubmitted,
-            Dictionary<AngleSharp.Dom.IElement, RectTransform> reuse = null)
+            Dictionary<AngleSharp.Dom.IElement, RectTransform> reuse = null,
+            Bundle.AppBundle bundle = null, string appId = null)
         {
             var painted = new Dictionary<AngleSharp.Dom.IElement, PaintedBox>();
             if (root == null || host == null) return painted;
@@ -66,6 +69,8 @@ namespace Sideload.Paint
             _viewSize = viewSize;
             _viewRoot = host;
             _reuse = reuse;
+            _bundle = bundle;
+            _appId = appId ?? "";
             BoxRenderer.ActiveClip = null;
             BoxRenderer.BeginPass(host.GetInstanceID());
             try { PaintNode(root, host, 0, painted, 0f, 0f); }
@@ -76,6 +81,7 @@ namespace Sideload.Paint
                 _inputs = null;
                 _inputChanged = null;
                 _inputSubmitted = null;
+                _bundle = null;
             }
 
             return painted;
@@ -118,6 +124,12 @@ namespace Sideload.Paint
             if (IsFormControl(node, out bool multiline))
             {
                 PaintInput(node, rt, multiline, absX, absY);
+                return;
+            }
+
+            if (IsImage(node))
+            {
+                PaintImage(node, rt);
                 return;
             }
 
@@ -521,6 +533,50 @@ namespace Sideload.Paint
         {
             try { Il2CppScheduleOne.GameInput.IsTyping = typing; }
             catch (Exception e) { Core.Log?.Warning("[Sideload] IsTyping toggle failed: " + e.Message); }
+        }
+
+        private static bool IsImage(LayoutNode node) =>
+            node.Tag is AngleSharp.Dom.IElement element
+            && element.LocalName.Equals("img", StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Draw an <c>&lt;img&gt;</c>: the file named by <c>src</c>, resolved against the app's own bundle, inside the
+        /// node's content box.
+        ///
+        /// The box is sized by CSS alone. The layout runs without Unity - it cannot open a PNG, so it cannot know a
+        /// picture's intrinsic size the way a browser does. An image with no width and height is therefore a box of
+        /// nothing, which is why both are required rather than optional.
+        ///
+        /// The aspect ratio IS preserved inside whatever box you give it, so stating one dimension and a matching
+        /// other is enough; a wrong pair letterboxes rather than stretching.
+        /// </summary>
+        private static void PaintImage(LayoutNode node, RectTransform box)
+        {
+            var element = (AngleSharp.Dom.IElement)node.Tag;
+            string src = element.GetAttribute("src") ?? "";
+
+            Sprite sprite = ImageCache.Get(_bundle, _appId, src);
+            if (sprite == null) return;
+
+            ComputedStyle s = node.Style;
+            float padLeft = s.Padding.Left.Resolve(node.Width) + s.BorderWidth.Left.Resolve(node.Width);
+            float padRight = s.Padding.Right.Resolve(node.Width) + s.BorderWidth.Right.Resolve(node.Width);
+            float padTop = s.Padding.Top.Resolve(node.Width) + s.BorderWidth.Top.Resolve(node.Width);
+            float padBottom = s.Padding.Bottom.Resolve(node.Width) + s.BorderWidth.Bottom.Resolve(node.Width);
+
+            RectTransform rect = UiFactory.Rect("img", box);
+            UiFactory.Stretch(rect, top: padTop, right: padRight, bottom: padBottom, left: padLeft);
+
+            var image = rect.gameObject.AddComponent<Image>();
+            image.sprite = sprite;
+            image.preserveAspect = true;
+            image.raycastTarget = false;
+
+            // `color` tints the picture, which is how a white glyph becomes any colour the stylesheet asks for -
+            // the cheapest way to ship one image and use it on both a light and a dark bar.
+            image.color = new Color(s.Color.R, s.Color.G, s.Color.B, s.Color.A * s.Opacity);
+
+            ClipTo(image, BoxRenderer.ActiveClip);
         }
 
         private static Il2CppTMPro.TextMeshProUGUI PaintText(LayoutNode node, RectTransform box)
