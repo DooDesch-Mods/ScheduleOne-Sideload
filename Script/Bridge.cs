@@ -61,6 +61,12 @@ namespace Sideload.Script
         internal static void Emit(string appId, string name, string payload)
         {
             if (string.IsNullOrWhiteSpace(name)) return;
+
+            // The tap runs BEFORE the subscriber lookup, and that position is load-bearing. A page only subscribes
+            // once it has been built, so an app that is open on a companion device but was never opened in-game has
+            // no in-game listener at all - taking the early return first would drop exactly the normal case.
+            Tap?.Invoke(appId, name, payload ?? "");
+
             if (!_subscribers.TryGetValue(name, out List<Bridge> bridges)) return;
 
             foreach (Bridge bridge in bridges.ToArray())
@@ -68,29 +74,44 @@ namespace Sideload.Script
                     bridge.Deliver(name, payload ?? "");
         }
 
-        private static string Key(string appId, string name) => (appId ?? "") + "\u0000" + name.Trim();
+        /// <summary>
+        /// A listener on every host event, for a mirror of the page that lives outside this process. Null unless
+        /// something asked for it, and never more than one - a second consumer would be a second reason to keep
+        /// events alive, and the one that exists is a companion server that already multiplexes.
+        /// </summary>
+        internal static Action<string, string, string> Tap;
 
-        // -------------------------------------------------------------- script-side API --
-
-        public string Call(string name, string argument = "")
+        /// <summary>
+        /// Run a registered `s1.call` handler without a page. Same lookup and the same failure behaviour as
+        /// <see cref="Call"/>, which delegates here - one path, so the two cannot drift.
+        ///
+        /// MUST be called on the Unity main thread: handlers touch game state.
+        /// </summary>
+        internal static string Invoke(string appId, string name, string argument)
         {
             if (string.IsNullOrWhiteSpace(name)) return "";
 
             // This app's own handler wins; a handler registered for every app is the fallback.
-            if (!_handlers.TryGetValue(Key(_appId, name), out Func<string, string, string> handler)
+            if (!_handlers.TryGetValue(Key(appId, name), out Func<string, string, string> handler)
                 && !_handlers.TryGetValue(Key(null, name), out handler))
             {
-                Core.Log?.Warning($"[Sideload] {_appId}: s1.call('{name}') has no handler.");
+                Core.Log?.Warning($"[Sideload] {appId}: s1.call('{name}') has no handler.");
                 return "";
             }
 
-            try { return handler(_appId, argument ?? "") ?? ""; }
+            try { return handler(appId, argument ?? "") ?? ""; }
             catch (Exception e)
             {
-                Core.Log?.Error($"[Sideload] {_appId}: s1.call('{name}') threw: {e.Message}");
+                Core.Log?.Error($"[Sideload] {appId}: s1.call('{name}') threw: {e.Message}");
                 return "";
             }
         }
+
+        private static string Key(string appId, string name) => (appId ?? "") + "\u0000" + name.Trim();
+
+        // -------------------------------------------------------------- script-side API --
+
+        public string Call(string name, string argument = "") => Invoke(_appId, name, argument);
 
         public void On(string name, JsValue handler)
         {

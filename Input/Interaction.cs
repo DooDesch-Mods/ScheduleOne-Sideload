@@ -23,13 +23,38 @@ namespace Sideload.Input
         /// states so a render reset cannot silently drop them.</summary>
         private readonly Dictionary<IElement, StateFlags> _forced = new Dictionary<IElement, StateFlags>();
         private readonly Action<IElement> _onStateChanged;
-        private readonly Action<IElement> _onClicked;
+        private readonly Action<IElement, PointerSpot> _onClicked;
+        private readonly Action<IElement, string, PointerSpot, Vector2> _onDragged;
+        private readonly Action<IElement, float> _onWheel;
 
-        internal Interaction(Action<IElement> onStateChanged, Action<IElement> onClicked)
+        /// <summary>The page root, used as the fixed frame a drag is measured against - see <see cref="RootPoint"/>.</summary>
+        private readonly RectTransform _pageRoot;
+
+        /// <summary>Where the pointer was at the previous drag event, in page-root CSS pixels.</summary>
+        private Vector2 _dragFrom;
+
+        /// <summary>
+        /// Whether a drag has happened since the last press.
+        ///
+        /// uGUI raises PointerClick after a drag as long as press and release landed on the same object, so without
+        /// this a page that pans by dragging would also receive a click at the end of every pan - and a map that
+        /// recentres on click would jump the moment the player let go.
+        /// </summary>
+        private bool _dragged;
+
+        internal Interaction(Action<IElement> onStateChanged,
+                             Action<IElement, PointerSpot> onClicked,
+                             Action<IElement, string, PointerSpot, Vector2> onDragged = null,
+                             Action<IElement, float> onWheel = null,
+                             RectTransform pageRoot = null)
         {
             _onStateChanged = onStateChanged;
             _onClicked = onClicked;
+            _onDragged = onDragged;
+            _onWheel = onWheel;
+            _pageRoot = pageRoot;
         }
+
 
         /// <summary>Current interaction state of an element - this is what the cascade asks for.</summary>
         /// <summary>Current interaction state of an element - this is what the cascade asks for. Forced states are
@@ -102,7 +127,13 @@ namespace Sideload.Input
         /// PointerDown and the field below never receives the click - it looks focusable but cannot be typed into.
         /// On the same GameObject both components get the event.
         /// </summary>
-        internal void Attach(RectTransform rect, IElement element, bool disabled, bool ownGameObject = false)
+        /// <summary>
+        /// <paramref name="draggable"/> and <paramref name="wheel"/> say the page's script listens for those events.
+        /// Both are opt-in per element because both take the gesture AWAY from the scroll area the element sits in:
+        /// a list row that swallowed the drag could no longer be scrolled past.
+        /// </summary>
+        internal void Attach(RectTransform rect, IElement element, bool disabled, bool ownGameObject = false,
+                             bool draggable = false, bool wheel = false)
         {
             if (rect == null || element == null) return;
 
@@ -138,22 +169,195 @@ namespace Sideload.Input
                 Set(element, StateFlags.Hover, false);
                 Set(element, StateFlags.Active, false);
             });
-            Add(trigger, EventTriggerType.PointerDown, () => Set(element, StateFlags.Active, true));
+            Add(trigger, EventTriggerType.PointerDown, () =>
+            {
+                _dragged = false;
+                Set(element, StateFlags.Active, true);
+            });
             Add(trigger, EventTriggerType.PointerUp, () => Set(element, StateFlags.Active, false));
 
             // PointerClick rather than PointerUp: uGUI only raises it when press and release landed on the same
             // target, which is what "click" means everywhere else and what lets a player slide off a button to
             // cancel.
-            Add(trigger, EventTriggerType.PointerClick, () => _onClicked?.Invoke(element));
+            //
+            // This one keeps the event data instead of discarding it, so the page can be told WHERE it was clicked.
+            // The rect measured against is the element's own, not the hit target's - they are stretched to match,
+            // and the element's is the one whose size the page reasons about.
+            RectTransform measured = rect;
+            AddWithData(trigger, EventTriggerType.PointerClick, data =>
+            {
+                // A pan that ends on the element it started on is still a click as far as uGUI is concerned. The page
+                // asked to handle the drag itself, so it gets the drag and not a click on top of it.
+                if (draggable && _dragged) return;
+
+                _onClicked?.Invoke(element, SpotIn(measured, data));
+            });
+
+            if (draggable) AttachDragging(trigger, element, measured);
+            if (wheel) AddWithData(trigger, EventTriggerType.Scroll, data => Wheel(element, data));
+
+            PassScrollingThrough(trigger, handlerHost.transform, forwardDrag: !draggable, forwardWheel: !wheel);
         }
 
-        private static void Add(EventTrigger trigger, EventTriggerType type, Action run)
+        /// <summary>
+        /// Report the drag to the page instead of handing it to a scroll area.
+        ///
+        /// The movement is measured against the PAGE ROOT rather than the element itself, and that is the whole
+        /// difficulty here: an element that pans is an element that moves under the pointer, so measuring against it
+        /// would fold this frame's movement back into the next frame's reading and the map would accelerate away.
+        /// The root stands still, carries the canvas scale and the portrait rotation, and so gives a delta already in
+        /// CSS pixels the right way up.
+        /// </summary>
+        private void AttachDragging(EventTrigger trigger, IElement element, RectTransform measured)
+        {
+            AddWithData(trigger, EventTriggerType.BeginDrag, data =>
+            {
+                _dragged = true;
+                if (!RootPoint(data, out Vector2 start)) return;
+
+                _dragFrom = start;
+                _onDragged?.Invoke(element, "dragstart", SpotIn(measured, data), Vector2.zero);
+            });
+
+            AddWithData(trigger, EventTriggerType.Drag, data =>
+            {
+                _dragged = true;
+                if (!RootPoint(data, out Vector2 now)) return;
+
+                Vector2 delta = now - _dragFrom;
+                _dragFrom = now;
+                _onDragged?.Invoke(element, "drag", SpotIn(measured, data), delta);
+            });
+
+            AddWithData(trigger, EventTriggerType.EndDrag,
+                        data => _onDragged?.Invoke(element, "dragend", SpotIn(measured, data), Vector2.zero));
+        }
+
+        /// <summary>
+        /// One wheel notch, reported the way the DOM reports it: positive is scrolling AWAY from the reader, which is
+        /// the opposite sign to Unity's.
+        /// </summary>
+        private void Wheel(IElement element, BaseEventData data)
+        {
+            var pointer = data.TryCast<PointerEventData>();
+            if (pointer == null) return;
+
+            _onWheel?.Invoke(element, -pointer.scrollDelta.y);
+        }
+
+        /// <summary>
+        /// A pointer position in page-root CSS pixels, measured from the top-left with Y pointing down.
+        ///
+        /// Same conversion as <see cref="SpotIn"/> and for the same reasons: TryCast because a managed `as` yields
+        /// null for a perfectly good PointerEventData, the event's own camera because an overlay canvas reports none,
+        /// and no scale division because the root carries the scale as a localScale.
+        /// </summary>
+        private bool RootPoint(BaseEventData data, out Vector2 point)
+        {
+            point = default;
+            if (_pageRoot == null) return false;
+
+            var pointer = data.TryCast<PointerEventData>();
+            if (pointer == null) return false;
+
+            if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(
+                    _pageRoot, pointer.position, pointer.pressEventCamera, out Vector2 local))
+                return false;
+
+            Rect r = _pageRoot.rect;
+            point = new Vector2(local.x - r.xMin, r.yMax - local.y);
+            return true;
+        }
+
+        /// <summary>
+        /// Hand the wheel and the drag to the scroll area this element sits in.
+        ///
+        /// EventTrigger implements EVERY pointer interface, including IScrollHandler and IDragHandler - so uGUI
+        /// stops looking as soon as it finds one, and the ScrollRect above never hears about it. The effect was that
+        /// any list whose rows could be clicked could not be scrolled at all, which is most lists.
+        ///
+        /// Forwarding is what bubbling would have done anyway. The ScrollRect is found once, when the element is
+        /// wired, because the hierarchy above a box does not change while the page stands.
+        /// </summary>
+        private static void PassScrollingThrough(EventTrigger trigger, Transform host,
+                                                 bool forwardDrag = true, bool forwardWheel = true)
+        {
+            ScrollRect scroll = host == null ? null : host.GetComponentInParent<ScrollRect>();
+            if (scroll == null) return;
+
+            if (forwardWheel)
+                AddWithData(trigger, EventTriggerType.Scroll, data =>
+                {
+                    var pointer = data.TryCast<PointerEventData>();
+                    if (pointer != null) scroll.OnScroll(pointer);
+                });
+
+            if (!forwardDrag) return;
+
+            AddWithData(trigger, EventTriggerType.BeginDrag, data =>
+            {
+                var pointer = data.TryCast<PointerEventData>();
+                if (pointer != null) scroll.OnBeginDrag(pointer);
+            });
+
+            AddWithData(trigger, EventTriggerType.Drag, data =>
+            {
+                var pointer = data.TryCast<PointerEventData>();
+                if (pointer != null) scroll.OnDrag(pointer);
+            });
+
+            AddWithData(trigger, EventTriggerType.EndDrag, data =>
+            {
+                var pointer = data.TryCast<PointerEventData>();
+                if (pointer != null) scroll.OnEndDrag(pointer);
+            });
+        }
+
+        /// <summary>
+        /// Turn a pointer event into a position inside an element, in CSS pixels from its top-left.
+        ///
+        /// Three things are easy to get wrong here.
+        ///
+        /// The cast must be TryCast: under Il2CppInterop a managed `as` tests the WRAPPER type and yields null for a
+        /// perfectly good PointerEventData.
+        ///
+        /// The camera must come from the event's own pressEventCamera - a Screen Space Overlay canvas reports none,
+        /// and passing the main camera instead skews every result.
+        ///
+        /// And the result needs NO scale conversion, which is the counter-intuitive part. The page's root carries
+        /// the scale as a localScale while every box beneath it is sized in CSS pixels (UiFactory.PlaceFromTopLeft
+        /// takes the layout's own numbers), so a point in a box's local space is already in CSS pixels. Dividing by
+        /// the scale a second time would report a click about 1.6x too close to the corner. The rotation of a
+        /// portrait panel needs no handling either - the inverse transform has already undone it.
+        ///
+        /// What does need converting is the origin: uGUI measures from the rect's PIVOT with Y pointing up, CSS from
+        /// the top-left with Y pointing down.
+        /// </summary>
+        private static PointerSpot SpotIn(RectTransform rect, BaseEventData data)
+        {
+            if (rect == null || data == null) return default;
+
+            var pointer = data.TryCast<PointerEventData>();
+            if (pointer == null) return default;
+
+            if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(
+                    rect, pointer.position, pointer.pressEventCamera, out Vector2 local))
+                return default;
+
+            Rect r = rect.rect;
+            return new PointerSpot(local.x - r.xMin, r.yMax - local.y, r.width, r.height);
+        }
+
+        private static void Add(EventTrigger trigger, EventTriggerType type, Action run) =>
+            AddWithData(trigger, type, _ => run());
+
+        private static void AddWithData(EventTrigger trigger, EventTriggerType type, Action<BaseEventData> run)
         {
             var entry = new EventTrigger.Entry { eventID = type };
             entry.callback = new EventTrigger.TriggerEvent();
-            entry.callback.AddListener((UnityEngine.Events.UnityAction<BaseEventData>)(_ =>
+            entry.callback.AddListener((UnityEngine.Events.UnityAction<BaseEventData>)(data =>
             {
-                try { run(); }
+                try { run(data); }
                 catch (Exception e) { Core.Log?.Warning("[Sideload] pointer handler failed: " + e.Message); }
             }));
             trigger.triggers.Add(entry);

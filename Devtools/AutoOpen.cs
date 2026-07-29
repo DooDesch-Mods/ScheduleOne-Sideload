@@ -55,6 +55,11 @@ namespace Sideload.Devtools
         internal static void Arm()
         {
             if (_opened) return;
+
+            // Off by preference: an app opened this way sits on top of the game's own screens and cannot be
+            // dismissed from the home screen, which makes photographing vanilla impossible.
+            if (!Config.Preferences.AutoOpenAppInDebug) return;
+
             _armedAt = Time.time;
         }
 

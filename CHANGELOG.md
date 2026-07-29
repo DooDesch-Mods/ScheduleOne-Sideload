@@ -3,6 +3,45 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] - 2026-07-28
+
+### Added
+
+- **Paint-only styles no longer rebuild the page.** Writing `transform`, a background, a border colour, a
+  corner radius or a box shadow from script now repaints just that box - the same path `:hover` has always
+  taken. Everything else still rebuilds, and so does `cssText`, which can contain anything. This is the
+  difference between an animation being possible and not: a rebuild destroys and recreates every GameObject
+  on the page, measured at roughly half a millisecond per box, so a 200-box page cost ~100ms per frame to
+  move something one pixel.
+
+  `color` and `opacity` are deliberately NOT on the fast path even though they only affect appearance: both
+  are inherited, and a repaint redraws one box, so descendants would keep the old value. They rebuild, where
+  they are correct.
+- **`e.offsetX` / `e.offsetY` / `e.normX` / `e.normY` on a click.** Where inside the element the pointer
+  landed, in the element's own CSS pixels and as a 0..1 fraction of its size. A page that stands for
+  something with its own coordinate space - a map - can finally answer "where did they point at".
+- **Apps without a home-screen icon**, via `.NoIcon()`, for an app whose way in already exists somewhere
+  else. With no icon, `.Open()` is the only route in.
+- **`.Open()`, `.Close()` and `.IsOpen`** on an app handle: open an app from code exactly as pressing its icon
+  would, closing whatever else is open and turning the phone. `AppHandle.CanOpenProgrammatically` reports
+  whether the installed host understands any of this, so a mod that supplies its own entry point can refuse
+  to set up against an older Sideload rather than leaving the player an app they cannot reach.
+- **A companion seam** on the bridge: the app list, bundle files, framework assets and runtime images can be
+  read, a handler can be invoked without a page, and host events, badges and notifications can be tapped.
+  For serving the same bundle to a second screen. It grants no capability a page does not already have.
+
+### Fixed
+
+- **`overflow: hidden` now clips.** It was parsed and then ignored: only `auto` and `scroll` ever produced a
+  clip rectangle, and only once the content was tall enough to need scrolling. A box meant as a window onto
+  something bigger - a map, a graph, anything panned by a transform - let its contents draw across the rest
+  of the screen and off the phone entirely.
+- **A clip now follows the transforms above it.** The rectangle was derived from the layout, which by design
+  knows nothing about a `transform` on an ancestor - so inside a panned or zoomed window the clip sat where
+  the boxes would have been rather than where they are, and everything in it vanished.
+
+All of it is additive - the bridge ABI stays at 1, and an older shim binds exactly as before.
+
 ## [1.0.1] - 2026-07-27
 
 ### Fixed

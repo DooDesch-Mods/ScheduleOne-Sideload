@@ -56,6 +56,13 @@ namespace Sideload
         /// </summary>
         internal int Badge;
 
+        /// <summary>
+        /// Suppresses the home-screen icon. For an app whose way in already exists somewhere else - a hijacked
+        /// vanilla icon, a world object, another app. Without an icon <see cref="Registry.SetAppOpen"/> is the only
+        /// route in, so an app that sets this and never opens itself is unreachable.
+        /// </summary>
+        internal bool Iconless;
+
         /// <summary>Raised when <see cref="Registry.SetOrientation"/> turns a live app.</summary>
         internal Action OrientationChanged;
     }
@@ -163,6 +170,7 @@ namespace Sideload
             if (reg == null) { Core.Log?.Warning($"[Sideload] badge: no app '{appId}'."); return; }
 
             reg.Badge = Math.Max(0, count);
+            BadgeTap?.Invoke(reg.Id, reg.Badge);
 
             Phone.PhoneAppHost host = LiveHost(appId);
             if (host != null) host.SetBadge(reg.Badge);
@@ -174,11 +182,21 @@ namespace Sideload
         /// </summary>
         internal static void Notify(string appId, string title, string subtitle)
         {
+            // Before the early return, for the same reason the emit tap is: a companion device wants the
+            // notification even when the app was never spawned on the in-game phone.
+            NotifyTap?.Invoke(appId, title ?? "", subtitle ?? "");
+
             Phone.PhoneAppHost host = LiveHost(appId);
             if (host == null) return;
 
             host.Notify(title, subtitle);
         }
+
+        /// <summary>appId, count - every badge change, for a mirror of the phone outside this process.</summary>
+        internal static Action<string, int> BadgeTap;
+
+        /// <summary>appId, title, subtitle - every notification, mirrored the same way.</summary>
+        internal static Action<string, string, string> NotifyTap;
 
         /// <summary>
         /// Whether this app is the one the phone is showing. A mod asks before interrupting: a message arriving in
@@ -189,6 +207,44 @@ namespace Sideload
         {
             Phone.PhoneAppHost host = LiveHost(appId);
             return host != null && host.IsShowing;
+        }
+
+        /// <summary>
+        /// Suppress or restore an app's home-screen icon. Recorded on the registration rather than applied to the
+        /// live icon, so a mod may set it during init - before any phone exists - and it takes effect the moment the
+        /// app is spawned. Set after a spawn it applies on the next one, which is what a scene change brings anyway.
+        /// </summary>
+        internal static void SetIconHidden(string appId, bool hidden)
+        {
+            AppRegistration reg = Find(appId);
+            if (reg == null) { Core.Log?.Warning($"[Sideload] icon: no app '{appId}'."); return; }
+
+            reg.Iconless = hidden;
+        }
+
+        /// <summary>
+        /// Open or close an app from code, exactly as pressing its icon would. Deliberately the same entry point as
+        /// the icon rather than a second one: two ways to open an app are two behaviours to keep in step, and this is
+        /// the one that already closes whatever else is open and turns the phone.
+        ///
+        /// Does nothing while the app is not on a phone - before the home screen exists there is nothing to open.
+        /// </summary>
+        internal static void SetAppOpen(string appId, bool open)
+        {
+            Phone.PhoneAppHost host = LiveHost(appId);
+            if (host == null) { Core.Log?.Warning($"[Sideload] open: '{appId}' is not on a phone."); return; }
+
+            if (open) host.Open(); else host.Close();
+        }
+
+        /// <summary>
+        /// Whether this app is the one the phone has open - even with the phone in the player's pocket. For "can the
+        /// player SEE it", <see cref="IsOnScreen"/> is the right question.
+        /// </summary>
+        internal static bool IsAppOpen(string appId)
+        {
+            Phone.PhoneAppHost host = LiveHost(appId);
+            return host != null && host.IsOpen;
         }
 
         private static Phone.PhoneAppHost LiveHost(string appId)

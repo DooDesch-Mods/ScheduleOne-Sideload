@@ -142,8 +142,27 @@ namespace Sideload.Paint
 
             if (!NeedsScrolling(node))
             {
-                foreach (LayoutNode child in node.Children)
-                    PaintNode(child, rt, depth + 1, painted, absX, absY);
+                // `overflow: hidden` clips without scrolling. Until this existed it did nothing at all, so a box
+                // meant as a window onto something bigger - a map, a graph - let its contents draw right across the
+                // rest of the screen.
+                Rect? own = NeedsClipping(node) ? ClipRectOf(rt, absX, absY, node.Width, node.Height) : null;
+
+                if (!own.HasValue)
+                {
+                    foreach (LayoutNode child in node.Children)
+                        PaintNode(child, rt, depth + 1, painted, absX, absY);
+                    return;
+                }
+
+                Rect? outerClip = BoxRenderer.ActiveClip;
+                BoxRenderer.ActiveClip = Narrow(own, outerClip);
+                try
+                {
+                    foreach (LayoutNode child in node.Children)
+                        PaintNode(child, rt, depth + 1, painted, absX, absY);
+                }
+                finally { BoxRenderer.ActiveClip = outerClip; }
+
                 return;
             }
 
@@ -159,6 +178,56 @@ namespace Sideload.Paint
                     PaintNode(child, content, depth + 1, painted, absX, absY);
             }
             finally { BoxRenderer.ActiveClip = previous; }
+        }
+
+        /// <summary>
+        /// Where a box actually ENDS UP, as a clip rectangle - transforms included.
+        ///
+        /// The layout knows where a box would sit; it does not know that an ancestor was moved or scaled by a
+        /// `transform`, because a transform is applied after layout and deliberately changes nothing about it. A
+        /// clip derived from the layout alone therefore lands somewhere else than the pixels do, and everything
+        /// inside a panned or zoomed window disappears - which is exactly what a map or a graph is.
+        ///
+        /// The box's own corners carry the whole ancestor chain, so they are the honest source. The layout figure
+        /// stays as the fallback: a node the canvas has not measured yet reports a degenerate rectangle, and a
+        /// degenerate clip culls everything.
+        /// </summary>
+        private static Rect? ClipRectOf(RectTransform rt, float absX, float absY, float width, float height)
+        {
+            Rect? fromLayout = ClipRectInCanvasSpace(absX, absY, width, height);
+            if (rt == null || _viewRoot == null) return fromLayout;
+
+            try
+            {
+                Canvas canvas = _viewRoot.GetComponentInParent<Canvas>();
+                if (canvas == null) return fromLayout;
+
+                Transform space = (canvas.rootCanvas != null ? canvas.rootCanvas : canvas).transform;
+
+                var corners = new Vector3[4];
+                rt.GetWorldCorners(corners);
+
+                float xMin = float.MaxValue, yMin = float.MaxValue, xMax = float.MinValue, yMax = float.MinValue;
+
+                for (int i = 0; i < 4; i++)
+                {
+                    // Sorted rather than taken in order: a rotated ancestor hands the corners back in whatever
+                    // order the rotation produced, and assuming [0] is the bottom-left gives a negative size.
+                    Vector3 p = space.InverseTransformPoint(corners[i]);
+                    if (p.x < xMin) xMin = p.x;
+                    if (p.y < yMin) yMin = p.y;
+                    if (p.x > xMax) xMax = p.x;
+                    if (p.y > yMax) yMax = p.y;
+                }
+
+                return xMax - xMin > 0.5f && yMax - yMin > 0.5f
+                    ? new Rect(xMin, yMin, xMax - xMin, yMax - yMin)
+                    : fromLayout;
+            }
+            catch
+            {
+                return fromLayout;
+            }
         }
 
         /// <summary>
@@ -193,6 +262,27 @@ namespace Sideload.Paint
             OverflowKind overflow = node.Style.OverflowY;
             if (overflow != OverflowKind.Auto && overflow != OverflowKind.Scroll) return false;
             return ContentBottom(node) > node.Height + 0.5f;
+        }
+
+        /// <summary>
+        /// Whether this box cuts its children off at its own edge.
+        ///
+        /// Either axis counts: CSS has no way to clip one and not the other, so a box that says hidden on either is
+        /// a box whose contents stop at its border. A scrolling box does its own clipping and is handled separately.
+        /// </summary>
+        private static bool NeedsClipping(LayoutNode node) =>
+            node.Style.OverflowX == OverflowKind.Hidden || node.Style.OverflowY == OverflowKind.Hidden;
+
+        /// <summary>The part of an inner clip that survives an outer one. Null outer means nothing narrows it.</summary>
+        private static Rect? Narrow(Rect? inner, Rect? outer)
+        {
+            if (!inner.HasValue) return outer;
+            if (!outer.HasValue) return inner;
+
+            Rect a = inner.Value, b = outer.Value;
+            float xMin = Math.Max(a.xMin, b.xMin), xMax = Math.Min(a.xMax, b.xMax);
+            float yMin = Math.Max(a.yMin, b.yMin), yMax = Math.Min(a.yMax, b.yMax);
+            return new Rect(xMin, yMin, Math.Max(0f, xMax - xMin), Math.Max(0f, yMax - yMin));
         }
 
         /// <summary>Furthest a child reaches down, in the box's own coordinates - the height the scroll content needs.</summary>
@@ -245,6 +335,17 @@ namespace Sideload.Paint
             scroll.decelerationRate = 0.135f;
 
             clip = ClipRectInCanvasSpace(absX, absY, node.Width, node.Height);
+
+            // Put the clip back on every child each time the list moves.
+            //
+            // Scrolling is not a passive act in uGUI: moving the content makes every MaskableGraphic under it
+            // recompute which mask it belongs to, and the phone's own panel HAS a RectMask2D that our content sits
+            // outside of while scrolled. Whatever we set at paint time is therefore not what survives the first
+            // wheel notch - images and text were being culled outright, and the boxes, which are not Graphics at
+            // all and so were never re-examined, carried on drawing past the edge of the screen. Reapplying on the
+            // scroll event is the only point at which both are true again.
+            Rect? settled = clip;
+            scroll.onValueChanged.AddListener((UnityEngine.Events.UnityAction<Vector2>)(_ => Reclip(content, settled)));
 
             Core.Log?.Msg($"[Sideload] scroll area at ({absX:0.#},{absY:0.#}) size {node.Width:0.#}x{node.Height:0.#}, " +
                           $"content {ContentBottom(node):0.#}, clip={clip}");
@@ -609,14 +710,8 @@ namespace Sideload.Paint
             Rect? own = ClipRectInCanvasSpace(absX + padLeft, absY + padTop,
                                               Math.Max(0f, node.Width - padLeft - padRight),
                                               Math.Max(0f, node.Height - padTop - padBottom));
-            Rect? outer = BoxRenderer.ActiveClip;
-            if (!own.HasValue) return outer;
-            if (!outer.HasValue) return own;
 
-            Rect a = own.Value, b = outer.Value;
-            float xMin = Math.Max(a.xMin, b.xMin), xMax = Math.Min(a.xMax, b.xMax);
-            float yMin = Math.Max(a.yMin, b.yMin), yMax = Math.Min(a.yMax, b.yMax);
-            return new Rect(xMin, yMin, Math.Max(0f, xMax - xMin), Math.Max(0f, yMax - yMin));
+            return Narrow(own, BoxRenderer.ActiveClip);
         }
 
         /// <summary>
@@ -630,11 +725,55 @@ namespace Sideload.Paint
         {
             if (graphic == null) return;
 
+            // maskable = false FIRST, and it is the load-bearing line.
+            //
+            // A MaskableGraphic recomputes its clipping whenever the hierarchy moves - which a ScrollRect does on
+            // every scroll - and it looks for a RectMask2D to obey. Sideload creates none, but the phone's own app
+            // container HAS one, and our content deliberately sits outside it while scrolled. The vanilla mask then
+            // culled every image and every line of text the moment the list moved: the mugshots vanished and the
+            // rows went blank, while the boxes stayed because they are drawn on Sideload's own material.
+            //
+            // Opting out of masking leaves the rectangle set below as the only clip, which is the one that is
+            // actually right for this page.
+            if (graphic is MaskableGraphic maskable) maskable.maskable = false;
+
             CanvasRenderer renderer = graphic.canvasRenderer;
             if (renderer == null) return;
 
             if (clip.HasValue) renderer.EnableRectClipping(clip.Value);
             else renderer.DisableRectClipping();
+        }
+
+        /// <summary>
+        /// Reassert one clip rectangle over a whole subtree.
+        ///
+        /// Cheap enough for a scroll event: it walks the components once and writes two fields per graphic. Doing
+        /// it any less often does not work - see the note where this is hooked up.
+        /// </summary>
+        private static void Reclip(Transform root, Rect? clip)
+        {
+            if (root == null) return;
+
+            try
+            {
+                var graphics = root.GetComponentsInChildren<Graphic>(true);
+                for (int i = 0; graphics != null && i < graphics.Length; i++) ClipTo(graphics[i], clip);
+
+                // The box meshes are bare CanvasRenderers with no Graphic on them, so they need reaching directly.
+                var renderers = root.GetComponentsInChildren<CanvasRenderer>(true);
+                for (int i = 0; renderers != null && i < renderers.Length; i++)
+                {
+                    CanvasRenderer cr = renderers[i];
+                    if (cr == null) continue;
+
+                    if (clip.HasValue) cr.EnableRectClipping(clip.Value);
+                    else cr.DisableRectClipping();
+                }
+            }
+            catch
+            {
+                // The page was torn down mid-scroll. Nothing to reassert and nothing worth logging.
+            }
         }
 
         /// <summary>Nothing to draw when the box is fully transparent - skip the mesh instead of adding an invisible one.</summary>

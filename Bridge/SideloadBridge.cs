@@ -47,5 +47,49 @@ namespace Sideload.Bridge
         /// <summary>appId, name, PNG bytes. A picture the mod produced at runtime, for the page to draw with
         /// <c>src="s1://&lt;name&gt;"</c>. Null or empty bytes remove it.</summary>
         public static readonly Action<string, string, byte[]> SetImage = Paint.ImageCache.Supply;
+
+        // ---------------------------------------------------------------- added after ABI 1 --
+        // Fields only, no changed signatures, so AbiVersion stays 1: an older shim never looks these up and binds
+        // exactly as before. A NEWER shim against an OLDER host is the case that matters, and it is covered by the
+        // shim leaving its delegate null and reporting the capability as absent.
+
+        /// <summary>appId, hidden. Suppresses the home-screen icon, for an app whose way in is somewhere else.
+        /// With no icon, <see cref="SetAppOpen"/> is the only route in.</summary>
+        public static readonly Action<string, bool> SetIconHidden = Registry.SetIconHidden;
+
+        /// <summary>appId, open. Opens or closes an app as pressing its icon would - closing whatever else is open
+        /// and turning the phone to this app's orientation.</summary>
+        public static readonly Action<string, bool> SetAppOpen = Registry.SetAppOpen;
+
+        /// <summary>appId -> is this the app the phone has open, whether or not the phone itself is up.</summary>
+        public static readonly Func<string, bool> IsAppOpen = Registry.IsAppOpen;
+
+        // ------------------------------------------------------- companion mirror (added after ABI 1) --
+        // For a server that serves the SAME bundle to a real phone. Read-only apart from Invoke, which is the call a
+        // page already makes - none of this grants a capability that did not exist, it moves the existing surface to
+        // a second screen. All of it is main-thread only.
+
+        /// <summary>Every registered app as JSON: id, title, iconLabel, portrait, declaredPortrait, canTurn,
+        /// iconless, badge.</summary>
+        public static readonly Func<string> ListAppsJson = CompanionAccess.ListAppsJson;
+
+        /// <summary>appId, bundle-relative path -> file bytes, or null. Resolved exactly as the in-game view does,
+        /// so the Mods folder override wins.</summary>
+        public static readonly Func<string, string, byte[]> ReadBundleFile = CompanionAccess.ReadBundleFile;
+
+        /// <summary>Framework file by name - `s1.css`. The same bytes a page linking it receives.</summary>
+        public static readonly Func<string, byte[]> ReadFrameworkAsset = CompanionAccess.ReadFrameworkAsset;
+
+        /// <summary>appId, name -> the PNG behind <c>s1://&lt;name&gt;</c>, or null.</summary>
+        public static readonly Func<string, string, byte[]> ReadRuntimeImage = CompanionAccess.ReadRuntimeImage;
+
+        /// <summary>appId, name, argument -> answer. Runs the app's `s1.call` handler with no page involved.</summary>
+        public static readonly Func<string, string, string, string> Invoke = CompanionAccess.Invoke;
+
+        /// <summary>Taps on everything the host pushes at pages: emit(appId,name,payload), badge(appId,count),
+        /// notify(appId,title,subtitle). Null clears one. Fires on the main thread inside whatever caused it, so a
+        /// tap must queue and return.</summary>
+        public static readonly Action<Action<string, string, string>, Action<string, int>, Action<string, string, string>>
+            SetCompanionTaps = CompanionAccess.SetTaps;
     }
 }

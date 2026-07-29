@@ -291,9 +291,18 @@ app.Badge(3);                        // the unread count on the home screen icon
 app.Notify("Jessi Waters", "on my way");   // one of the game's own phone notifications, with your icon
 app.Image("avatar/76561198", pngBytes);    // a runtime picture the page draws with src="s1://avatar/76561198"
 
+app.NoIcon();                        // no home screen icon: your mod supplies the way in
+app.Open(); app.Close();             // open it exactly as pressing its icon would, or close it
+bool open = app.IsOpen;              // is it the app the phone currently has open
+
 bool looking = app.IsOnScreen;       // is your app the one the phone is showing right now
 bool here = Apps.Available;          // only needed if you want to build a fallback UI
+bool newEnough = AppHandle.CanOpenProgrammatically;   // does the installed Sideload understand the three above
 ```
+
+`NoIcon()` and `Open()` belong together: an app with no icon can only be reached from code, so a mod that
+takes that route should check `CanOpenProgrammatically` first and refuse to register against an older host
+rather than leave the player an app with no way in.
 
 Everything is queued while the host is absent and replayed once it appears, so the load order between your
 mod and Sideload never matters. Strings cross the boundary in both directions; send JSON for anything
@@ -304,8 +313,8 @@ structured. `s1.call` is synchronous and returns a string, not a Promise.
 Honest limits, because a browser sets different expectations:
 
 - **CSS:** flexbox and absolute positioning, the box and paint properties, text properties, custom
-  properties with `var()`, `transform` and `transition`, and `@media (orientation: ...)`. Units are `px` and
-  `%` only. No Grid, no `float`, no `z-index`, no `em`/`rem`/`vh`/`vw`, no `calc()`, no `hsl()`. Anything
+  properties with `var()`, `transform` and `transition`, `overflow` (`hidden` clips, `auto` and `scroll`
+  clip and scroll), and `@media (orientation: ...)`. Units are `px` and `%` only. No Grid, no `float`, no `z-index`, no `em`/`rem`/`vh`/`vw`, no `calc()`, no `hsl()`. Anything
   unsupported is parsed and dropped silently.
 - **Selectors:** everything AngleSharp's `querySelectorAll` accepts, plus the state pseudo-classes `:hover`,
   `:active`, `:focus`, `:disabled` on the last compound. State rules repaint, they do not re-lay-out.
@@ -319,10 +328,18 @@ Honest limits, because a browser sets different expectations:
   it, `s1.setOrientation(v)` turns it, and the choice is remembered per app without you storing anything.
   A page whose SHAPE changes with the orientation also gets `orientationchange` (`e.value` is the new one),
   because which of two panes the player should land on is a question a stylesheet cannot answer.
-- **Events:** `click`, `input`, `keydown` (Enter in a field), `back` and `orientationchange`. Others are not
-  dispatched, however plausible the name. Right-click and Escape both raise `back` at the document;
-  `preventDefault()` keeps the app open so a page can step back inside itself, and not taking it closes the
-  app. `e.source` is `"rightClick"` or `"escape"`.
+- **Events:** `click`, `input`, `keydown` (Enter in a field), `dragstart` / `drag` / `dragend`, `wheel`,
+  `back` and `orientationchange`. Others are not dispatched, however plausible the name. Right-click and
+  Escape both raise `back` at the document; `preventDefault()` keeps the app open so a page can step back
+  inside itself, and not taking it closes the app. `e.source` is `"rightClick"` or `"escape"`.
+- **Where the pointer landed.** A `click` carries `e.offsetX` / `e.offsetY` in the element's own CSS pixels
+  and `e.normX` / `e.normY` as a 0..1 fraction of its size - enough for a page that stands for a space of its
+  own, a map, to answer "what did they point at". A `drag` carries `e.deltaX` / `e.deltaY` since the last
+  one, and a `wheel` carries `e.wheelDelta`.
+- **Dragging costs nothing extra only if you move things the fast way.** Writing `transform`, a background,
+  a border colour, a corner radius or a box shadow from script repaints that one box; every other property
+  rebuilds the page, which is roughly half a millisecond per box on it. A pan that sets `left`/`top` at 60 Hz
+  will hitch; the same pan through `transform` will not.
 - **`<img>` paints a file from your bundle**, sized by CSS alone - the layout runs without Unity and cannot
   open a PNG to learn an intrinsic size, so give it a width and a height. The aspect ratio is preserved
   inside that box, and `color` tints the image, so one white glyph works on a dark bar and a light one.

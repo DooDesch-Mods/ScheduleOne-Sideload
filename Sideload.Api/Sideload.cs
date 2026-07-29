@@ -39,6 +39,9 @@ namespace Sideload.Api
         private static Action<string, string, string> _notify;
         private static Func<string, bool> _isOnScreen;
         private static Action<string, string, byte[]> _setImage;
+        private static Action<string, bool> _setIconHidden;
+        private static Action<string, bool> _setAppOpen;
+        private static Func<string, bool> _isAppOpen;
 
         /// <summary>True only when the Sideload host is installed AND bound. You rarely need this - the API is a safe
         /// no-op when absent; use it to decide whether to build a fallback UI instead.</summary>
@@ -101,6 +104,19 @@ namespace Sideload.Api
 
         internal static void SetImage(string appId, string name, byte[] png) => _setImage?.Invoke(appId, name, png);
 
+        internal static void HideIcon(string appId, bool hidden) => _setIconHidden?.Invoke(appId, hidden);
+
+        internal static void OpenApp(string appId, bool open) => _setAppOpen?.Invoke(appId, open);
+
+        internal static bool AppIsOpen(string appId) => _isAppOpen != null && _isAppOpen(appId);
+
+        /// <summary>
+        /// Whether the installed host understands iconless apps and programmatic opening. False against an older
+        /// Sideload - and a mod that supplies its own way in has to notice, because registering an app it cannot open
+        /// on a host that gives it no icon leaves the player with an app they can never reach.
+        /// </summary>
+        internal static bool HasOpen { get { EnsureBound(); return _setAppOpen != null && _setIconHidden != null; } }
+
         // ----- reflection handshake (runs until it binds, then latches) -----
 
         private static void EnsureBound()
@@ -126,6 +142,9 @@ namespace Sideload.Api
                 _notify = Get<Action<string, string, string>>(t, "Notify");
                 _isOnScreen = Get<Func<string, bool>>(t, "IsAppOnScreen");
                 _setImage = Get<Action<string, string, byte[]>>(t, "SetImage");
+                _setIconHidden = Get<Action<string, bool>>(t, "SetIconHidden");
+                _setAppOpen = Get<Action<string, bool>>(t, "SetAppOpen");
+                _isAppOpen = Get<Func<string, bool>>(t, "IsAppOpen");
 
                 _bound = true;
 
@@ -294,5 +313,65 @@ namespace Sideload.Api
             Apps.WhenBound(() => Apps.SetImage(id, name, png));
             return this;
         }
+
+        /// <summary>
+        /// Give this app no home-screen icon. For an app whose way in already exists somewhere else - a vanilla icon
+        /// your mod has taken over, a world object, another app handing off.
+        ///
+        /// With no icon, <see cref="Open"/> is the ONLY way in: call it from wherever your entry point is, or the app
+        /// is unreachable. Check <see cref="CanOpenProgrammatically"/> first - against an older Sideload this is a
+        /// no-op and the app would get an icon you did not plan for.
+        /// <code>
+        ///   Apps.Register("reflash-messages", "Reflash.Assets.reflash-messages", "Messages").NoIcon();
+        /// </code>
+        /// </summary>
+        public AppHandle NoIcon()
+        {
+            string id = _id;
+            Apps.WhenBound(() => Apps.HideIcon(id, true));
+            return this;
+        }
+
+        /// <summary>
+        /// Open this app as if the player had pressed its icon: whatever else is open closes first, and the phone
+        /// turns to this app's orientation. Does nothing while the app is not on a phone - before the home screen
+        /// exists there is nothing to open.
+        /// <code>
+        ///   if (playerPressedTheHijackedIcon) app.Open();
+        /// </code>
+        /// </summary>
+        public AppHandle Open()
+        {
+            string id = _id;
+            Apps.WhenBound(() => Apps.OpenApp(id, true));
+            return this;
+        }
+
+        /// <summary>Close this app, returning the phone to its home screen. Does nothing if it is not the open one.</summary>
+        public AppHandle Close()
+        {
+            string id = _id;
+            Apps.WhenBound(() => Apps.OpenApp(id, false));
+            return this;
+        }
+
+        /// <summary>
+        /// Whether this app is the one the phone has open - true even with the phone in the player's pocket. For
+        /// "can they actually see it", use <see cref="IsOnScreen"/>.
+        /// </summary>
+        public bool IsOpen { get { return Apps.Available && Apps.AppIsOpen(_id); } }
+
+        /// <summary>
+        /// Whether the installed Sideload understands <see cref="NoIcon"/> and <see cref="Open"/>. False against an
+        /// older host, where both are silent no-ops.
+        ///
+        /// A mod that provides its own entry point must check this before registering anything: on an older host it
+        /// would hide nothing, open nothing, and leave the player with apps they cannot reach. Refuse to set up and
+        /// say which version is needed - that is a fixable message, an unreachable app is not.
+        /// <code>
+        ///   if (!AppHandle.CanOpenProgrammatically) { Log.Error("needs Sideload 1.1.0 or newer"); return; }
+        /// </code>
+        /// </summary>
+        public static bool CanOpenProgrammatically { get { return Apps.Available && Apps.HasOpen; } }
     }
 }

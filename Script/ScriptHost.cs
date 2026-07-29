@@ -47,13 +47,15 @@ namespace Sideload.Script
         private bool _failed;
 
         internal ScriptHost(string appId, IDocument document, Action onDomChanged,
-                            Action<IElement> onFocusRequested, Action<IElement> onScrollToEnd)
+                            Action<IElement> onFocusRequested, Action<IElement> onScrollToEnd,
+                            Action<IElement> onPaintOnlyChange = null)
         {
             _appId = appId;
             _document = document;
             OnDomChanged = onDomChanged;
             OnFocusRequested = onFocusRequested;
             OnScrollToEnd = onScrollToEnd;
+            OnPaintOnlyChange = onPaintOnlyChange;
 
             Engine = new Engine(options =>
             {
@@ -85,6 +87,12 @@ namespace Sideload.Script
         internal Action<IElement> OnFocusRequested { get; }
 
         internal Action<IElement> OnScrollToEnd { get; }
+
+        /// <summary>
+        /// An inline style changed that only affects how one box is PAINTED, never where anything sits. Null falls
+        /// back to a full rebuild, so a host that does not offer the fast path still behaves correctly.
+        /// </summary>
+        internal Action<IElement> OnPaintOnlyChange { get; }
 
         /// <summary>True once a script error has taken the page down; further work is skipped rather than logged
         /// every frame.</summary>
@@ -131,6 +139,17 @@ namespace Sideload.Script
         }
 
         internal void MarkDirty() => OnDomChanged?.Invoke();
+
+        /// <summary>
+        /// Repaint one box instead of rebuilding the page. Only for properties that provably cannot move anything -
+        /// see <see cref="DomApi.JsStyle"/> for the list and why each entry is on it. Falls back to a full rebuild
+        /// when no repaint path is wired.
+        /// </summary>
+        internal void MarkPaintDirty(IElement element)
+        {
+            if (OnPaintOnlyChange == null) { MarkDirty(); return; }
+            OnPaintOnlyChange(element);
+        }
 
         internal void RequestFocus(IElement element) => OnFocusRequested?.Invoke(element);
 
@@ -277,9 +296,16 @@ namespace Sideload.Script
         /// Fire an event at an element and let it bubble to the document, exactly as the DOM does: each ancestor's
         /// handlers run in registration order, and `stopPropagation` ends the walk.
         /// </summary>
-        internal JsEvent Dispatch(IElement target, string type, string value = "", string key = "", string source = "")
+        internal JsEvent Dispatch(IElement target, string type, string value = "", string key = "", string source = "",
+                                  Input.PointerSpot spot = default,
+                                  float deltaX = 0f, float deltaY = 0f, float wheelDelta = 0f)
         {
-            var evt = new JsEvent(type, Wrap(target)) { Value = value ?? "", Key = key ?? "", Source = source ?? "" };
+            var evt = new JsEvent(type, Wrap(target))
+            {
+                Value = value ?? "", Key = key ?? "", Source = source ?? "",
+                OffsetX = spot.OffsetX, OffsetY = spot.OffsetY, NormX = spot.NormX, NormY = spot.NormY,
+                DeltaX = deltaX, DeltaY = deltaY, WheelDelta = wheelDelta,
+            };
             if (_failed || target == null) return evt;
 
             IElement node = target;

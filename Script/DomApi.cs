@@ -267,7 +267,15 @@ namespace Sideload.Script
             if (string.Equals(before ?? "", text, StringComparison.Ordinal)) return true;
 
             Write(css, text);
-            _host.MarkDirty();
+
+            // A rebuild destroys and recreates every GameObject on the page - measured at roughly half a millisecond
+            // per box, so a 200-box page costs ~100ms. Paying that to change a colour, and paying it per frame to
+            // animate a transform, is what made panning a map impossible. These properties are handled by
+            // Painter.Repaint, which is the same path :hover already takes: new style, same layout, no new objects.
+            // css is null for cssText, which replaces the whole declaration block and can therefore change anything.
+            if (Css.PaintOnlyProperties.Covers(css)) _host.MarkPaintDirty(_element);
+            else _host.MarkDirty();
+
             return true;
         }
 
@@ -366,6 +374,36 @@ namespace Sideload.Script
         /// <summary>What raised the event, where more than one thing can: "rightClick" or "escape" for `back`.
         /// Empty otherwise. Most pages should treat every source alike; it is here for the ones that must not.</summary>
         public string Source { get; internal set; } = "";
+
+        /// <summary>
+        /// Where inside the clicked element the pointer landed, in CSS pixels from its top-left corner. Zero for
+        /// events that have no position (`back`, `input`, `keydown`, `orientationchange`).
+        ///
+        /// This is what lets a page answer "where did they point at", which a map needs and a plain button does not.
+        /// </summary>
+        public float OffsetX { get; internal set; }
+
+        public float OffsetY { get; internal set; }
+
+        /// <summary>The same point as a 0..1 fraction of the element's own width and height - what you want when the
+        /// element stands for something with its own coordinate space, like a map.</summary>
+        public float NormX { get; internal set; }
+
+        public float NormY { get; internal set; }
+
+        /// <summary>
+        /// How far the pointer moved since the previous event, in CSS pixels. Set on `drag`; zero on `dragstart` and
+        /// `dragend`, which mark the ends of a gesture rather than a movement within it.
+        ///
+        /// Measured against the page rather than the element, so an element that is being moved BY the drag still
+        /// reports the movement of the hand rather than the movement of itself.
+        /// </summary>
+        public float DeltaX { get; internal set; }
+
+        public float DeltaY { get; internal set; }
+
+        /// <summary>One wheel notch on a `wheel` event, positive downwards - the sign the DOM uses.</summary>
+        public float WheelDelta { get; internal set; }
 
         public bool DefaultPrevented { get; private set; }
 

@@ -21,6 +21,7 @@ namespace Sideload.Config
         private static MelonPreferences_Entry<bool> _devToolsAutoOpen;
         private static MelonPreferences_Entry<string> _devToolsFrontend;
         private static MelonPreferences_Entry<bool> _devToolsFetchFrontend;
+        private static MelonPreferences_Entry<bool> _autoOpenApp;
 
         internal static void Initialize()
         {
@@ -61,10 +62,20 @@ namespace Sideload.Config
                 "until the copy lands and offline afterwards. OFF: nothing is downloaded and the interface comes " +
                 "from Google's servers every time, which needs internet. " +
                 "Workspace/tools/install-devtools-frontend.ps1 does the same thing by hand.");
+
+            _autoOpenApp = _category.CreateEntry("AutoOpenAppInDebug", true, "Open an app by itself (debug builds)",
+                "ON (default): a debug build raises the phone a few seconds after the world loads and opens the " +
+                "first registered app, so a milestone can be signed off from a screenshot without anyone pressing " +
+                "keys. OFF: the phone is left alone. Turn this off when you are photographing the game's OWN " +
+                "screens - an app opened this way sits on top of them and cannot be dismissed from the home " +
+                "screen. No effect in a release build, where this never runs at all.");
         }
 
         /// <summary>The gate for the whole devtools feature. False on a fresh install and in every shipped build.</summary>
         internal static bool DevTools => _devTools?.Value ?? false;
+
+        /// <summary>Whether a debug build may open an app on its own. Irrelevant in release, where it cannot.</summary>
+        internal static bool AutoOpenAppInDebug => _autoOpenApp?.Value ?? true;
 
         internal static int DevToolsPort => Math.Clamp(_devToolsPort?.Value ?? 9333, 1024, 65535);
 

@@ -330,7 +330,7 @@ namespace Sideload.Host
             if (tooBig != null) { ShowError(tooBig); return; }
             _sheet = CssParser.Parse(CollectCss(_document));
 
-            _interaction = new Interaction(OnStateChanged, OnClicked);
+            _interaction = new Interaction(OnStateChanged, OnClicked, OnDragged, OnWheel, _root);
             _context = new StyleContext
             {
                 Orientation = cssW >= cssH ? Orientation.Landscape : Orientation.Portrait,
@@ -340,7 +340,7 @@ namespace Sideload.Host
             // The script runs BEFORE the first render, not after: it may build half the page and it registers the
             // click listeners that decide which boxes need a hit target. Rendering first would either miss those or
             // force a second full pass one frame later.
-            _script = new ScriptHost(_appId, _document, QueueRebuild, Focus, PinToEnd);
+            _script = new ScriptHost(_appId, _document, QueueRebuild, Focus, PinToEnd, RepaintOnly);
             RunScripts(_document);
 
             Render(cssW, cssH, hostW, hostH, scale);
@@ -589,9 +589,29 @@ namespace Sideload.Host
                 stateful.Add(control);
 
             // A script that listens on a plain div still needs that div to receive the pointer.
+            var draggable = new HashSet<IElement>();
+            var wheeled = new HashSet<IElement>();
+
             if (_script != null)
+            {
                 foreach (IElement clickable in _script.ElementsListeningFor("click"))
                     stateful.Add(clickable);
+
+                // Gestures the page takes over from the scroll area it sits in, so they are collected separately -
+                // wiring them on everything would stop most lists scrolling.
+                foreach (string type in new[] { "dragstart", "drag", "dragend" })
+                    foreach (IElement dragged in _script.ElementsListeningFor(type))
+                    {
+                        stateful.Add(dragged);
+                        draggable.Add(dragged);
+                    }
+
+                foreach (IElement scrolled in _script.ElementsListeningFor("wheel"))
+                {
+                    stateful.Add(scrolled);
+                    wheeled.Add(scrolled);
+                }
+            }
 
             int wired = 0;
             foreach (IElement element in stateful)
@@ -605,7 +625,8 @@ namespace Sideload.Host
                 bool isFormControl = element.LocalName.Equals("input", StringComparison.OrdinalIgnoreCase)
                                      || element.LocalName.Equals("textarea", StringComparison.OrdinalIgnoreCase);
 
-                _interaction.Attach(box.Rect, element, disabled, ownGameObject: isFormControl);
+                _interaction.Attach(box.Rect, element, disabled, ownGameObject: isFormControl,
+                                    draggable: draggable.Contains(element), wheel: wheeled.Contains(element));
                 wired++;
             }
 
@@ -617,6 +638,21 @@ namespace Sideload.Host
         /// deliberately left alone, which is why state rules are a paint-only feature - a `:hover` that changed the
         /// width would need a full reflow and is not supported.
         /// </summary>
+        /// <summary>
+        /// A script wrote a paint-only inline style. Same work a hover does - recompute the cascade for that element
+        /// and repaint its box - which is why it costs nothing next to a rebuild.
+        ///
+        /// An element with no painted box falls back to a rebuild rather than being dropped: a node the script just
+        /// created, or one inside a `display: none` subtree, has nothing to repaint yet, and silently skipping it
+        /// would leave the page showing a style it no longer has.
+        /// </summary>
+        private void RepaintOnly(IElement element)
+        {
+            if (element == null || _painted == null || !_painted.ContainsKey(element)) { QueueRebuild(); return; }
+
+            OnStateChanged(element);
+        }
+
         private void OnStateChanged(IElement element)
         {
             try
@@ -637,12 +673,31 @@ namespace Sideload.Host
             }
         }
 
-        private void OnClicked(IElement element)
+        private void OnClicked(IElement element, Input.PointerSpot spot)
         {
             if (element == null) return;
             if (_inputs.ContainsKey(element)) _focused = element;
 
-            _script?.Dispatch(element, "click");
+            _script?.Dispatch(element, "click", spot: spot);
+        }
+
+        /// <summary>
+        /// A drag on an element whose page asked for it. The three phases are separate event types rather than one
+        /// event with a phase field, so a page can listen for the end of a gesture without also being woken sixty
+        /// times a second while it runs.
+        /// </summary>
+        private void OnDragged(IElement element, string type, Input.PointerSpot spot, UnityEngine.Vector2 delta)
+        {
+            if (element == null) return;
+
+            _script?.Dispatch(element, type, spot: spot, deltaX: delta.x, deltaY: delta.y);
+        }
+
+        private void OnWheel(IElement element, float notches)
+        {
+            if (element == null) return;
+
+            _script?.Dispatch(element, "wheel", wheelDelta: notches);
         }
 
         /// <summary>A painted input field reports every keystroke. The value is mirrored onto the element so that
@@ -862,6 +917,14 @@ namespace Sideload.Host
             using var reader = new StreamReader(stream);
             return reader.ReadToEnd();
         }
+
+        /// <summary>
+        /// The same framework file, for something serving a page outside this process. A companion device rendering
+        /// the identical bundle has to resolve `s1.css` the same way the in-game view does, or the two look different
+        /// for no reason a page author could see.
+        /// </summary>
+        internal static string FrameworkAsset(string path) =>
+            string.IsNullOrWhiteSpace(path) ? null : Framework(path);
 
         /// <summary>Fail-soft: a broken page shows what went wrong instead of a black screen.</summary>
         private void ShowError(string message)

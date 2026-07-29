@@ -112,7 +112,10 @@ namespace Sideload.Phone
             _panel.SetActive(true);
             _container.SetActive(false);   // the panel stays alive; only the contents show while the app is open
 
-            SpawnIcon(home);
+            // An iconless app is opened by whoever owns its entry point instead - it still gets a panel, a page and
+            // the exit key, just no square on the home screen.
+            if (!_reg.Iconless) SpawnIcon(home);
+
             SubscribeShellEvents();
 
             Core.Log?.Msg($"[Sideload] '{_reg.Id}' spawned on the phone.");
