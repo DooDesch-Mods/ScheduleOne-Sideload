@@ -204,8 +204,19 @@ namespace Sideload.Paint
 
                 Transform space = (canvas.rootCanvas != null ? canvas.rootCanvas : canvas).transform;
 
+                // The corners are taken through the transform one at a time rather than read from
+                // GetWorldCorners. That call fills a Vector3[] the caller owns, and under Il2CppInterop the array
+                // is copied INTO interop memory and never copied back - it returns four zeroes, every time. The
+                // rectangle then collapsed, the guard below read that as "not measured yet", and the fallback won
+                // silently: this whole method was dead in an IL2CPP build, and a panned or zoomed window clipped
+                // where its layout said rather than where its pixels were.
+                Rect local = rt.rect;
+
                 var corners = new Vector3[4];
-                rt.GetWorldCorners(corners);
+                corners[0] = rt.TransformPoint(new Vector3(local.xMin, local.yMin, 0f));
+                corners[1] = rt.TransformPoint(new Vector3(local.xMin, local.yMax, 0f));
+                corners[2] = rt.TransformPoint(new Vector3(local.xMax, local.yMax, 0f));
+                corners[3] = rt.TransformPoint(new Vector3(local.xMax, local.yMin, 0f));
 
                 float xMin = float.MaxValue, yMin = float.MaxValue, xMax = float.MinValue, yMax = float.MinValue;
 
