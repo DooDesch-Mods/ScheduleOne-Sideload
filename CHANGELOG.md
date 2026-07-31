@@ -7,6 +7,18 @@ All notable changes to Sideload are documented here. This project adheres to
 
 ### Fixed
 
+- **A repaint escaped its scroll area.** Hovering a list row that had scrolled out of its viewport drew the row's
+  background across whatever sat above the list - a sticky bar, a header - hiding it completely, and with no text,
+  which made it look like the bar had gone blank rather than been covered.
+
+  Clipping lives on the CanvasRenderer and is taken from a static that only holds a value while the paint walk is
+  inside a scroll area. A repaint happens long after that walk - a hover, a transition frame - with the static back
+  at null, so the box was redrawn with clipping switched off and reappeared wherever its rect happened to be. Each
+  painted box now remembers the clip it was built under, and both repaint paths restore it.
+
+  It needed a page with something FIXED above a scrolling list to be visible at all; until one existed the escaped
+  box drew over other list rows, where it was indistinguishable from a hover.
+
 - **A border on a box with no background drew nothing at all.** An outlined chip - `border: 1px solid`, no
   fill - was invisible, while the same border on a filled box was fine. A uniform border is drawn as the
   shader's rounded ring inside the fill's own quad, so with a transparent fill there was nothing for it to

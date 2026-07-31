@@ -23,11 +23,26 @@ namespace Sideload.Paint
             /// colour of its own - which is how hovering a chat row turned its white avatar letter dark.</summary>
             internal readonly Il2CppTMPro.TextMeshProUGUI Text;
 
+            /// <summary>
+            /// The clip this box was FIRST painted under, so a later repaint can put it back.
+            ///
+            /// This is not bookkeeping for its own sake. Clipping lives on the CanvasRenderer and is set from the
+            /// static <see cref="BoxRenderer.ActiveClip"/>, which is only meaningful while the paint walk is inside
+            /// a scroll area. A repaint happens long afterwards - a hover, a transition frame - with that static
+            /// back at null, so the box was redrawn UNCLIPPED and reappeared at whatever position its rect holds.
+            ///
+            /// What that looked like: hovering a list row that had scrolled up out of its viewport repainted the
+            /// row's background across the sticky bar above the list, hiding it completely - and with no text,
+            /// because a TMP component carries its own clip from build time and was never touched.
+            /// </summary>
+            internal readonly Rect? Clip;
+
             internal PaintedBox(LayoutNode node, RectTransform rect, Il2CppTMPro.TextMeshProUGUI text = null)
             {
                 Node = node;
                 Rect = rect;
                 Text = text;
+                Clip = BoxRenderer.ActiveClip;
             }
         }
 
@@ -372,7 +387,16 @@ namespace Sideload.Paint
         {
             if (box.Rect == null || style == null) return;
 
-            BoxRenderer.Paint(box.Rect, ToVisual(style, box.Node.Width, box.Node.Height), box.Node.Width, box.Node.Height);
+            // Under the clip it was built with - see PaintedBox.Clip. Restored rather than assigned, because a
+            // repaint can be triggered from inside a paint walk and must not leave the walk's clip behind.
+            Rect? outer = BoxRenderer.ActiveClip;
+            BoxRenderer.ActiveClip = box.Clip;
+            try
+            {
+                BoxRenderer.Paint(box.Rect, ToVisual(style, box.Node.Width, box.Node.Height), box.Node.Width, box.Node.Height);
+            }
+            finally { BoxRenderer.ActiveClip = outer; }
+
             ApplyTransform(box.Rect, style);
 
             if (box.Text != null)
@@ -404,7 +428,11 @@ namespace Sideload.Paint
             visual.BorderColor = Color.Lerp(before.BorderColor, visual.BorderColor, t);
             visual.ShadowColor = Color.Lerp(before.ShadowColor, visual.ShadowColor, t);
 
-            BoxRenderer.Paint(box.Rect, visual, w, h);
+            // Same as Repaint: a transition frame is a repaint, and an unclipped one escapes its scroll area.
+            Rect? outer = BoxRenderer.ActiveClip;
+            BoxRenderer.ActiveClip = box.Clip;
+            try { BoxRenderer.Paint(box.Rect, visual, w, h); }
+            finally { BoxRenderer.ActiveClip = outer; }
 
             ApplyTransform(box.Rect, from, to, t);
 
