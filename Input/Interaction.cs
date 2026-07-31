@@ -151,7 +151,7 @@ namespace Sideload.Input
                 // The hit target MUST live on its own GameObject. A Graphic takes ownership of the CanvasRenderer it
                 // sits on and pushes its own geometry into it, so adding the Image next to the box mesh silently
                 // erased the box - the element rendered blank until the first hover triggered a repaint.
-                RectTransform hitRect = Paint.UiFactory.Rect("hit", rect);
+                RectTransform hitRect = Paint.UiFactory.Rect(Paint.Painter.HitTargetName, rect);
                 Paint.UiFactory.Stretch(hitRect);
 
                 var hit = hitRect.gameObject.AddComponent<Image>();

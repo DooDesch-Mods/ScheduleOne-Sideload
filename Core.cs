@@ -2,7 +2,7 @@ using System.Reflection;
 using MelonLoader;
 using MelonLoader.Utils;
 
-[assembly: MelonInfo(typeof(Sideload.Core), "Sideload", "1.1.0", "DooDesch", "https://github.com/DooDesch-Mods/ScheduleOne-Sideload")]
+[assembly: MelonInfo(typeof(Sideload.Core), "Sideload", "1.2.0", "DooDesch", "https://github.com/DooDesch-Mods/ScheduleOne-Sideload")]
 [assembly: MelonGame("TVGS", "Schedule I")]
 
 namespace Sideload

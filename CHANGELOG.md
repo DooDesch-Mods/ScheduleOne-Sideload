@@ -3,9 +3,26 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.2.0] - 2026-07-31
 
 ### Fixed
+
+- **A scrolled list still swallowed clicks meant for whatever sat above it.** Scroll a list, then press a button
+  in a bar fixed above it, and a list row took the press instead - the row was off screen, but only visually.
+
+  Clipping in this engine is a rendering instruction and nothing else: uGUI decides what a click hit by raycasting
+  Graphics, and the only thing that filters that is a component implementing `ICanvasRaycastFilter`, which is what
+  `RectMask2D` is. This engine cannot use `RectMask2D` (it collapses on a rotated panel) and cannot implement the
+  interface either (a Unity interface on a managed type is the unreliable virtual-override path a custom `Graphic`
+  was already ruled out for). So every hit target stayed live at wherever its rect had scrolled to.
+
+  Hit targets are now shrunk to the visible part of their element whenever the list moves, and switched off
+  entirely when none of it is in view. No interface needed: the hit target is a child stretched over its element,
+  so insetting it is enough, and the work happens in the content's own local space, which is rotation-free by
+  construction.
+
+  Until a page put something FIXED above a scrolling list, this only ever let a click land on a row that happened
+  to be off screen - unwanted, but invisible.
 
 - **A repaint escaped its scroll area.** Hovering a list row that had scrolled out of its viewport drew the row's
   background across whatever sat above the list - a sticky bar, a header - hiding it completely, and with no text,

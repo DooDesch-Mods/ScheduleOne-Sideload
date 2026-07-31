@@ -371,7 +371,16 @@ namespace Sideload.Paint
             // all and so were never re-examined, carried on drawing past the edge of the screen. Reapplying on the
             // scroll event is the only point at which both are true again.
             Rect? settled = clip;
-            scroll.onValueChanged.AddListener((UnityEngine.Events.UnityAction<Vector2>)(_ => Reclip(content, settled)));
+            RectTransform viewportRect = viewport;
+            scroll.onValueChanged.AddListener((UnityEngine.Events.UnityAction<Vector2>)(_ =>
+            {
+                Reclip(content, settled);
+                CullHitTargets(content, viewportRect);
+            }));
+
+            // Once at build time as well: a list that is already scrolled when it is rebuilt - a rebuild during a
+            // scroll, or a page that restores its position - would otherwise wait for the next wheel notch.
+            CullHitTargets(content, viewport);
 
             Core.Log?.Msg($"[Sideload] scroll area at ({absX:0.#},{absY:0.#}) size {node.Width:0.#}x{node.Height:0.#}, " +
                           $"content {ContentBottom(node):0.#}, clip={clip}");
@@ -813,6 +822,100 @@ namespace Sideload.Paint
             {
                 // The page was torn down mid-scroll. Nothing to reassert and nothing worth logging.
             }
+        }
+
+        /// <summary>
+        /// Shrink every hit target inside a scroll area to the part of it that is actually visible.
+        ///
+        /// CLIPPING DOES NOT REACH THE POINTER. `CanvasRenderer.EnableRectClipping` is a rendering instruction and
+        /// nothing more - uGUI decides what a click hit by raycasting Graphics, and the only thing that filters that
+        /// is a component implementing ICanvasRaycastFilter, which is what RectMask2D is. This engine cannot use
+        /// RectMask2D (it collapses on a rotated panel, see BuildScrollArea) and cannot implement the interface
+        /// either (a Unity interface on a managed type is the unreliable virtual-override path this file already
+        /// rules out for Graphic). So a row that scrolled out of view stayed perfectly clickable at wherever its
+        /// rect had moved to - and once a page put fixed chrome above its list, "wherever" was on top of that
+        /// chrome. The reported symptom: after scrolling, pressing the filters or the red action pressed a list row
+        /// instead.
+        ///
+        /// The fix needs no interface: the hit target is a child stretched over its element, so insetting it is
+        /// enough, and the visible band is a plain vertical range because this engine only scrolls vertically.
+        /// Working in the content's own local space keeps it correct under rotation for free - the panel's rotation
+        /// is above the content, so nothing here has to know about it.
+        /// </summary>
+        /// <summary>
+        /// The name Interaction gives a hit target. Shared because <see cref="CullHitTargets"/> finds them by it -
+        /// two spellings of the same string would leave the culling silently doing nothing.
+        /// </summary>
+        internal const string HitTargetName = "hit";
+
+        private static void CullHitTargets(Transform content, RectTransform viewport)
+        {
+            if (content == null || viewport == null) return;
+
+            try
+            {
+                var contentRect = content as RectTransform;
+                if (contentRect == null) return;
+
+                // The band of content the viewport is showing, measured down from the content's own top edge.
+                float bandTop = contentRect.anchoredPosition.y;
+                float bandBottom = bandTop + viewport.rect.height;
+
+                var hits = content.GetComponentsInChildren<Image>(true);
+                for (int i = 0; hits != null && i < hits.Length; i++)
+                {
+                    Image hit = hits[i];
+                    if (hit == null || hit.gameObject.name != HitTargetName) continue;
+
+                    RectTransform rt = hit.rectTransform;
+                    var owner = rt.parent as RectTransform;
+                    if (owner == null) continue;
+
+                    float top = TopWithin(owner, content);
+                    float height = owner.rect.height;
+
+                    float visibleTop = Math.Max(top, bandTop);
+                    float visibleBottom = Math.Min(top + height, bandBottom);
+
+                    if (visibleBottom <= visibleTop)
+                    {
+                        // Entirely outside. Left in place with no raycast rather than resized to nothing, because a
+                        // zero-height rect still answers a raycast exactly on its own edge.
+                        hit.raycastTarget = false;
+                        continue;
+                    }
+
+                    hit.raycastTarget = true;
+
+                    // Stretched to the owner, so offsetMax.y is the inset from the top and offsetMin.y from the
+                    // bottom. Both are zero for a row that is fully in view, which is the overwhelming majority.
+                    rt.offsetMax = new Vector2(rt.offsetMax.x, -(visibleTop - top));
+                    rt.offsetMin = new Vector2(rt.offsetMin.x, (top + height) - visibleBottom);
+                }
+            }
+            catch
+            {
+                // Torn down mid-scroll. Nothing to cull and nothing worth logging.
+            }
+        }
+
+        /// <summary>
+        /// How far an element's top edge sits below the scroll content's top, in the content's own units.
+        ///
+        /// Every box in a painted page is placed with <see cref="UiFactory.PlaceFromTopLeft"/>, which encodes the
+        /// CSS y as a negative anchoredPosition, so walking up and summing is exact rather than approximate.
+        /// </summary>
+        private static float TopWithin(RectTransform node, Transform content)
+        {
+            float y = 0f;
+
+            for (RectTransform at = node; at != null && at.transform != content; at = at.parent as RectTransform)
+            {
+                y += -at.anchoredPosition.y;
+                if (at.parent == null) break;
+            }
+
+            return y;
         }
 
         /// <summary>Nothing to draw when the box is fully transparent - skip the mesh instead of adding an invisible one.</summary>
