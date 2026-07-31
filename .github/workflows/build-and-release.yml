@@ -109,11 +109,6 @@ jobs:
       - name: Build the project (Release, IL2CPP)
         run: dotnet build Sideload.csproj --configuration Release /p:WorkspaceLibPath="${{ github.workspace }}/Workspace/lib"
 
-      # The modder shim: a zero-reference netstandard2.0 assembly. Mod authors can either reference
-      # this DLL or copy Sideload.Api/Sideload.cs into their own project, so both routes have to ship.
-      - name: Build the modder shim (Sideload.Api)
-        run: dotnet build Sideload.Api/Sideload.Api.csproj --configuration Release
-
       - name: Prepare release directory
         run: |
           mkdir -p release release/UserLibs
@@ -156,14 +151,6 @@ jobs:
           name: Sideload
           path: "Sideload_${{ steps.version-check.outputs.version }}.zip"
 
-      # Its own asset, deliberately outside both install payloads: a mod author references it at
-      # build time, a player must never end up with it in the game's Mods folder.
-      - name: Upload modder shim
-        uses: actions/upload-artifact@v4
-        with:
-          name: Sideload-api
-          path: Sideload.Api/bin/Release/netstandard2.0/Sideload.Api.dll
-
       # Nexus is installed through Vortex, whose Schedule 1 extension deploys relative to the game root and
       # maps loose non-.md files at the archive root (manifest.json, icon.png) to a bare "mods" path - which
       # lands a FILE named "mods" in the game folder, replacing the real Mods DIRECTORY and wiping other mods.
@@ -196,12 +183,6 @@ jobs:
         with:
           name: Sideload
 
-      - name: Download modder shim
-        uses: actions/download-artifact@v4
-        with:
-          name: Sideload-api
-          path: api
-
       - name: Extract DLL from ZIP
         run: |
           unzip -q "Sideload_${{ needs.build.outputs.version }}.zip" -d release/
@@ -214,7 +195,6 @@ jobs:
           files: |
             release/Sideload.dll
             Sideload_${{ needs.build.outputs.version }}.zip
-            api/Sideload.Api.dll
           body: |
             ## Changes in ${{ needs.build.outputs.version }}
 
