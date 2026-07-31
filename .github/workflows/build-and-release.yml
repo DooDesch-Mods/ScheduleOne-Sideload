@@ -87,19 +87,46 @@ jobs:
             echo "$SECTION"
             echo "CHANGELOG_EOF"
           } >> "$GITHUB_OUTPUT"
-          # Nexus file descriptions use BBCode, not Markdown. Convert "### Heading" to [b]Heading[/b],
-          # "- item" bullets to [list]/[*], drop inline-code backticks, and join wrapped bullet lines.
+          # Nexus file descriptions are BBCode, not Markdown, and anything left unconverted shows up on the
+          # page as literal asterisks or bracket-and-paren pairs. This turns the CHANGELOG section into the
+          # subset Nexus renders: **bold**, [text](url), ATX headings, "- " bullets with one level of
+          # nesting, and hard-wrapped paragraphs joined back into one line. Inline-code backticks are
+          # dropped, because Nexus has no inline code and a font tag around a setting name is not worth it.
+          # POSIX awk only - the runner's awk is mawk: no interval expressions, no gensub, no capture groups.
           BBCODE=$(printf '%s\n' "$SECTION" | awk '
-            function flush(){ if(buf!=""){ printf "[*]%s\n", buf; buf="" } }
-            BEGIN{ inlist=0; buf="" }
-            {
-              line=$0; gsub(/`/,"",line); sub(/[ \t]+$/,"",line)
-              if (line ~ /^### /){ flush(); if(inlist){print "[/list]"; inlist=0} h=line; sub(/^### /,"",h); printf "[b]%s[/b]\n", h; next }
-              if (line ~ /^- /){ flush(); if(!inlist){print "[list]"; inlist=1} buf=line; sub(/^- /,"",buf); next }
-              if (line ~ /^[ \t]*$/){ next }
-              sub(/^[ \t]+/,"",line); if(buf!="") buf=buf " " line; else printf "%s\n", line
+            function inline(s,   t, m, p, txt, url) {
+              while (match(s, /\*\*[^*]+\*\*/)) {
+                t = substr(s, RSTART + 2, RLENGTH - 4)
+                s = substr(s, 1, RSTART - 1) "[b]" t "[/b]" substr(s, RSTART + RLENGTH)
+              }
+              while (match(s, /\[[^]]+\]\([^)]+\)/)) {
+                m = substr(s, RSTART, RLENGTH)
+                p = index(m, "](")
+                txt = substr(m, 2, p - 2)
+                url = substr(m, p + 2, length(m) - p - 2)
+                s = substr(s, 1, RSTART - 1) "[url=" url "]" txt "[/url]" substr(s, RSTART + RLENGTH)
+              }
+              return s
             }
-            END{ flush(); if(inlist) print "[/list]" }')
+            function flushitem() { if (item != "") { printf "[*]%s\n", inline(item); item = "" } }
+            function flushpara() { if (para != "") { printf "%s\n", inline(para); para = "" } }
+            function setlevel(want) {
+              flushitem()
+              while (lvl > want) { print "[/list]"; lvl-- }
+              while (lvl < want) { print "[list]"; lvl++ }
+            }
+            BEGIN { lvl = 0; item = ""; para = "" }
+            {
+              raw = $0; gsub(/`/, "", raw); sub(/[ \t]+$/, "", raw)
+              if (raw ~ /^[ \t]*$/) { flushitem(); flushpara(); next }
+              if (raw ~ /^#+ /) { flushitem(); flushpara(); setlevel(0); h = raw; sub(/^#+ +/, "", h); printf "[b]%s[/b]\n", inline(h); next }
+              if (raw ~ /^[ \t]*[-*] /) { flushpara(); indent = match(raw, /[^ \t]/) - 1; setlevel(indent >= 2 ? 2 : 1); item = raw; sub(/^[ \t]*[-*] +/, "", item); next }
+              sub(/^[ \t]+/, "", raw)
+              if (item != "") { item = item " " raw; next }
+              setlevel(0)
+              para = (para == "" ? raw : para " " raw)
+            }
+            END { flushitem(); flushpara(); setlevel(0) }')
           {
             echo "notes_bbcode<<CHANGELOG_EOF"
             echo "$BBCODE"
