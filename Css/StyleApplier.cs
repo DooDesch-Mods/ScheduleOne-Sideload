@@ -332,11 +332,20 @@ namespace Sideload.Css
 
             foreach (string part in ValueParser.SplitTopLevel(value))
             {
-                if (Is(part, "solid") || Is(part, "none") || Is(part, "hidden")) continue;
+                // Every line style CSS defines, not just `solid`. The engine draws them all as solid - it has no
+                // dash pattern - but a style keyword must still be RECOGNISED, or it falls through to the colour
+                // parser below and a stylesheet saying `1px dashed var(--ink-2)` ends up asking for the colour
+                // "dashed". Degrading a dash to a solid hairline is honest; silently losing the colour is not.
+                if (IsLineStyle(part)) continue;
                 if (ValueParser.TryLength(part, out Len w) && w.IsDefinite) { SetWidth(s, side, w); continue; }
                 if (ValueParser.TryColor(part, out RgbaColor c)) s.BorderColor = c;
             }
         }
+
+        /// <summary>The CSS border line styles. All of them draw solid here; none of them is a colour.</summary>
+        private static bool IsLineStyle(string part) =>
+            Is(part, "solid") || Is(part, "none") || Is(part, "hidden") || Is(part, "dashed") || Is(part, "dotted")
+            || Is(part, "double") || Is(part, "groove") || Is(part, "ridge") || Is(part, "inset") || Is(part, "outset");
 
         private static void SetWidth(ComputedStyle s, Side side, Len width)
         {

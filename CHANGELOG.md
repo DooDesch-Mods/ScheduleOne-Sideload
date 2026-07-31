@@ -3,6 +3,24 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **A border on a box with no background drew nothing at all.** An outlined chip - `border: 1px solid`, no
+  fill - was invisible, while the same border on a filled box was fine. A uniform border is drawn as the
+  shader's rounded ring inside the fill's own quad, so with a transparent fill there was nothing for it to
+  modulate. A uniform border over a transparent fill with square corners is now drawn as four strips instead,
+  which is what a single-sided border already did. Rounded boxes keep the ring.
+
+  It shipped invisibly because every border anyone had drawn until now was either single-sided (a list row's
+  hairline) or sat on a fill (an input, a button). An app whose design language is outlined chips had no
+  outlines anywhere and nothing in any log said so.
+- **`border: 1px dashed <colour>` lost its colour.** The shorthand parser recognised only `solid`, `none` and
+  `hidden`, so every other line style fell through to the colour parser and consumed the declaration's actual
+  colour. All ten CSS line styles are now recognised; the engine still draws them solid, because it has no
+  dash pattern.
+
 ## [1.1.0] - 2026-07-28
 
 ### Added

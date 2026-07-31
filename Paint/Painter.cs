@@ -823,7 +823,25 @@ namespace Sideload.Paint
             float top = s.BorderWidth.Top.Resolve(width), right = s.BorderWidth.Right.Resolve(width);
             float bottom = s.BorderWidth.Bottom.Resolve(width), left = s.BorderWidth.Left.Resolve(width);
 
-            if (top == right && right == bottom && bottom == left)
+            bool uniform = top == right && right == bottom && bottom == left;
+
+            /*
+              A UNIFORM BORDER OVER A TRANSPARENT FILL DOES NOT DRAW AS A RING, so it is drawn as four strips instead.
+
+              The ring lives in the same quad as the fill and is modulated by that quad's vertex colour, so with no
+              background there is nothing for it to modulate and the border disappears entirely. Every border in a
+              real page confirmed the rule: single-sided ones drew (they were already strips), bordered inputs and
+              buttons drew (they have a fill), and outlined chips with no background drew nothing at all - which is
+              how an app shipped with `border: 1px solid` on its state chips and no outline anywhere on screen.
+
+              Only when the corners are square. Four strips cannot follow a radius, and a rounded box with a
+              transparent fill is better served by the ring being subtly wrong than by its corners being cut off.
+            */
+            bool fillCarriesTheRing = !s.BackgroundColor.IsTransparent || s.HasGradient;
+            bool squared = s.BorderRadius.TopLeft <= 0f && s.BorderRadius.TopRight <= 0f
+                        && s.BorderRadius.BottomRight <= 0f && s.BorderRadius.BottomLeft <= 0f;
+
+            if (uniform && (fillCarriesTheRing || !squared))
             {
                 visual.BorderWidth = top;
             }
