@@ -34,13 +34,16 @@ namespace Sideload.Phone
         private static RectTransform _hostModule;   // the module we attached to, so a swap is noticed
         private static bool _warned;
 
-        /// <summary>Put the line up, or take it down. Called every frame; doing nothing is the common case.</summary>
+        /// <summary>Put the line up, or take it down. Called every frame; doing nothing is the common case, and it has
+        /// to STAY cheap - the two lookups behind it walk the scene, so neither may run on an ordinary frame.</summary>
         internal static void Show(bool wanted)
         {
+            if (!wanted && _row == null) return;   // nothing wanted, nothing up: the overwhelmingly common frame
+
             RectTransform module = CurrentModule();
 
-            // The game replaces the whole module when the player's context changes (InputPromptsCanvas.LoadModule),
-            // taking our line with it. Noticing that the module is a different object is what gets it back.
+            // The game swaps the whole panel out when the player's context changes, taking our line with it. Noticing
+            // that the container is a different object is what gets it back.
             if (_row != null && (!wanted || module == null || module != _hostModule)) Remove();
             if (!wanted || module == null || _row != null) return;
 
@@ -52,21 +55,35 @@ namespace Sideload.Phone
             }
         }
 
+        private static RectTransform _moduleCache;
+        private static float _moduleCacheAt = float.NegativeInfinity;
+        private const float ModuleRescanInterval = 0.25f;   // four scene scans a second, only while an app is open
+
         /// <summary>The row container the game is currently drawing into - i.e. the parent of whatever prompt rows are
-        /// live. Derived from the rows themselves because the panel objects are pooled and their containers private.</summary>
+        /// live. Derived from the rows themselves because the panel objects are pooled and their containers private.
+        ///
+        /// That derivation costs a scene scan, so the answer is cached: it is re-used for as long as the container is
+        /// still alive and on screen, and otherwise re-derived at most four times a second. A per-frame scan here cost
+        /// over 60% of the frame.</summary>
         private static RectTransform CurrentModule()
         {
+            if (_moduleCache != null && _moduleCache.gameObject.activeInHierarchy) return _moduleCache;
+            if (Time.unscaledTime - _moduleCacheAt < ModuleRescanInterval) return null;
+            _moduleCacheAt = Time.unscaledTime;
+
+            _moduleCache = null;
             try
             {
                 foreach (InputPromptsItemUI row in Object.FindObjectsOfType<InputPromptsItemUI>())
                 {
                     if (row == null || row.gameObject.name == RowName) continue;
                     if (!row.gameObject.activeInHierarchy) continue;
-                    return row.transform.parent as RectTransform;
+                    _moduleCache = row.transform.parent as RectTransform;
+                    break;
                 }
             }
             catch { }
-            return null;
+            return _moduleCache;
         }
 
         private static void Remove()
@@ -177,9 +194,26 @@ namespace Sideload.Phone
         /// - "Generic/RotateLeft" in this build - and they are loaded because the scene references them, so looking
         /// through what is already loaded beats constructing one and getting the map wrong.
         /// </summary>
+        private static InputActionReference _leftAction, _rightAction;
+        private static float _actionsResolvedAt = float.NegativeInfinity;
+        private const float ActionRetryInterval = 2f;
+
         /// <summary>The rotate-left / rotate-right action asset. Shared with <see cref="TurnInput"/> so the naming
-        /// knowledge lives in one place.</summary>
-        internal static InputActionReference RotateAction(bool left) => FindAction(left ? "RotateLeft" : "RotateRight");
+        /// knowledge lives in one place.
+        ///
+        /// Resolved ONCE and kept: <see cref="FindAction"/> walks every loaded object, which is far too expensive for
+        /// the per-frame caller. Until the assets turn up (the scene may not have loaded them yet) the search is
+        /// retried, but only every couple of seconds.</summary>
+        internal static InputActionReference RotateAction(bool left)
+        {
+            if (_leftAction == null && _rightAction == null && Time.unscaledTime - _actionsResolvedAt >= ActionRetryInterval)
+            {
+                _actionsResolvedAt = Time.unscaledTime;
+                _leftAction = FindAction("RotateLeft");
+                _rightAction = FindAction("RotateRight");
+            }
+            return left ? _leftAction : _rightAction;
+        }
 
         private static InputActionReference FindAction(string actionName)
         {
