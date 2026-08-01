@@ -3,6 +3,23 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] - 2026-08-01
+
+### Fixed
+
+- Sideload works on Schedule I 0.4.6f11. That update reworked the phone's input handling and the key-hint strip
+  at the bottom of the screen.
+- Turning the phone uses your rotate keys again, whatever you have them bound to. Those keys moved into the
+  game's new input system, so Sideload now reads the same binding the build ghost reads: rebind once, in the
+  game's own options, and both pick it up.
+- The "Rotate Phone" hint is back next to Tab and Escape. The game rebuilt that strip, and the line survives the
+  game swapping the whole panel out mid-session.
+- Right-click steps back inside an app again. The game collapsed its exit types, and right-click is the secondary
+  one now.
+- An open app costs 4.4 ms a frame. Finding the game's hint strip on 0.4.6f11 means searching the scene, and
+  searching it every frame measured 81 ms, 62% of the whole frame. The strip is remembered while it stays on
+  screen and looked up again four times a second at most.
+
 ## [1.2.0] - 2026-07-31
 
 ### Fixed
