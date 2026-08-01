@@ -98,7 +98,7 @@ namespace Sideload.Devtools
                 // Opening the overlay is what actually raises the phone model; Phone.SetIsOpen alone only flips a flag
                 // and fires events, leaving the phone stowed and the app invisible.
                 if (Singleton<GameplayMenu>.InstanceExists)
-                    Singleton<GameplayMenu>.Instance.SetIsOpen(true);
+                    Singleton<GameplayMenu>.Instance.Open();
 
                 var hosts = Phone.HomeScreenPatch.Hosts;
                 if (hosts.Count == 0) { Core.Log?.Warning("[Sideload/auto] no app to open."); return; }

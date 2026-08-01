@@ -371,7 +371,8 @@ namespace Sideload.Phone
 
             try
             {
-                if (_view != null && _view.DispatchBack(exit.exitType == ExitType.RightClick ? "rightClick" : "escape"))
+                // ExitType collapsed to Primary/Secondary in 0.4.6f11; Secondary is the old right-click.
+                if (_view != null && _view.DispatchBack(exit.Type == ExitType.Secondary ? "rightClick" : "escape"))
                     return;
             }
             catch (Exception e) { Core.Log?.Error($"[Sideload] the back handler of '{_reg.Id}' threw: {e.Message}"); }

@@ -26,10 +26,29 @@ namespace Sideload.Phone
             if (GameInput.IsTyping) return;
 
             if (!Singleton<GameInput>.InstanceExists) return;
-            if (!GameInput.GetButtonDown(GameInput.ButtonCode.RotateLeft)
-                && !GameInput.GetButtonDown(GameInput.ButtonCode.RotateRight)) return;
+            if (!RotatePressed()) return;
 
             host.Turn();
+        }
+
+        /// <summary>True on the frame the player pressed either rotate key.
+        ///
+        /// 0.4.6f11 took RotateLeft/RotateRight out of GameInput.ButtonCode and moved them into the new input system,
+        /// where the game polls the InputActionReference assets directly (BuildManager does exactly this for the build
+        /// ghost). Reading the same assets is what keeps this honest: the player rebinds the action once, in the game's
+        /// own options, and both the ghost and the phone follow. Looked up through TurnPrompt so there is one place
+        /// that knows how these assets are named.</summary>
+        private static bool RotatePressed()
+        {
+            try
+            {
+                var left = TurnPrompt.RotateAction(true)?.action;
+                var right = TurnPrompt.RotateAction(false)?.action;
+
+                return (left != null && left.WasPressedThisFrame())
+                    || (right != null && right.WasPressedThisFrame());
+            }
+            catch { return false; }
         }
 
         /// <summary>The app on screen right now, if it is one the player is allowed to turn. Null otherwise.</summary>

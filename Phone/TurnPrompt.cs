@@ -1,8 +1,11 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
+using Il2CppScheduleOne.DevUtilities;
 using Il2CppScheduleOne.UI;
 using Il2CppScheduleOne.UI.Input;
 using Object = UnityEngine.Object;
+using Il2CppBindingList = Il2CppSystem.Collections.Generic.List<Il2CppScheduleOne.UI.Input.InputPromptsBindingData>;
+using Il2CppStringList = Il2CppSystem.Collections.Generic.List<string>;
 
 namespace Sideload.Phone
 {
@@ -13,10 +16,15 @@ namespace Sideload.Phone
     /// It goes there rather than into the app because the app's screen belongs to whoever wrote it, and because the
     /// game already teaches Tab and Escape in exactly that spot - a player who has read one has read the others.
     ///
-    /// The line is a CLONE of one the game drew. <see cref="InputPrompt"/> resolves its own key badges from the bound
-    /// actions (<c>GetBindingDisplayString</c>), so handing it the rotate actions is enough: it draws whatever the
-    /// player has those bound to, keeps drawing the right thing after a rebind, and matches the neighbouring lines
-    /// without this file knowing a single font, colour or offset.
+    /// The line is a CLONE of one the game drew, so it matches the neighbouring lines without this file knowing a
+    /// single font, colour or offset. <see cref="InputPromptsItemUI"/> draws the key badges from binding data, and
+    /// <see cref="InputPromptsManager"/> resolves that data from the bound actions - so the badge shows whatever the
+    /// player has rotate bound to, and keeps showing the right thing after a rebind.
+    ///
+    /// 0.4.6f11 replaced InputPromptsCanvas with InputPromptsManager + InputPromptsUI, and the strip's rows are
+    /// InputPromptsItemUI now rather than InputPrompt. Both the row we copy and the container we copy it into are
+    /// therefore found by looking at what the game currently has on screen, not by reaching for a named singleton
+    /// field - which also means the line follows the game when it swaps the whole panel out.
     /// </summary>
     internal static class TurnPrompt
     {
@@ -44,12 +52,21 @@ namespace Sideload.Phone
             }
         }
 
+        /// <summary>The row container the game is currently drawing into - i.e. the parent of whatever prompt rows are
+        /// live. Derived from the rows themselves because the panel objects are pooled and their containers private.</summary>
         private static RectTransform CurrentModule()
         {
-            if (!InputPromptsCanvas.InstanceExists) return null;
-
-            InputPromptsCanvas canvas = InputPromptsCanvas.Instance;
-            return canvas.currentModule != null ? canvas.currentModule : canvas.InputPromptsContainer;
+            try
+            {
+                foreach (InputPromptsItemUI row in Object.FindObjectsOfType<InputPromptsItemUI>())
+                {
+                    if (row == null || row.gameObject.name == RowName) continue;
+                    if (!row.gameObject.activeInHierarchy) continue;
+                    return row.transform.parent as RectTransform;
+                }
+            }
+            catch { }
+            return null;
         }
 
         private static void Remove()
@@ -61,37 +78,48 @@ namespace Sideload.Phone
 
         private static void Build(RectTransform module)
         {
-            InputPrompt template = Template(module);
+            InputPromptsItemUI template = Template(module);
             if (template == null) { WarnOnce("the input prompt strip has no line to copy"); return; }
 
-            InputActionReference left = FindAction("RotateLeft");
-            InputActionReference right = FindAction("RotateRight");
+            if (!Singleton<InputPromptsManager>.InstanceExists) { WarnOnce("the input prompts manager is not up"); return; }
+            InputPromptsManager manager = Singleton<InputPromptsManager>.Instance;
+
+            InputActionReference left = RotateAction(true);
+            InputActionReference right = RotateAction(false);
 
             // No reference, no hint. A line that names a key the player does not have is worse than no line at all.
             if (left == null && right == null) { WarnOnce("the rotate actions are not loaded"); return; }
+
+            // Il2Cpp lists, not managed ones: Set hands these straight to the game.
+            var bindings = new Il2CppBindingList();
+            var displayStrings = new Il2CppStringList();
+            foreach (InputActionReference reference in new[] { left, right })
+            {
+                if (reference == null) continue;
+                try
+                {
+                    InputPromptsBindingData data = manager.GetBindingDataFromActionReference(reference);
+                    if (data != null) bindings.Add(data);
+                    if (reference.action != null && manager.TryGetActionBindingDisplayString(reference.action, out string display))
+                        displayStrings.Add(display);
+                }
+                catch { /* one unresolvable binding should not cost the whole line */ }
+            }
+            if (bindings.Count == 0) { WarnOnce("the rotate actions have no resolvable binding"); return; }
 
             _row = Object.Instantiate(template.gameObject, module);
             _row.name = RowName;
             _row.transform.SetAsLastSibling();
 
-            var prompt = _row.GetComponent<InputPrompt>();
-            if (prompt == null) { WarnOnce("the copied line lost its InputPrompt component"); Remove(); return; }
-
-            prompt.Actions.Clear();
-            if (left != null) prompt.Actions.Add(left);
-            if (right != null) prompt.Actions.Add(right);
+            var item = _row.GetComponent<InputPromptsItemUI>();
+            if (item == null) { WarnOnce("the copied line lost its prompt component"); Remove(); return; }
 
             // The game's own label for this exact action, on the one thing it already rotates, is "Rotate Conveyor"
             // (level1, level2). Following that pattern is why this says Rotate Phone rather than anything shorter.
-            prompt.Label = "Rotate Phone";
-
-            // RefreshPromptImages is private and only runs from OnEnable, so this is how it is made to run again with
-            // the actions it has just been given.
-            _row.SetActive(false);
+            item.Set("Rotate Phone", Color.white, bindings, false, displayStrings);
             _row.SetActive(true);
 
-            // Afterwards, because the refresh moves the badges and the label INSIDE the row and would otherwise
-            // undo nothing - but the row's own place in the strip is ours to set.
+            // Afterwards, because Set only fills the row's own contents - the row's place in the strip is ours to set.
             PlaceBelowTheRest(module, _row.GetComponent<RectTransform>());
 
             _hostModule = module;
@@ -136,9 +164,9 @@ namespace Sideload.Phone
         }
 
         /// <summary>Any line already in the strip - it carries the layout, the typeface and the shade we want.</summary>
-        private static InputPrompt Template(RectTransform module)
+        private static InputPromptsItemUI Template(RectTransform module)
         {
-            foreach (InputPrompt candidate in module.GetComponentsInChildren<InputPrompt>(true))
+            foreach (InputPromptsItemUI candidate in module.GetComponentsInChildren<InputPromptsItemUI>(true))
                 if (candidate.gameObject.name != RowName) return candidate;
 
             return null;
@@ -149,6 +177,10 @@ namespace Sideload.Phone
         /// - "Generic/RotateLeft" in this build - and they are loaded because the scene references them, so looking
         /// through what is already loaded beats constructing one and getting the map wrong.
         /// </summary>
+        /// <summary>The rotate-left / rotate-right action asset. Shared with <see cref="TurnInput"/> so the naming
+        /// knowledge lives in one place.</summary>
+        internal static InputActionReference RotateAction(bool left) => FindAction(left ? "RotateLeft" : "RotateRight");
+
         private static InputActionReference FindAction(string actionName)
         {
             string suffix = "/" + actionName;
