@@ -3,6 +3,18 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.3.1] - 2026-08-02
+
+### Fixed
+
+- App notifications no longer cut their text off mid-word. The box sizes itself to what the app sent, so a
+  headline plus a sentence fits, and a short line gets a small box instead of a mostly empty one.
+
+### Changed
+
+- An app notification stays up for 9 seconds instead of 5. It cannot be clicked and it does not come back, so
+  it has to still be there when you look up.
+
 ## [1.3.0] - 2026-08-01
 
 ### Fixed

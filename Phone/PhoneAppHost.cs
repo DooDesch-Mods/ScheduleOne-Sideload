@@ -307,8 +307,13 @@ namespace Sideload.Phone
             catch (Exception e) { Core.Log?.Error($"[Sideload] notification from '{_reg.Id}' failed: {e.Message}"); }
         }
 
-        /// <summary>The prefab's own width. Nothing narrower, so a short line still looks like the game's.</summary>
-        private const float NotifyMinWidth = 500f;
+        /// <summary>
+        /// As narrow as it may get: the icon, a short line and the padding around them.
+        ///
+        /// NOT the prefab's 500. Holding that as a floor left a short notice sitting in a box two thirds empty, which
+        /// reads as a layout fault rather than as a small message. The box follows the text in both directions.
+        /// </summary>
+        private const float NotifyMinWidth = 280f;
 
         /// <summary>As wide as it may grow. Past this a notification stops being a glance and starts being a wall.</summary>
         private const float NotifyMaxWidth = 900f;
@@ -317,10 +322,11 @@ namespace Sideload.Phone
         private const float NotifyTextPadding = 18f;
 
         /// <summary>
-        /// Grows the notification the game has just built until its own text fits.
+        /// Sizes the notification the game has just built to its own text, in both directions.
         ///
-        /// The prefab is 500 wide, sized for what vanilla puts in it - "Payment received", "$500". A mod app sends a
-        /// headline plus a sentence, and TextMeshPro cut them off mid-word: "One of the named str...".
+        /// The prefab is a fixed 500, which is what vanilla puts in it - "Payment received", "$500". A mod app sends
+        /// a headline plus a sentence, and TextMeshPro cut them off mid-word: "One of the named str...". A short one
+        /// gets a small box for the same reason: 500 around four words reads as a layout fault.
         ///
         /// It has to happen afterwards. The game instantiates the prefab inside SendNotification and hands nothing
         /// back, so the entry is picked up as the last child of EntryContainer - which SendNotification guarantees by
@@ -354,7 +360,7 @@ namespace Sideload.Phone
                 Transform box = entry.Find("Container");
                 if (box == null)
                 {
-                    Core.Log?.Warning("[Sideload] notification: no \'Container\' under the entry - left at prefab width.");
+                    Core.Log?.Warning("[Sideload] notification: no 'Container' under the entry - left at prefab width.");
                     return;
                 }
 
@@ -363,8 +369,6 @@ namespace Sideload.Phone
                 needed = Mathf.Max(needed, Needed(box.Find("Subtitle")));
 
                 SetWidth(entry, Mathf.Min(needed, NotifyMaxWidth));
-
-
                 PinLeftEdge(container);
             }
             catch (Exception e) { Core.Log?.Warning($"[Sideload] widening a notification failed: {e.Message}"); }
