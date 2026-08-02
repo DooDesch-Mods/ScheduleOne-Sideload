@@ -149,6 +149,7 @@ namespace Sideload.Api
                 _declareOrientations = Get<Action<string, string>>(t, "DeclareOrientations");
                 _setBadge = Get<Action<string, int>>(t, "SetBadge");
                 _notify = Get<Action<string, string, string>>(t, "Notify");
+                _notifyFor = Get<Action<string, string, string, float>>(t, "NotifyFor");
                 _isOnScreen = Get<Func<string, bool>>(t, "IsAppOnScreen");
                 _setImage = Get<Action<string, string, byte[]>>(t, "SetImage");
                 _setIconHidden = Get<Action<string, bool>>(t, "SetIconHidden");

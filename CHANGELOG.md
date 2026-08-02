@@ -3,6 +3,14 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.4.1] - 2026-08-02
+
+### Fixed
+
+- The seconds an app passes to `app.Notify` are used. In 1.4.0 the API took them and the notification still
+  ran at the default length: the shim never looked the new host method up, so every call fell through to the
+  old one. Nothing else changes, and an app that leaves the seconds off behaves as it always did.
+
 ## [1.4.0] - 2026-08-02
 
 ### Added
