@@ -37,6 +37,7 @@ namespace Sideload.Api
         private static Action<string, string> _declareOrientations;
         private static Action<string, int> _setBadge;
         private static Action<string, string, string> _notify;
+        private static Action<string, string, string, float> _notifyFor;
         private static Func<string, bool> _isOnScreen;
         private static Action<string, string, byte[]> _setImage;
         private static Action<string, bool> _setIconHidden;
@@ -98,7 +99,15 @@ namespace Sideload.Api
 
         internal static void Badge(string appId, int count) => _setBadge?.Invoke(appId, count);
 
-        internal static void Notify(string appId, string title, string subtitle) => _notify?.Invoke(appId, title, subtitle);
+        /// <summary>
+        /// Falls back to the three-argument host method when the installed Sideload predates NotifyFor: the
+        /// notification still goes out, just at Sideload's own duration rather than the one that was asked for.
+        /// </summary>
+        internal static void Notify(string appId, string title, string subtitle, float seconds)
+        {
+            if (_notifyFor != null) _notifyFor(appId, title, subtitle, seconds);
+            else if (_notify != null) _notify(appId, title, subtitle);
+        }
 
         internal static bool OnScreen(string appId) => _isOnScreen != null && _isOnScreen(appId);
 
@@ -279,10 +288,16 @@ namespace Sideload.Api
         ///   app.Notify("Jessi Waters", "on my way");
         /// </code>
         /// </summary>
-        public AppHandle Notify(string title, string subtitle = "")
+        /// <param name="seconds">
+        /// How long it stays up. Leave it at zero for Sideload's own timing, which suits a headline plus a
+        /// sentence. Raise it for something the player has to act on, lower it for a passing remark. Clamped to
+        /// between 2 and 30 seconds - the slide-in cannot be dismissed, so an app does not get to hold the corner
+        /// of the screen. Ignored, without failing, on a Sideload too old to have it.
+        /// </param>
+        public AppHandle Notify(string title, string subtitle = "", float seconds = 0f)
         {
             string id = _id;
-            Apps.WhenBound(() => Apps.Notify(id, title, subtitle));
+            Apps.WhenBound(() => Apps.Notify(id, title, subtitle, seconds));
             return this;
         }
 

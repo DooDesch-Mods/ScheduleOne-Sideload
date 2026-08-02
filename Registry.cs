@@ -182,6 +182,18 @@ namespace Sideload
         /// </summary>
         internal static void Notify(string appId, string title, string subtitle)
         {
+            NotifyFor(appId, title, subtitle, 0f);
+        }
+
+        /// <summary>
+        /// The same notification, with the app saying how long it stays up. Zero leaves the choice to Sideload.
+        ///
+        /// A second entry point rather than a wider Notify: the API shim binds these by name AND signature, so
+        /// changing the existing one would break every mod compiled against another version of Sideload in both
+        /// directions at once.
+        /// </summary>
+        internal static void NotifyFor(string appId, string title, string subtitle, float seconds)
+        {
             // Before the early return, for the same reason the emit tap is: a companion device wants the
             // notification even when the app was never spawned on the in-game phone.
             NotifyTap?.Invoke(appId, title ?? "", subtitle ?? "");
@@ -189,7 +201,7 @@ namespace Sideload
             Phone.PhoneAppHost host = LiveHost(appId);
             if (host == null) return;
 
-            host.Notify(title, subtitle);
+            host.Notify(title, subtitle, seconds);
         }
 
         /// <summary>appId, count - every badge change, for a mirror of the phone outside this process.</summary>

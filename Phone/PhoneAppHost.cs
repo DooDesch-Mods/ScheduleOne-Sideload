@@ -280,7 +280,7 @@ namespace Sideload.Phone
         }
 
         /// <summary>
-        /// How long a slide-in stays up, in seconds.
+        /// How long a slide-in stays up when the app does not say, in seconds.
         ///
         /// Longer than the game's own default of five (ScheduleOne.UI/NotificationsManager.cs:27). Vanilla notifies
         /// in fragments - a payment, a call missed - which five seconds is plenty for. A mod app's notification is a
@@ -291,17 +291,30 @@ namespace Sideload.Phone
         private const float NotifySeconds = 9f;
 
         /// <summary>
+        /// The range an app may ask for. Under two seconds nothing can be read, and a banner that outstays half a
+        /// minute is a mod holding a corner of somebody else's screen - there is no dismiss button on it.
+        /// </summary>
+        private const float NotifyMinSeconds = 2f;
+        private const float NotifyMaxSeconds = 30f;
+
+        /// <summary>
         /// Raise one of the game's own phone notifications for this app - the slide-in the vanilla apps use, with
         /// this app's icon on it, so a message arriving while the phone is closed reads like any other.
         /// </summary>
-        internal void Notify(string title, string subtitle)
+        internal void Notify(string title, string subtitle, float seconds)
         {
             try
             {
                 if (!Il2CppScheduleOne.DevUtilities.Singleton<NotificationsManager>.InstanceExists) return;
 
+                // Anything at or below zero means the app did not ask, which is the common case and the one every
+                // caller got before this was settable.
+                float upFor = seconds > 0f
+                    ? Mathf.Clamp(seconds, NotifyMinSeconds, NotifyMaxSeconds)
+                    : NotifySeconds;
+
                 NotificationsManager manager = Il2CppScheduleOne.DevUtilities.Singleton<NotificationsManager>.Instance;
-                manager.SendNotification(title ?? "", subtitle ?? "", AppIconSprite.For(_reg), NotifySeconds, true);
+                manager.SendNotification(title ?? "", subtitle ?? "", AppIconSprite.For(_reg), upFor, true);
                 Widen(manager);
             }
             catch (Exception e) { Core.Log?.Error($"[Sideload] notification from '{_reg.Id}' failed: {e.Message}"); }
