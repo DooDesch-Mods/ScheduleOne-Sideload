@@ -300,10 +300,132 @@ namespace Sideload.Phone
             {
                 if (!Il2CppScheduleOne.DevUtilities.Singleton<NotificationsManager>.InstanceExists) return;
 
-                Il2CppScheduleOne.DevUtilities.Singleton<NotificationsManager>.Instance
-                    .SendNotification(title ?? "", subtitle ?? "", AppIconSprite.For(_reg), NotifySeconds, true);
+                NotificationsManager manager = Il2CppScheduleOne.DevUtilities.Singleton<NotificationsManager>.Instance;
+                manager.SendNotification(title ?? "", subtitle ?? "", AppIconSprite.For(_reg), NotifySeconds, true);
+                Widen(manager);
             }
             catch (Exception e) { Core.Log?.Error($"[Sideload] notification from '{_reg.Id}' failed: {e.Message}"); }
+        }
+
+        /// <summary>The prefab's own width. Nothing narrower, so a short line still looks like the game's.</summary>
+        private const float NotifyMinWidth = 500f;
+
+        /// <summary>As wide as it may grow. Past this a notification stops being a glance and starts being a wall.</summary>
+        private const float NotifyMaxWidth = 900f;
+
+        /// <summary>Breathing room past the text, so the last word never touches the edge of the box.</summary>
+        private const float NotifyTextPadding = 18f;
+
+        /// <summary>
+        /// Grows the notification the game has just built until its own text fits.
+        ///
+        /// The prefab is 500 wide, sized for what vanilla puts in it - "Payment received", "$500". A mod app sends a
+        /// headline plus a sentence, and TextMeshPro cut them off mid-word: "One of the named str...".
+        ///
+        /// It has to happen afterwards. The game instantiates the prefab inside SendNotification and hands nothing
+        /// back, so the entry is picked up as the last child of EntryContainer - which SendNotification guarantees by
+        /// calling SetAsLastSibling on it (ScheduleOne.UI/NotificationsManager.cs:29-30).
+        ///
+        /// ONLY THE ROOT IS SIZED. Measured from the live prefab: Container, Background, Title and Subtitle are all
+        /// stretched (anchors 0..1) and follow it, each with its own inset - Background hangs 10 past both edges,
+        /// Title gives up 52.5 to the icon. Setting them individually would fight those insets instead of using them.
+        ///
+        /// Best-effort throughout: a prefab that changes shape in a game update should cost a notification its width,
+        /// never the notification.
+        /// </summary>
+        private void Widen(NotificationsManager manager)
+        {
+            try
+            {
+                RectTransform container = manager != null ? manager.EntryContainer : null;
+                if (container == null || container.childCount == 0)
+                {
+                    Core.Log?.Warning("[Sideload] notification: no entry to widen.");
+                    return;
+                }
+
+                RectTransform entry = container.GetChild(container.childCount - 1)?.GetComponent<RectTransform>();
+                if (entry == null)
+                {
+                    Core.Log?.Warning("[Sideload] notification: the new entry has no RectTransform.");
+                    return;
+                }
+
+                Transform box = entry.Find("Container");
+                if (box == null)
+                {
+                    Core.Log?.Warning("[Sideload] notification: no \'Container\' under the entry - left at prefab width.");
+                    return;
+                }
+
+                float needed = NotifyMinWidth;
+                needed = Mathf.Max(needed, Needed(box.Find("Title")));
+                needed = Mathf.Max(needed, Needed(box.Find("Subtitle")));
+
+                SetWidth(entry, Mathf.Min(needed, NotifyMaxWidth));
+
+
+                PinLeftEdge(container);
+            }
+            catch (Exception e) { Core.Log?.Warning($"[Sideload] widening a notification failed: {e.Message}"); }
+        }
+
+        /// <summary>
+        /// Makes the notification column grow to the RIGHT.
+        ///
+        /// Measured, after two wrong guesses: the container is a VerticalLayoutGroup with childAlignment
+        /// `LowerRight`, sitting against the left edge of the screen with a ContentSizeFitter. Right alignment pins
+        /// the right edge, so every pixel of extra width goes the other way - straight off the screen. That is why a
+        /// widened notification came out with its first words missing, and why moving anchoredPosition did nothing:
+        /// the group put it back on the next layout pass.
+        ///
+        /// Left alignment costs the vanilla notifications nothing. They are all one width, and the fitter sizes the
+        /// column to its widest child, so with nothing wider than 500 in it the two alignments place them
+        /// identically.
+        /// </summary>
+        private static void PinLeftEdge(RectTransform container)
+        {
+            HorizontalOrVerticalLayoutGroup group = container.GetComponent<HorizontalOrVerticalLayoutGroup>();
+            if (group == null || group.childAlignment == TextAnchor.LowerLeft) return;
+
+            group.childAlignment = TextAnchor.LowerLeft;
+        }
+
+        /// <summary>
+        /// How wide the whole entry has to be for one of its text nodes to fit on one line.
+        ///
+        /// The text is stretched inside the entry and gives up room to the icon, which a stretched RectTransform
+        /// states as a NEGATIVE sizeDelta.x. Adding that back is what turns "the text needs 600" into "the box needs
+        /// 652.5", and it is read from the node rather than hard-coded so a re-laid-out prefab still lands right.
+        /// </summary>
+        private static float Needed(Transform node)
+        {
+            if (node == null) return 0f;
+
+            Il2CppTMPro.TextMeshProUGUI text = node.GetComponent<Il2CppTMPro.TextMeshProUGUI>();
+            RectTransform rt = node.GetComponent<RectTransform>();
+            if (text == null || rt == null) return 0f;
+
+            float inset = Mathf.Max(0f, -rt.sizeDelta.x);
+            return text.preferredWidth + inset + NotifyTextPadding;
+        }
+
+        /// <summary>
+        /// Sets the entry's width, stated twice because which one is read depends on how it is parented.
+        ///
+        /// A layout group rewrites sizeDelta on every pass and reads the LayoutElement instead - the first attempt
+        /// set sizeDelta alone and the box was back to 500 by the next frame. sizeDelta stays for the case where
+        /// there is no group. Where the extra width GOES is not decided here; see PinLeftEdge.
+        /// </summary>
+        private static void SetWidth(RectTransform entry, float width)
+        {
+            entry.sizeDelta = new Vector2(width, entry.sizeDelta.y);
+
+            LayoutElement element = entry.GetComponent<LayoutElement>();
+            if (element == null) return;
+
+            element.minWidth = width;
+            element.preferredWidth = width;
         }
 
         /// <summary>
