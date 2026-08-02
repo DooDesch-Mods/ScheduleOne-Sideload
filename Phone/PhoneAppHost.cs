@@ -280,6 +280,17 @@ namespace Sideload.Phone
         }
 
         /// <summary>
+        /// How long a slide-in stays up, in seconds.
+        ///
+        /// Longer than the game's own default of five (ScheduleOne.UI/NotificationsManager.cs:27). Vanilla notifies
+        /// in fragments - a payment, a call missed - which five seconds is plenty for. A mod app's notification is a
+        /// headline plus a sentence saying what it means and where to go, and the report was that it was gone before
+        /// it could be read. It cannot be pressed and it does not come back, so the only thing that decides whether
+        /// it was any use is whether it was still there when the player looked up.
+        /// </summary>
+        private const float NotifySeconds = 9f;
+
+        /// <summary>
         /// Raise one of the game's own phone notifications for this app - the slide-in the vanilla apps use, with
         /// this app's icon on it, so a message arriving while the phone is closed reads like any other.
         /// </summary>
@@ -290,7 +301,7 @@ namespace Sideload.Phone
                 if (!Il2CppScheduleOne.DevUtilities.Singleton<NotificationsManager>.InstanceExists) return;
 
                 Il2CppScheduleOne.DevUtilities.Singleton<NotificationsManager>.Instance
-                    .SendNotification(title ?? "", subtitle ?? "", AppIconSprite.For(_reg), 5f, true);
+                    .SendNotification(title ?? "", subtitle ?? "", AppIconSprite.For(_reg), NotifySeconds, true);
             }
             catch (Exception e) { Core.Log?.Error($"[Sideload] notification from '{_reg.Id}' failed: {e.Message}"); }
         }
