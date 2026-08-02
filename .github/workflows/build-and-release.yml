@@ -268,8 +268,8 @@ jobs:
   nexus:
     needs: build
     runs-on: ubuntu-latest
-    # Skipped until the Nexus mod page exists and its file group id is set as the repo/org variable.
-    if: ${{ vars.NEXUS_FILE_GROUP_ID != '' }}
+    # Skipped until the Nexus mod page exists and both IDs are set as repo/org variables.
+    if: ${{ vars.NEXUS_FILE_GROUP_ID != '' && vars.NEXUS_MOD_ID != '' }}
     steps:
       - name: Download Nexus ZIP
         uses: actions/download-artifact@v4
@@ -277,14 +277,16 @@ jobs:
           name: Sideload-nexus
 
       - name: Upload to Nexus Mods
-        uses: Nexus-Mods/upload-action@v1.0.0-beta.9
+        uses: Nexus-Mods/upload-action@v1.0.0-beta.10
         with:
           api_key: ${{ secrets.NEXUSMODS_API_KEY }}
           file_id: ${{ vars.NEXUS_FILE_GROUP_ID }}
+          mod_id: ${{ vars.NEXUS_MOD_ID }}
           filename: "Sideload_${{ needs.build.outputs.version }}_nexus.zip"
           version: ${{ needs.build.outputs.version }}
           display_name: "Sideload ${{ needs.build.outputs.version }}"
           description: ${{ needs.build.outputs.notes_bbcode }}
+          changelog: ${{ github.event_name == 'push' && github.run_attempt == 1 && needs.build.outputs.notes_bbcode || '' }}
           category: main
           archive_existing_version: true
           update_mod_version: true
