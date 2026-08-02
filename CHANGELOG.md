@@ -3,6 +3,15 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.4.2] - 2026-08-02
+
+### Fixed
+
+- A slow mod no longer fails the page it is answering. The time budget a page handler runs under was counting
+  the mod's own work in `s1.call`, so an app whose script did almost nothing still died with "The operation has
+  timed out" when the mod took a moment. The clock restarts once the mod answers; a script that will not stop is
+  still caught, by the statement limit.
+
 ## [1.4.1] - 2026-08-02
 
 ### Fixed

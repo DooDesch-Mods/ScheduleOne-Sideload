@@ -82,6 +82,16 @@ namespace Sideload.Script
 
         internal Engine Engine { get; }
 
+        /// <summary>
+        /// Give the running handler its time budget back.
+        ///
+        /// Called after a host call returns (Bridge.Call), because the budget is meant to catch a script that will
+        /// not stop, and time spent inside the mod's own C# is not that - the page is blocked, not looping. Without
+        /// this, a mod that takes 300 ms to answer fails the PAGE, and the log blames a handler that did nothing
+        /// wrong.
+        /// </summary>
+        internal void RestartBudget() => Engine?.Constraints.Reset();
+
         internal Action OnDomChanged { get; }
 
         internal Action<IElement> OnFocusRequested { get; }

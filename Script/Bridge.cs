@@ -111,7 +111,29 @@ namespace Sideload.Script
 
         // -------------------------------------------------------------- script-side API --
 
-        public string Call(string name, string argument = "") => Invoke(_appId, name, argument);
+        /// <summary>
+        /// `s1.call(name, arg)` - ask the mod something and get its answer, synchronously.
+        ///
+        /// THE SCRIPT'S TIME BUDGET DOES NOT COVER THE MOD'S WORK. A handler may run for 250 ms
+        /// (ScriptHost.Budget) and that limit is there to catch a runaway script, which this is not: the page is
+        /// blocked waiting on C# it does not control, and killing it for the mod being slow punishes the wrong
+        /// side. It reads as a page fault - "s1.on('changed') handler failed: The operation has timed out" - on a
+        /// page whose own work took a millisecond.
+        ///
+        /// So the clock is restarted once the mod answers. What still bounds a genuine runaway is MaxStatements,
+        /// which a loop calling this a million times reaches on its own.
+        /// </summary>
+        public string Call(string name, string argument = "")
+        {
+            try
+            {
+                return Invoke(_appId, name, argument);
+            }
+            finally
+            {
+                _host?.RestartBudget();
+            }
+        }
 
         public void On(string name, JsValue handler)
         {
