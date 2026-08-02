@@ -1,6 +1,6 @@
 {
   "name": "Sideload",
-  "version_number": "1.3.1",
+  "version_number": "1.4.0",
   "website_url": "https://github.com/DooDesch-Mods/ScheduleOne-Sideload",
   "description": "Write a mod interface as HTML, CSS and JavaScript. Sideload renders the web bundle into real Unity UI and puts it on the in game phone, so an app is three files instead of a thousand lines of panel code.",
   "dependencies": [

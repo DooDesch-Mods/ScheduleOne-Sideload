@@ -3,6 +3,14 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.4.0] - 2026-08-02
+
+### Added
+
+- An app decides how long its own notification stays up: `app.Notify(title, subtitle, seconds)`. Leave the
+  seconds off and Sideload picks the timing, as before. Between 2 and 30 - the slide-in has no dismiss button,
+  so an app does not get to hold a corner of the screen.
+
 ## [1.3.1] - 2026-08-02
 
 ### Fixed
