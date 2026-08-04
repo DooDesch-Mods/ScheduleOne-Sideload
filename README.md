@@ -325,9 +325,11 @@ Honest limits, because a browser sets different expectations:
   properties with `var()`, `transform` and `transition`, `overflow` (`hidden` clips, `auto` and `scroll`
   clip and scroll), and `@media (orientation: ...)`. Units are `px` and `%` only. No Grid, no `float`, no `z-index`, no `em`/`rem`/`vh`/`vw`, no `calc()`, no `hsl()`. Anything
   unsupported is parsed and dropped silently.
-- **Text that has to line up.** `white-space: pre` and `pre-wrap` keep the spaces you wrote, and
-  `-s1-mono-advance: 7px` gives every glyph the same width, which is the only way to get an aligned column
-  out of fonts that are all proportional. `pre` also tells the layout that a block is text, so one built from
+- **Text that has to line up.** `font-family: monospace` draws in a real monospaced face - the game ships none,
+  so Sideload builds one from the machine's own font file (Consolas first, then Cascadia Mono, Lucida Console,
+  Courier New, DejaVu Sans Mono) and the log says which it took. Nothing is shipped with the mod. Where none of
+  them exists, the game's pixel face steps in, and then `white-space: pre` plus `-s1-mono-advance: 7px` are what
+  keep a column straight: the first keeps the spaces you wrote, the second gives every glyph the same advance. `pre` also tells the layout that a block is text, so one built from
   nothing but coloured spans stays a single row instead of one full-width box per span.
 - **Text fields.** `caret-color` and `-s1-caret-width` draw the cursor - a block cursor is two lines of CSS.
   `data-ghost="rest"` writes the rest of a suggestion behind the caret in the field's own font, styled by

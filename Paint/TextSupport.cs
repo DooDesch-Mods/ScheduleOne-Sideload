@@ -17,6 +17,8 @@ namespace Sideload.Paint
         private static readonly Dictionary<string, TMP_FontAsset> _byName =
             new Dictionary<string, TMP_FontAsset>(StringComparer.OrdinalIgnoreCase);
         private static TMP_FontAsset _fallback;
+        private static TMP_FontAsset _system;
+        private static bool _systemTried;
 
         internal static TMP_FontAsset Resolve(string family, int weight, FontStyleKind style)
         {
@@ -31,6 +33,8 @@ namespace Sideload.Paint
                 case "game-comic": return Find(italic ? "ComicNeue-BoldItalic" : "ComicNeue-Bold") ?? _fallback;
                 case "game-pixel": return Find("VPPixel-Simplified") ?? _fallback;
                 case "game-segment": return Find("fs-sevegment") ?? _fallback;
+                case "monospace":
+                case "ui-monospace": return FromSystem(MonospaceStack) ?? Find("VPPixel-Simplified") ?? _fallback;
             }
 
             // Open Sans covers the weight axis, so pick the nearest cut rather than letting TMP fake a bold.
@@ -62,6 +66,78 @@ namespace Sideload.Paint
                 if (pair.Value == null) continue;
                 if (pair.Key.StartsWith(name, StringComparison.OrdinalIgnoreCase)) return pair.Value;
             }
+            return null;
+        }
+
+        /// <summary>
+        /// What `font-family: monospace` tries, in order, as file names under the system font folder. Consolas is
+        /// first on purpose: it has shipped with Windows since Vista, so it is the one a page can count on, and a
+        /// stack whose winner is predictable is a stack whose character width is predictable.
+        /// </summary>
+        private static readonly string[] MonospaceStack =
+        {
+            "consola.ttf",        // Consolas
+            "CascadiaMono.ttf",   // Windows 11
+            "lucon.ttf",          // Lucida Console
+            "cour.ttf",           // Courier New
+            "DejaVuSansMono.ttf", // whatever a Proton prefix happens to carry
+        };
+
+        /// <summary>
+        /// A font from the machine rather than the game.
+        ///
+        /// The game ships Open Sans, a pixel face and three decorative ones - not one monospaced font among them,
+        /// which leaves a terminal or a table with nothing honest to render in. The machine has several, and TMP can
+        /// build an asset straight from the file. Dynamic, so the atlas fills as glyphs are asked for: the cost is
+        /// the first frame that shows a character nobody has shown yet.
+        ///
+        /// <para>Read from disk rather than through Unity's font API on purpose. <c>CreateDynamicFontFromOSFont</c>
+        /// and <c>GetOSInstalledFontNames</c> are both stripped out of this IL2CPP build - calling either fails with
+        /// "Method unstripping failed" - and <c>AssetBundle.LoadFromMemory</c> is gone too, which rules out shipping
+        /// a baked font asset in the bundle. A file path is what is left, and it is the honest route anyway: nothing
+        /// is redistributed, the player's own Consolas is used.</para>
+        /// </summary>
+        private static TMP_FontAsset FromSystem(string[] candidates)
+        {
+            if (_systemTried) return _system;
+            _systemTried = true;
+
+            try
+            {
+                string fonts = Environment.GetFolderPath(Environment.SpecialFolder.Fonts);
+                if (string.IsNullOrEmpty(fonts)) return null;
+
+                foreach (string file in candidates)
+                {
+                    string path = System.IO.Path.Combine(fonts, file);
+                    if (!System.IO.File.Exists(path)) continue;
+
+                    // Sampled at 64 rather than TMP's 90: a phone screen never asks for more, and the atlas fills
+                    // faster. SDFAA is what the game's own text uses, so the two look like they belong together.
+                    TMP_FontAsset asset = TMP_FontAsset.CreateFontAsset(
+                        path, 0, 64, 6, UnityEngine.TextCore.LowLevel.GlyphRenderMode.SDFAA, 1024, 1024);
+                    if (asset == null) continue;
+
+                    // Kept alive by hand: nothing in a scene holds it, so a load screen would collect it and every
+                    // text using the face would fall back mid-session.
+                    UnityEngine.Object.DontDestroyOnLoad(asset);
+                    asset.hideFlags = HideFlags.HideAndDontSave;
+                    asset.name = file;
+
+                    _system = asset;
+                    Core.Log?.Msg("[Sideload] monospace: built from '" + path + "'.");
+                    return _system;
+                }
+
+                Core.Log?.Warning("[Sideload] monospace: none of " + string.Join(", ", candidates) + " is in "
+                                  + fonts + " - falling back to the game's pixel face.");
+            }
+            catch (Exception e)
+            {
+                Core.Log?.Warning("[Sideload] monospace: the system font could not be built (" + e.Message
+                                  + ") - falling back to the game's pixel face.");
+            }
+
             return null;
         }
 

@@ -3,6 +3,16 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.7.0] - 2026-08-04
+
+### Added
+
+- `font-family: monospace` draws in a real monospaced face. The game ships none - Open Sans, a pixel face and
+  three decorative ones - so a page that wanted a terminal or a table had nothing honest to render in. Sideload
+  now builds the font from the machine's own file, trying Consolas, Cascadia Mono, Lucida Console, Courier New
+  and DejaVu Sans Mono in that order, and says in the log which one it took. Nothing is shipped with the mod;
+  it is the player's own font. Where none of them exists, the pixel face still steps in.
+
 ## [1.6.0] - 2026-08-04
 
 ### Added
