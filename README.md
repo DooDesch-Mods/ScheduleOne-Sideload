@@ -292,13 +292,22 @@ app.Notify("Jessi Waters", "on my way");   // one of the game's own phone notifi
 app.Image("avatar/76561198", pngBytes);    // a runtime picture the page draws with src="s1://avatar/76561198"
 
 app.NoIcon();                        // no home screen icon: your mod supplies the way in
+app.Icon(consoleIsOn);               // ...or put the icon there and take it away while the game runs
 app.Open(); app.Close();             // open it exactly as pressing its icon would, or close it
 bool open = app.IsOpen;              // is it the app the phone currently has open
+
+app.Show(); app.Hide();              // take the phone out AND open the app, or reverse both
+PhoneScreen.Raise(); PhoneScreen.Lower();   // move the phone on its own, no app involved
+bool up = PhoneScreen.IsRaised;      // is the phone out and on its phone screen
 
 bool looking = app.IsOnScreen;       // is your app the one the phone is showing right now
 bool here = Apps.Available;          // only needed if you want to build a fallback UI
 bool newEnough = AppHandle.CanOpenProgrammatically;   // does the installed Sideload understand the three above
 ```
+
+`Show()` is refused while the game is paused or the player is asleep, dead or arrested - it returns false and
+your app stays shut, which is the answer a key-driven app wants. Opening an app never raises the phone by
+itself, so a background update cannot yank it out of the player's pocket.
 
 `NoIcon()` and `Open()` belong together: an app with no icon can only be reached from code, so a mod that
 takes that route should check `CanOpenProgrammatically` first and refuse to register against an older host
@@ -316,6 +325,13 @@ Honest limits, because a browser sets different expectations:
   properties with `var()`, `transform` and `transition`, `overflow` (`hidden` clips, `auto` and `scroll`
   clip and scroll), and `@media (orientation: ...)`. Units are `px` and `%` only. No Grid, no `float`, no `z-index`, no `em`/`rem`/`vh`/`vw`, no `calc()`, no `hsl()`. Anything
   unsupported is parsed and dropped silently.
+- **Text that has to line up.** `white-space: pre` and `pre-wrap` keep the spaces you wrote, and
+  `-s1-mono-advance: 7px` gives every glyph the same width, which is the only way to get an aligned column
+  out of fonts that are all proportional. `pre` also tells the layout that a block is text, so one built from
+  nothing but coloured spans stays a single row instead of one full-width box per span.
+- **Text fields.** `caret-color` and `-s1-caret-width` draw the cursor - a block cursor is two lines of CSS.
+  `data-ghost="rest"` writes the rest of a suggestion behind the caret in the field's own font, styled by
+  `-s1-ghost-color`; nothing has to be measured and no monospaced font is needed.
 - **Selectors:** everything AngleSharp's `querySelectorAll` accepts, plus the state pseudo-classes `:hover`,
   `:active`, `:focus`, `:disabled` on the last compound. State rules repaint, they do not re-lay-out.
 - **JavaScript:** ES2015 through ES2024 on Jint, including `#private` fields, optional chaining and
@@ -328,10 +344,16 @@ Honest limits, because a browser sets different expectations:
   it, `s1.setOrientation(v)` turns it, and the choice is remembered per app without you storing anything.
   A page whose SHAPE changes with the orientation also gets `orientationchange` (`e.value` is the new one),
   because which of two panes the player should land on is a question a stylesheet cannot answer.
-- **Events:** `click`, `input`, `keydown` (Enter in a field), `dragstart` / `drag` / `dragend`, `wheel`,
+- **Events:** `click`, `input`, `keydown`, `dragstart` / `drag` / `dragend`, `wheel`,
   `back` and `orientationchange`. Others are not dispatched, however plausible the name. Right-click and
   Escape both raise `back` at the document; `preventDefault()` keeps the app open so a page can step back
   inside itself, and not taking it closes the app. `e.source` is `"rightClick"` or `"escape"`.
+- **An app can ask for keys.** Name them on a text field with `data-keys="Tab ArrowUp Ctrl+R"` and they arrive
+  as `keydown` with `ctrlKey`, `shiftKey`, `altKey`, `repeat` and `hasSelection` - the last one is how a page
+  tells Ctrl+C-as-copy from Ctrl+C-as-interrupt. Only the keys an app names are taken from the field, so
+  Ctrl+Backspace can delete a word while plain Backspace stays the field's own. Holding a key repeats it after
+  0.35 s, then every 0.06 s, dropping to 0.03 s after 1.2 s. Enter and Escape are refused: they already arrive
+  as `keydown` and `back`. `data-reject-first` keeps a dead key from opening a fresh line.
 - **Where the pointer landed.** A `click` carries `e.offsetX` / `e.offsetY` in the element's own CSS pixels
   and `e.normX` / `e.normY` as a 0..1 fraction of its size - enough for a page that stands for a space of its
   own, a map, to answer "what did they point at". A `drag` carries `e.deltaX` / `e.deltaY` since the last

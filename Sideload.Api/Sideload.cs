@@ -343,6 +343,23 @@ namespace Sideload.Api
         }
 
         /// <summary>
+        /// Show or hide this app's home-screen icon while the game is running.
+        ///
+        /// For an app whose way in is a key rather than a square, but only sometimes: hash puts an icon there exactly
+        /// while the game's console is switched on, because that is the only time it can run anything, and that
+        /// setting is a live toggle. Safe to call with the same value repeatedly.
+        ///
+        /// Unlike <see cref="NoIcon"/> this is NOT queued until Sideload binds. A caller polling a condition would
+        /// otherwise pile up one queued call per check against a host that never arrives; an unbound host simply
+        /// ignores it, which is the right answer for a decision that is re-stated anyway.
+        /// </summary>
+        public AppHandle Icon(bool visible)
+        {
+            Apps.HideIcon(_id, !visible);
+            return this;
+        }
+
+        /// <summary>
         /// Give this app no home-screen icon. For an app whose way in already exists somewhere else - a vanilla icon
         /// your mod has taken over, a world object, another app handing off.
         ///

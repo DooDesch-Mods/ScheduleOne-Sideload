@@ -3,6 +3,32 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.6.0] - 2026-08-04
+
+### Added
+
+- `app.Icon(true)` and `app.Icon(false)` put an app's home-screen square there or take it away while the game
+  runs. For an app that is opened by a key and only makes sense sometimes: hash shows its square exactly while
+  the game's console is switched on.
+- A text field can show what accepting a suggestion would type. Put the remainder in `data-ghost` and it is
+  drawn behind the caret in the field's own font; `-s1-ghost-color` styles it. Nothing to measure on your side,
+  and it does not need a monospaced font.
+- `caret-color` and `-s1-caret-width` let a field draw a block cursor instead of the thin line the game uses.
+- `keydown` carries `hasSelection`, so a page can tell Ctrl+C-as-copy from Ctrl+C-as-interrupt.
+  `data-reject-first` stops a dead key from opening a fresh line.
+
+### Fixed
+
+- Closing an app while its text field still had focus left the game convinced you were typing: no movement, no
+  Escape, no phone key, and nothing on screen to click. The keyboard is let go when an app hides and when the
+  phone goes down.
+- Ctrl+Backspace deletes a word. It deleted one character, because key suppression ignored the modifier keys.
+  Shift+Up still selects.
+- A row built from coloured spans stays one row. `white-space: pre` now also tells the layout "this is text", so
+  a block holding nothing but spans becomes a single text object. Each span used to turn into its own
+  full-width box, which stacked them down the page and cost a rebuild apiece.
+- Focus asked for before the first render is applied after it instead of being dropped.
+
 ## [1.5.0] - 2026-08-04
 
 ### Added

@@ -222,9 +222,13 @@ namespace Sideload
         }
 
         /// <summary>
-        /// Suppress or restore an app's home-screen icon. Recorded on the registration rather than applied to the
-        /// live icon, so a mod may set it during init - before any phone exists - and it takes effect the moment the
-        /// app is spawned. Set after a spawn it applies on the next one, which is what a scene change brings anyway.
+        /// Suppress or restore an app's home-screen icon.
+        ///
+        /// Recorded on the registration AND applied to the phone that is up. The registration is what a mod setting
+        /// this during init needs - there is no phone yet, and the choice has to survive to the spawn - and every
+        /// scene change respawns from it. The live half is for an app whose answer changes while the player is
+        /// holding the thing: hash shows an icon exactly while the console is switched on, and that is a toggle in
+        /// the settings window.
         /// </summary>
         internal static void SetIconHidden(string appId, bool hidden)
         {
@@ -232,6 +236,7 @@ namespace Sideload
             if (reg == null) { Core.Log?.Warning($"[Sideload] icon: no app '{appId}'."); return; }
 
             reg.Iconless = hidden;
+            LiveHost(appId)?.SetIconVisible(!hidden);
         }
 
         /// <summary>

@@ -29,6 +29,7 @@ namespace Sideload.Phone
         private GameObject _panel;
         private GameObject _container;
         private GameObject _icon;
+        private HomeScreen _home;
         private WebView _view;
         private Transform _appsCanvas;   // kept: the orientation templates are measured off it whenever the app turns
         private Transform _badge;        // the icon's unread badge, part of the vanilla prefab
@@ -111,6 +112,11 @@ namespace Sideload.Phone
 
             _panel.SetActive(true);
             _container.SetActive(false);   // the panel stays alive; only the contents show while the app is open
+
+            // Kept so the icon can appear later. An app whose way in is a key may still want a square once some
+            // condition holds - hash shows one exactly when the game's console is switched on, because that is when
+            // it can do anything at all.
+            _home = home;
 
             // An iconless app is opened by whoever owns its entry point instead - it still gets a panel, a page and
             // the exit key, just no square on the home screen.
@@ -205,6 +211,39 @@ namespace Sideload.Phone
             to.sizeDelta = from.sizeDelta;
             to.localScale = from.localScale;
             to.localRotation = from.localRotation;
+        }
+
+        /// <summary>
+        /// Show or hide this app's home-screen square while the game is running.
+        ///
+        /// Built on the first show rather than up front, because an app registered as iconless never made one -
+        /// there is no hidden square waiting to be revealed. Hiding only deactivates, so its place on the home
+        /// screen survives and it comes back where it was.
+        /// </summary>
+        internal void SetIconVisible(bool visible)
+        {
+            try
+            {
+                if (!visible)
+                {
+                    if (_icon != null) _icon.SetActive(false);
+                    return;
+                }
+
+                if (_icon == null)
+                {
+                    if (_home == null) return;
+
+                    SpawnIcon(_home);
+                    return;
+                }
+
+                _icon.SetActive(true);
+            }
+            catch (Exception e)
+            {
+                Core.Log?.Warning($"[Sideload] '{_reg.Id}' could not change its icon: {e.Message}");
+            }
         }
 
         /// <summary>
