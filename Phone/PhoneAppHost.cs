@@ -78,6 +78,10 @@ namespace Sideload.Phone
 
             _appsCanvas = appsCanvas;
 
+            // Before the first app is mounted, not after: this is the moment the scene is still coming up and a
+            // few hundred milliseconds cost nobody a frame they would notice.
+            WarmUp.Once(appsCanvas);
+
             // The player's own choice outranks the app's declared default, and is dropped silently if the app no
             // longer supports it - a mod update that removes portrait must not strand anyone in it.
             bool? remembered = OrientationStore.Remembered(_reg);
@@ -591,7 +595,16 @@ namespace Sideload.Phone
                 // The page is built on first open, not on spawn: a panel that has never been shown has no laid-out
                 // rect, and measuring text against a zero-width viewport would wrap everything to nothing.
                 Canvas.ForceUpdateCanvases();
+
+                // Hidden BEFORE the build and faded up after it. The build freezes the frame it runs on, so the
+                // finished page would otherwise snap into place at the far end of a stall - which reads as a
+                // stutter rather than as loading. Nothing to cover on later opens, so nothing is done there.
+                bool building = _view != null && !_view.Built;
+                CanvasGroup fade = building ? AppFade.Hide(_container) : null;
+
                 _view?.EnsureBuilt();
+
+                if (fade != null) AppFade.Play(fade);
 
 #if DEBUG
                 // The viewport constant in the design doc rests on this number, so measure it where it is real:

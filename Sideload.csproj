@@ -27,9 +27,9 @@
     <RootNamespace>Sideload</RootNamespace>
     <AssemblyName>Sideload</AssemblyName>
     <NeutralLanguage>en-US</NeutralLanguage>
-    <Version>1.7.0</Version>
-    <AssemblyVersion>1.7.0.0</AssemblyVersion>
-    <FileVersion>1.7.0.0</FileVersion>
+    <Version>1.8.0</Version>
+    <AssemblyVersion>1.8.0.0</AssemblyVersion>
+    <FileVersion>1.8.0.0</FileVersion>
     <!-- Copy PackageReference assemblies (AngleSharp) to the output so they can be deployed to UserLibs. -->
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <!-- A RID is required to get the WINDOWS implementation of RID-specific packages. Without it MSBuild copies the
@@ -158,6 +158,14 @@
   <ItemGroup>
     <EmbeddedResource Include="Assets/s1.css">
       <LogicalName>Sideload.Assets.s1.css</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <!-- The warm-up page (Phone/WarmUp.cs). Ships in every configuration: it is what keeps the first app a player
+       opens from paying for the whole framework's first use. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Assets/warmup/index.html">
+      <LogicalName>Sideload.Assets.warmup.index.html</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
 

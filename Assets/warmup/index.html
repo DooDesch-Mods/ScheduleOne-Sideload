@@ -1,0 +1,15 @@
+<!-- The smallest page that still walks the whole pipeline: a stylesheet to cascade, a script that touches the
+     DOM, a text node to measure and lay out, and a box to paint. Built once into an off-screen host while the
+     scene is still loading, so the first app a player opens does not pay for warming TextMeshPro, the uGUI
+     factory, AngleSharp and Jint. See Phone/WarmUp.cs. -->
+<style>
+  .w { display: flex; padding: 2px; background: #010101; color: #020202; }
+  .w b { font-weight: 700; }
+</style>
+
+<div class="w" id="w"><b>warm</b></div>
+
+<script>
+  var w = document.getElementById('w');
+  if (w) w.textContent = [1, 2, 3].map(function (n) { return n * 2; }).join('');
+</script>

@@ -159,6 +159,9 @@ namespace Sideload.Host
         /// Build the page if it has not been built yet. Deferred on purpose: a panel that has never been shown has no
         /// laid-out rect, so measuring at mount time would read zeroes.
         /// </summary>
+        /// <summary>Whether the page has been built. False means the next open pays for it - see Phone/AppFade.cs.</summary>
+        internal bool Built => _built;
+
         internal void EnsureBuilt()
         {
             if (_built) return;
@@ -174,12 +177,19 @@ namespace Sideload.Host
 
             _built = true;
 
+            // Timed because this is the one call that can stall a frame: everything a page costs - parsing, the
+            // cascade, the script, the first layout and every uGUI object it creates - happens here, on the frame
+            // the player opened the app.
+            System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
+
             try { Build(); }
             catch (Exception e)
             {
                 Core.Log?.Error("[Sideload] building the page failed: " + e);
                 ShowError(e.Message);
             }
+
+            Core.Log?.Msg($"[Sideload] {_appId}: first build took {watch.ElapsedMilliseconds} ms.");
         }
 
         private void Tick(float deltaSeconds)
@@ -342,14 +352,22 @@ namespace Sideload.Host
             _watcher ??= HotReload.Start(_bundle?.OverrideRoot, _appId);
 #endif
 
+            // Phase timings, because "the first app takes a moment" is not something to guess at: the first page of
+            // a session pays for warming AngleSharp and Jint on top of its own work, and only a split shows which.
+            var phase = System.Diagnostics.Stopwatch.StartNew();
+            long tRead, tParse, tCss, tScript;
+
             string html = _bundle?.ReadText("index.html");
             if (string.IsNullOrEmpty(html)) { ShowError("index.html not found in bundle or override"); return; }
+            tRead = phase.ElapsedMilliseconds;
 
             _document = new HtmlParser().ParseDocument(html);
+            tParse = phase.ElapsedMilliseconds;
 
             string tooBig = TooLargeToRender(_document);
             if (tooBig != null) { ShowError(tooBig); return; }
             _sheet = CssParser.Parse(CollectCss(_document));
+            tCss = phase.ElapsedMilliseconds;
 
             _interaction = new Interaction(OnStateChanged, OnClicked, OnDragged, OnWheel, _root);
             _context = new StyleContext
@@ -363,8 +381,13 @@ namespace Sideload.Host
             // force a second full pass one frame later.
             _script = new ScriptHost(_appId, _document, QueueRebuild, Focus, PinToEnd, RepaintOnly);
             RunScripts(_document);
+            tScript = phase.ElapsedMilliseconds;
 
             Render(cssW, cssH, hostW, hostH, scale);
+
+            Core.Log?.Msg($"[Sideload] {_appId}: read {tRead} ms, html {tParse - tRead} ms, css {tCss - tParse} ms, "
+                          + $"script {tScript - tCss} ms, render {phase.ElapsedMilliseconds - tScript} ms "
+                          + $"= {phase.ElapsedMilliseconds} ms.");
             _rebuildQueued = false;   // the render above already covers whatever the script just changed
 
             Core.Log?.Msg($"[Sideload] page built: viewport {cssW:0.#}x{cssH:0.#} css px at {scale:0.###}x, " +

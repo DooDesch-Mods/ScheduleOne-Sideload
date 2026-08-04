@@ -35,6 +35,8 @@ namespace Sideload
             PreloadRuntimeDependency("Esprima.dll");
             PreloadRuntimeDependency("Jint.dll");
 
+            WarmUp();
+
             // Patching at init is safe here because the only patch targets a UI method (HomeScreen.Start). The
             // crash-on-early-patch problem other mods hit comes from touching gameplay/FishNet types before the
             // scene exists, which this does not do.
@@ -64,6 +66,43 @@ namespace Sideload
 #endif
         }
 
+        /// <summary>
+        /// Run the parsers once on nothing, so the first real page does not pay for them.
+        ///
+        /// Loading an assembly is not the same as being ready to use it. Measured on the live build, the first
+        /// page of a session spent 168 ms inside AngleSharp and 255 ms inside Jint; the second spent 3 ms and
+        /// 96 ms for comparable work. The difference is static initialisation and the JIT compiling both engines'
+        /// hot paths - a cost that belongs to the first caller by accident.
+        ///
+        /// Here that caller is the loading screen, where nobody is waiting on a frame, instead of the player who
+        /// just opened an app. The documents are the smallest that still walk the whole path: an element with a
+        /// stylesheet and a script that touches the DOM.
+        /// </summary>
+        private static void WarmUp()
+        {
+            try
+            {
+                System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
+
+                AngleSharp.Html.Dom.IHtmlDocument document =
+                    new AngleSharp.Html.Parser.HtmlParser().ParseDocument(
+                        "<style>b{color:#fff;padding:1px}</style><div id=w><b>x</b></div>");
+
+                Css.CssParser.Parse("b{color:#fff;padding:1px}");
+
+                var engine = new Jint.Engine();   // defaults are fine: this script cannot loop and is thrown away
+                engine.Execute("var a=[1,2,3].map(function(v){return v*2;}).join(',');");
+
+                Log.Msg($"[Sideload] warmed the parsers in {watch.ElapsedMilliseconds} ms"
+                        + $" (document has {document.All.Length} node(s), script returned {engine.Evaluate("a")}).");
+            }
+            catch (Exception e)
+            {
+                // A warm-up that fails costs nothing but the warmth: the real page builds its own parser anyway.
+                Log.Warning("[Sideload] warming the parsers failed, the first page will pay for it: " + e.Message);
+            }
+        }
+
         /// <summary>Drives every mounted page: script timers, and the single rebuild that a frame's worth of DOM
         /// changes adds up to.</summary>
         public override void OnUpdate()
@@ -72,6 +111,9 @@ namespace Sideload
 
             // The rotate keys, and the "Rotate Phone" line in the game's key strip that explains them.
             Phone.TurnInput.Tick();
+
+            // The first-open fade. Does nothing on a frame with no fade running.
+            Phone.AppFade.Tick(UnityEngine.Time.unscaledDeltaTime);
 
             // Where the devtools protocol crosses onto the main thread. Returns immediately when the server is off.
             Devtools.Cdp.CdpServer.Pump();

@@ -3,6 +3,17 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.8.0] - 2026-08-05
+
+### Changed
+
+- Opening an app for the first time takes about a fifth of the time it did. Measured on the same app in the same
+  session: 674 ms before, 159 ms after. Almost none of that was ever the app - it was the HTML parser, the script
+  engine and TextMeshPro all being used for the first time, and whoever opened the first app paid for all of it.
+  Sideload now does that work on a throwaway page while the scene is still loading.
+- A page fades in over a fifth of a second the first time its app is opened, instead of appearing at the end of
+  the build all at once. Later opens are unchanged - there is nothing to cover once the page exists.
+
 ## [1.7.0] - 2026-08-04
 
 ### Added
