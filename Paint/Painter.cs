@@ -741,7 +741,7 @@ namespace Sideload.Paint
 
             var tmp = rt.gameObject.AddComponent<TextMeshProUGUI>();
             TmpMeasure.Apply(tmp, s);
-            tmp.text = node.Text;
+            tmp.text = TmpMeasure.Content(node.Text, s);
             tmp.raycastTarget = false;
             ClipTo(tmp, BoxRenderer.ActiveClip);
             return tmp;

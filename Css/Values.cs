@@ -112,7 +112,17 @@ namespace Sideload.Css
     /// anything a person looks at - a UI that starts and stops abruptly reads as broken rather than as fast.</summary>
     internal enum EasingKind { Linear, EaseIn, EaseOut, EaseInOut }
     internal enum TextAlignKind { Left, Center, Right }
-    internal enum WhiteSpaceKind { Normal, NoWrap }
+    /// <summary>
+    /// How a text run treats the whitespace it was written with, and whether it may wrap.
+    ///
+    /// The two questions are separate in CSS and the four values are the useful corners of both:
+    ///
+    ///   Normal   collapse runs of whitespace, wrap        the default, and what prose wants
+    ///   NoWrap   collapse runs of whitespace, never wrap  a label that must stay on one line
+    ///   Pre      keep every space and newline, never wrap a terminal, a code block, an aligned column
+    ///   PreWrap  keep every space and newline, may wrap   preformatted text that still has to fit
+    /// </summary>
+    internal enum WhiteSpaceKind { Normal, NoWrap, Pre, PreWrap }
     internal enum FontStyleKind { Normal, Italic }
 
     /// <summary>Which viewport shape a `@media (orientation: ...)` block applies to.</summary>

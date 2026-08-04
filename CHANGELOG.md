@@ -3,6 +3,25 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.5.0] - 2026-08-04
+
+### Added
+
+- An app can ask for keys. Name them on a text field with `data-keys="Tab ArrowUp Ctrl+R"` and they arrive as
+  `keydown`, with `ctrlKey`, `shiftKey`, `altKey` and `repeat`. Only the keys an app names are taken from the
+  field, so a page that names none behaves exactly as before. Letters, digits, the editing keys and F1 to F12;
+  Enter and Escape are refused because they already arrive as `keydown` and `back`.
+- Holding a key repeats it: 0.35 seconds before the first repeat, then one every 0.06, dropping to 0.03 after
+  1.2 seconds so a long list stays reachable. `e.repeat` tells a page which is which.
+- `white-space: pre` and `pre-wrap` keep the spaces a page was written with. Until now every run of whitespace
+  collapsed to one, which made a column padded to twelve characters arrive as a single space.
+- `-s1-mono-advance: 7px` gives every glyph the same width, so a column of values lines up under its heading.
+  None of the game's fonts are monospaced, and this is the only way to get an aligned table out of them.
+- `app.Show()` takes the phone out of the player's pocket and opens the app; `app.Hide()` reverses both, and
+  `PhoneScreen.Raise()` and `.Lower()` move the phone on its own. Refused while the game is paused or the player
+  is asleep, dead or arrested. Opening an app still does not raise the phone by itself, so a background update
+  cannot yank it up.
+
 ## [1.4.2] - 2026-08-02
 
 ### Fixed

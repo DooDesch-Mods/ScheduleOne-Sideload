@@ -368,8 +368,21 @@ namespace Sideload.Script
         /// <summary>Current text of the control the event came from, for `input` and `keydown`.</summary>
         public string Value { get; internal set; } = "";
 
-        /// <summary>The key for a `keydown`, spelled as the DOM spells it - "Enter". Empty for other events.</summary>
+        /// <summary>The key for a `keydown`, spelled as the DOM spells it - "Enter", "Tab", "ArrowUp", "r". Empty for
+        /// other events.</summary>
         public string Key { get; internal set; } = "";
+
+        /// <summary>Modifier state on a `keydown`. Always false for other events, and always false for Enter, which
+        /// comes from the field's own submit and carries no modifier information.</summary>
+        public bool CtrlKey { get; internal set; }
+
+        public bool ShiftKey { get; internal set; }
+
+        public bool AltKey { get; internal set; }
+
+        /// <summary>True when a `keydown` is the player holding the key rather than pressing it. A page that must act
+        /// once per press - accepting a completion, submitting - checks this and returns early.</summary>
+        public bool Repeat { get; internal set; }
 
         /// <summary>What raised the event, where more than one thing can: "rightClick" or "escape" for `back`.
         /// Empty otherwise. Most pages should treat every source alike; it is here for the ones that must not.</summary>

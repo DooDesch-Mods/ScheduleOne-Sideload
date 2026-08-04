@@ -43,6 +43,8 @@ namespace Sideload.Api
         private static Action<string, bool> _setIconHidden;
         private static Action<string, bool> _setAppOpen;
         private static Func<string, bool> _isAppOpen;
+        private static Func<bool, bool> _setPhoneRaised;
+        private static Func<bool> _isPhoneRaised;
 
         /// <summary>True only when the Sideload host is installed AND bound. You rarely need this - the API is a safe
         /// no-op when absent; use it to decide whether to build a fallback UI instead.</summary>
@@ -119,6 +121,14 @@ namespace Sideload.Api
 
         internal static bool AppIsOpen(string appId) => _isAppOpen != null && _isAppOpen(appId);
 
+        internal static bool RaisePhone(bool raised) => _setPhoneRaised != null && _setPhoneRaised(raised);
+
+        internal static bool PhoneIsRaised() => _isPhoneRaised != null && _isPhoneRaised();
+
+        /// <summary>Whether the installed host can take the phone out of the player's pocket. False against a Sideload
+        /// older than 1.5.0, where an app reached by a key rather than an icon has no way to make itself visible.</summary>
+        internal static bool HasPhone { get { EnsureBound(); return _setPhoneRaised != null; } }
+
         /// <summary>
         /// Whether the installed host understands iconless apps and programmatic opening. False against an older
         /// Sideload - and a mod that supplies its own way in has to notice, because registering an app it cannot open
@@ -155,6 +165,8 @@ namespace Sideload.Api
                 _setIconHidden = Get<Action<string, bool>>(t, "SetIconHidden");
                 _setAppOpen = Get<Action<string, bool>>(t, "SetAppOpen");
                 _isAppOpen = Get<Func<string, bool>>(t, "IsAppOpen");
+                _setPhoneRaised = Get<Func<bool, bool>>(t, "SetPhoneRaised");
+                _isPhoneRaised = Get<Func<bool>>(t, "IsPhoneRaised");
 
                 _bound = true;
 
@@ -389,5 +401,62 @@ namespace Sideload.Api
         /// </code>
         /// </summary>
         public static bool CanOpenProgrammatically { get { return Apps.Available && Apps.HasOpen; } }
+
+        /// <summary>
+        /// Take the phone out AND open this app - what a key that opens an app has to mean, because
+        /// <see cref="Open"/> on its own opens it on a phone that is still in the player's pocket.
+        ///
+        /// The order matters and is why this exists rather than two calls at the call site: the page is built the
+        /// first time it is opened, and a page built while its panel is hidden measures every line about ten times
+        /// too short. Raising first means the very first frame is laid out against the real viewport.
+        ///
+        /// Returns false when the game refused the phone - paused, asleep, dead, arrested - in which case nothing was
+        /// opened either.
+        /// <code>
+        ///   if (consoleKeyPressed) app.Show();
+        /// </code>
+        /// </summary>
+        public bool Show()
+        {
+            if (!Apps.RaisePhone(true)) return false;
+
+            Apps.OpenApp(_id, true);
+            return true;
+        }
+
+        /// <summary>Close this app and put the phone away. The mirror of <see cref="Show"/>.</summary>
+        public AppHandle Hide()
+        {
+            string id = _id;
+            Apps.WhenBound(() =>
+            {
+                Apps.OpenApp(id, false);
+                Apps.RaisePhone(false);
+            });
+            return this;
+        }
+    }
+
+    /// <summary>The phone itself, as opposed to any one app on it. Everything here is a no-op without Sideload.</summary>
+    public static class PhoneScreen
+    {
+        /// <summary>Whether the phone is out and showing its phone screen - not the character tab, and not in the
+        /// player's pocket.</summary>
+        public static bool IsRaised { get { return Apps.Available && Apps.PhoneIsRaised(); } }
+
+        /// <summary>
+        /// Take the phone out. Returns false when the game refused: paused, asleep, dead or arrested. Safe to call
+        /// when the phone is already out.
+        /// </summary>
+        public static bool Raise() { return Apps.RaisePhone(true); }
+
+        /// <summary>Put the phone away, wherever it sits in the game's UI stack.</summary>
+        public static bool Lower() { return Apps.RaisePhone(false); }
+
+        /// <summary>
+        /// Whether the installed Sideload can move the phone at all. False before 1.5.0, where <see cref="Raise"/>
+        /// and <see cref="AppHandle.Show"/> are silent no-ops - which for an app with no icon means no way in.
+        /// </summary>
+        public static bool Available { get { return Apps.Available && Apps.HasPhone; } }
     }
 }

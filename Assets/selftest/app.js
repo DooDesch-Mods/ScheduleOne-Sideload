@@ -14,6 +14,9 @@ class SelfTest {
   #entry = $('entry');
   #status = $('status');
   #clock = $('clock');
+  #keys = $('keys');
+  #mono = $('mono');
+  #keyCount = 0;
 
   start() {
     $('add').addEventListener('click', () => this.#add());
@@ -35,6 +38,18 @@ class SelfTest {
       this.#status.textContent = value ? `Typing: ${value.length} char(s)` : 'Ready.';
     });
 
+    // The keyboard channel. Only the keys named in data-keys arrive here; everything else types normally, and the
+    // caret must NOT move when the arrows are pressed - that is what the guard is for.
+    this.#entry.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { this.#add(); return; }
+
+      const mods = [e.ctrlKey && 'Ctrl', e.shiftKey && 'Shift', e.altKey && 'Alt'].filter(Boolean).join('+');
+      const name = mods ? `${mods}+${e.key}` : e.key;
+      this.#keys.textContent = `keys: ${name}${e.repeat ? '  (held)' : ''}  x${++this.#keyCount}`;
+    });
+
+    this.#renderMono();
+
     // A repeating timer, driven by the mod's update loop rather than by a thread.
     setInterval(() => { this.#clock.textContent = s1.call('host.clock'); }, 1000);
 
@@ -48,6 +63,26 @@ class SelfTest {
   #save() {
     s1.storage.set('tasks', JSON.stringify(this.#tasks));
     s1.storage.set('accent', this.#accent ? 'on' : 'off');
+  }
+
+  // Three columns padded with spaces alone. They only line up if every glyph gets the same advance, so this is the
+  // whole test: read it, and either the pipes form a straight edge or -s1-mono-advance is not reaching the text.
+  //
+  // <br> rather than "\n": a newline inside a text node is whitespace, and whitespace collapses to a single space
+  // exactly as `white-space: normal` says it should. Which means the text has to be escaped first, because "<item>"
+  // would otherwise be parsed as a tag and vanish.
+  #renderMono() {
+    const rows = [['give', '<item> [qty]', 'Vanilla'],
+                  ['ogkush', 'strain', 'Vanilla'],
+                  ['brickpress', 'item', 'Litterally'],
+                  ['i', 'narrow glyph', 'Vanilla'],
+                  ['WWWWWWWWWW', 'wide glyphs', 'Vanilla']];
+
+    const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    this.#mono.innerHTML = rows
+      .map(([a, b, c]) => esc(`${a.padEnd(12)}|${b.padEnd(14)}|${c}`))
+      .join('<br>');
   }
 
   #add() {

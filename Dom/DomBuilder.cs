@@ -33,7 +33,7 @@ namespace Sideload.Dom
             ComputedStyle style = Style(element, styles);
             if (style.Display == DisplayKind.None) return null;
 
-            if (IsInlineOnly(element))
+            if (IsInlineOnly(element, style))
             {
                 string text = CompileInline(element, styles, style);
                 return string.IsNullOrEmpty(text) ? null : new LayoutNode(style, text) { Tag = element };
@@ -47,8 +47,8 @@ namespace Sideload.Dom
                 {
                     // Text sitting directly among element children becomes its own leaf; it inherits the parent's
                     // style, which is exactly what an anonymous box does in CSS. This one IS a whole block, so the
-                    // edge whitespace goes.
-                    string raw = Normalise(child.TextContent).Trim();
+                    // edge whitespace goes - unless the style preserves it, where the edges are content.
+                    string raw = Preserves(style) ? child.TextContent : Normalise(child.TextContent).Trim();
                     if (raw.Length == 0) continue;
                     node.Add(new LayoutNode(style, raw) { Tag = element });
                     continue;
@@ -71,8 +71,9 @@ namespace Sideload.Dom
         /// container in this engine, so a bar holding two spans genuinely has two flex items to lay out; collapsing it
         /// into one string would silently discard justify-content and glue the two labels together.
         /// </summary>
-        private static bool IsInlineOnly(IElement element)
+        private static bool IsInlineOnly(IElement element, ComputedStyle style)
         {
+            bool preserves = Preserves(style);
             bool sawDirectText = false;
 
             foreach (INode child in element.ChildNodes)
@@ -80,7 +81,11 @@ namespace Sideload.Dom
                 switch (child.NodeType)
                 {
                     case NodeType.Text:
-                        if (Normalise(child.TextContent).Trim().Length > 0) sawDirectText = true;
+                        // A run of nothing but spaces IS content when whitespace is preserved - an indented blank
+                        // line in a transcript is a line, and dropping it shortens the block by a row.
+                        if (preserves
+                            ? child.TextContent.Length > 0
+                            : Normalise(child.TextContent).Trim().Length > 0) sawDirectText = true;
                         continue;
 
                     case NodeType.Element:
@@ -102,8 +107,17 @@ namespace Sideload.Dom
         {
             var sb = new StringBuilder();
             AppendInline(element, styles, inherited, sb);
-            return sb.ToString().Trim();
+
+            // Preformatted text is not trimmed either. Leading spaces are the first column of an indented line, and a
+            // trailing newline is a blank last row - both are content, and a terminal notices immediately when they
+            // are quietly removed.
+            return Preserves(inherited) ? sb.ToString() : sb.ToString().Trim();
         }
+
+        /// <summary>Whether this style keeps the whitespace it was written with, rather than collapsing runs of it
+        /// into a single space the way prose does.</summary>
+        private static bool Preserves(ComputedStyle style) =>
+            style != null && (style.WhiteSpace == WhiteSpaceKind.Pre || style.WhiteSpace == WhiteSpaceKind.PreWrap);
 
         // Spaces next to rich-text tags: FIXED, and verified in the game - "keeps <b>bold</b>, <i>italic</i> and
         // <span>coloured</span> runs" renders with every space intact. The cause was here, not in TextMeshPro: each
@@ -121,7 +135,8 @@ namespace Sideload.Dom
             {
                 if (child.NodeType == NodeType.Text)
                 {
-                    sb.Append(Escape(Normalise(child.TextContent)));
+                    string text = child.TextContent;
+                    sb.Append(Escape(Preserves(inherited) ? text : Normalise(text)));
                     continue;
                 }
 

@@ -114,7 +114,13 @@ namespace Sideload.Devtools.Cdp
                 TextAlignKind.Right => "right",
                 _ => "left",
             });
-            Put("white-space", style.WhiteSpace == WhiteSpaceKind.NoWrap ? "nowrap" : "normal");
+            Put("white-space", style.WhiteSpace switch
+            {
+                WhiteSpaceKind.NoWrap => "nowrap",
+                WhiteSpaceKind.Pre => "pre",
+                WhiteSpaceKind.PreWrap => "pre-wrap",
+                _ => "normal",
+            });
             Put("color", Color(style.Color));
             Put("text-overflow", style.TextOverflowEllipsis ? "ellipsis" : "clip");
 

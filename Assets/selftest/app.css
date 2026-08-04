@@ -178,3 +178,24 @@ body {
   font-size: 12px;
   text-align: center;
 }
+
+/* The keyboard channel and the monospace advance, both added in 1.5.0. The mono block is here to be LOOKED at:
+   if the three columns do not line up character-for-character, -s1-mono-advance is not reaching the text. */
+.keys {
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.mono {
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: #0D0F15;
+  border: 1px solid var(--hairline);
+  font-family: game-pixel;
+  font-size: 12px;
+  -s1-mono-advance: 7px;
+  color: #7DFFB2;
+  white-space: pre;
+}

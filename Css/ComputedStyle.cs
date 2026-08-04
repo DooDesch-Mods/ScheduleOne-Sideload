@@ -79,6 +79,17 @@ namespace Sideload.Css
         internal FontStyleKind FontStyle = FontStyleKind.Normal;
         internal Len LineHeight = Len.None;        // none = 1.2 x font-size, the engine default
         internal float LetterSpacing = 0f;
+
+        /// <summary>
+        /// Advance every glyph gets, in CSS pixels - what the web calls a monospace font and what none of the game's
+        /// fonts are. Zero, the default, leaves the font's own metrics alone.
+        ///
+        /// There is no monospace family to switch to: `font-family` resolves against the five TextMeshPro assets the
+        /// game ships, and every one of them is proportional. Forcing the advance is the only way a column of values
+        /// can line up under a heading, which is the difference between a terminal and a list of words.
+        /// </summary>
+        internal float MonoAdvance = 0f;
+
         internal TextAlignKind TextAlign = TextAlignKind.Left;
         internal WhiteSpaceKind WhiteSpace = WhiteSpaceKind.Normal;
         internal RgbaColor Color = new RgbaColor(0.925f, 0.929f, 0.945f, 1f);   // --text
@@ -111,6 +122,7 @@ namespace Sideload.Css
             s.FontStyle = parent.FontStyle;
             s.LineHeight = parent.LineHeight;
             s.LetterSpacing = parent.LetterSpacing;
+            s.MonoAdvance = parent.MonoAdvance;
             s.TextAlign = parent.TextAlign;
             s.WhiteSpace = parent.WhiteSpace;
             s.Color = parent.Color;

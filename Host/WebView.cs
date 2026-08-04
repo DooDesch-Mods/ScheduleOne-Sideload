@@ -61,6 +61,16 @@ namespace Sideload.Host
         /// its own document, so a shared map would hand one app's field to the other's script.</summary>
         private readonly Dictionary<IElement, Il2CppTMPro.TMP_InputField> _inputs = new();
 
+        /// <summary>Keys each field declared through `data-keys`, parsed once per render. Empty for a page that asked
+        /// for none, which is every page written before the keyboard channel existed.</summary>
+        private readonly Dictionary<IElement, Model.KeyDeclarationSet> _inputKeys = new();
+
+        /// <summary>Field instance ids this view last published to the caret guard, so a rebuild replaces its own
+        /// entries instead of leaving one behind for every field it ever painted.</summary>
+        private readonly List<int> _publishedKeys = new();
+
+        private readonly Input.Keys _keyboard = new();
+
         // Live numbers for the dev overlay. Cheap to keep and the only way to see, from inside the game, whether a
         // page is rebuilding once per change or once per frame.
         private int _renders;
@@ -130,6 +140,8 @@ namespace Sideload.Host
                     // page's subscription to host events.
                     view._script?.Dispose();
                     view._script = null;
+                    foreach (int id in view._publishedKeys) Input.Keys.Withdraw(id);
+                    view._publishedKeys.Clear();
                     _live.RemoveAt(i);
                     continue;
                 }
@@ -185,6 +197,11 @@ namespace Sideload.Host
             // hidden measures every line about ten times too short and comes back with one character per line. A
             // chat app hits this immediately, because messages arrive while the phone is in the player's pocket.
             if (!_root.gameObject.activeInHierarchy) return;
+
+            // Before the rebuild, not after: a key that changes the DOM should show up in THIS frame's render rather
+            // than waiting a frame, which is the difference between a list that walks with the arrows and one that
+            // lags one press behind.
+            TickKeyboard();
 
             // A resize lays the page out too, so it subsumes whatever rebuild was pending.
             if (_resizeQueued)
@@ -412,6 +429,7 @@ namespace Sideload.Host
                                      _inputs, OnInputChanged, OnInputSubmitted, _survivors, _bundle, _appId);
             _survivors = null;
 
+            PublishDeclaredKeys();
             WireInteraction(styles);
             ApplyPin();
 
@@ -566,6 +584,65 @@ namespace Sideload.Host
         /// <summary>Remember that a box wants to sit at its end; applied by the next render, which is when the
         /// ScrollRect that will actually hold the content exists.</summary>
         private void PinToEnd(IElement element) => _pinToEnd = element;
+
+        /// <summary>
+        /// Read every painted field's `data-keys` and hand the result to the caret guard, which is reached from a
+        /// Harmony prefix that knows only the TMP_InputField and so cannot ask this view anything.
+        ///
+        /// Parsing here rather than per frame is what keeps a malformed declaration from writing the same warning
+        /// sixty times a second, and what keeps the poll allocation-free.
+        ///
+        /// Fields that survive a rebuild keep their instance id, so re-publishing the same id is a no-op rather than
+        /// a leak - which is exactly what should happen to a field the player is currently typing in.
+        /// </summary>
+        private void PublishDeclaredKeys()
+        {
+            foreach (int id in _publishedKeys) Input.Keys.Withdraw(id);
+            _publishedKeys.Clear();
+            _inputKeys.Clear();
+
+            foreach (KeyValuePair<IElement, Il2CppTMPro.TMP_InputField> pair in _inputs)
+            {
+                if (pair.Value == null) continue;
+
+                Model.KeyDeclarationSet keys = Model.KeyDeclarationSet.Parse(pair.Key.GetAttribute("data-keys"));
+
+                foreach (string refusal in keys.Refused)
+                    Core.Log?.Warning($"[Sideload] {_appId}: data-keys ignored {refusal}");
+
+                if (keys.Count == 0) continue;
+
+                _inputKeys[pair.Key] = keys;
+
+                int id = pair.Value.GetInstanceID();
+                Input.Keys.Publish(id, keys);
+                _publishedKeys.Add(id);
+
+                // Unity's selection navigation would answer some of these keys before the page ever sees them, and a
+                // page built fresh every render has no meaningful tab order anyway. Only touched on fields that
+                // declared keys, so no existing page changes behaviour.
+                var selectable = (UnityEngine.UI.Selectable)pair.Value;
+                UnityEngine.UI.Navigation navigation = selectable.navigation;
+                navigation.mode = UnityEngine.UI.Navigation.Mode.None;
+                selectable.navigation = navigation;
+            }
+        }
+
+        /// <summary>
+        /// One frame of the keyboard for whichever field has the caret. Silent and nearly free when the page declared
+        /// no keys, which is the normal case.
+        /// </summary>
+        private void TickKeyboard()
+        {
+            if (_focused == null || _script == null || _inputKeys.Count == 0) return;
+            if (!_inputKeys.TryGetValue(_focused, out Model.KeyDeclarationSet keys)) return;
+            if (!_inputs.TryGetValue(_focused, out Il2CppTMPro.TMP_InputField field)) return;
+
+            if (!_keyboard.Tick(field, keys, out Model.KeyDeclaration fired, out bool repeat)) return;
+
+            _script.Dispatch(_focused, "keydown", field.text ?? "", fired.Name,
+                             ctrl: fired.Ctrl, shift: fired.Shift, alt: fired.Alt, repeat: repeat);
+        }
 
         /// <summary>Put the caret in a field, from script (`el.focus()`) or after a rebuild.</summary>
         private void Focus(IElement element)

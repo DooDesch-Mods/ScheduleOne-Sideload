@@ -48,6 +48,10 @@ namespace Sideload.Devtools
         /// embedded resource second), which is the only way to reach the shipped copy from outside the game.</summary>
         public static readonly Func<string, string, Dictionary<string, object>> ReadFile = ReadFileImpl;
 
+        /// <summary>appId, open. Takes the phone out and shows that app, or closes it and puts the phone away -
+        /// exactly what a player does with their hands, which is the one thing a harness cannot do.</summary>
+        public static readonly Func<string, bool, Dictionary<string, object>> OpenApp = OpenAppImpl;
+
         /// <summary>The three files every app bundle is built from; reported per app so a caller can see at a glance
         /// which of them a Mods/&lt;id&gt;/ folder currently overrides.</summary>
         private static readonly string[] CanonicalFiles = { "index.html", "app.css", "app.js" };
@@ -160,6 +164,43 @@ namespace Sideload.Devtools
                 return Ok(new Dictionary<string, object> { ["reloaded"] = reloaded });
             }
             catch (Exception e) { return Error("reload failed: " + e.Message); }
+        }
+
+        /// <summary>
+        /// Open an app the way the player would, phone and all.
+        ///
+        /// Everything else on this probe steers a page that is already on screen. Getting it there was the one step
+        /// that still needed a hand on the keyboard, which meant an app reached by anything other than its icon - a
+        /// hijacked key, a notification - could not be signed off without a human. Raising first is deliberate: the
+        /// page is built on first open, and one built while its panel is hidden measures every line far too short.
+        /// </summary>
+        private static Dictionary<string, object> OpenAppImpl(string appId, bool open)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(appId)) return Error("open: no appId given.");
+
+                if (!open)
+                {
+                    Registry.SetAppOpen(appId, false);
+                    Registry.SetPhoneRaised(false);
+                    return Ok(new Dictionary<string, object> { ["appId"] = appId, ["open"] = false });
+                }
+
+                if (!Registry.SetPhoneRaised(true))
+                    return Error("open: the game refused to raise the phone - paused, asleep, dead or arrested.");
+
+                Registry.SetAppOpen(appId, true);
+
+                return Ok(new Dictionary<string, object>
+                {
+                    ["appId"] = appId,
+                    ["open"] = Registry.IsAppOpen(appId),
+                    ["onScreen"] = Registry.IsOnScreen(appId),
+                    ["phoneRaised"] = Registry.IsPhoneRaised(),
+                });
+            }
+            catch (Exception e) { return Error("open failed: " + e.Message); }
         }
 
         private static Dictionary<string, object> OutlinesImpl(int mode)

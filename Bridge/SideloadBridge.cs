@@ -64,6 +64,13 @@ namespace Sideload.Bridge
         /// <summary>appId -> is this the app the phone has open, whether or not the phone itself is up.</summary>
         public static readonly Func<string, bool> IsAppOpen = Registry.IsAppOpen;
 
+        /// <summary>raised -> did the game allow it. Takes the phone out of the player's pocket or puts it away.
+        /// Deliberately not part of opening an app: a background update must not raise the phone.</summary>
+        public static readonly Func<bool, bool> SetPhoneRaised = Registry.SetPhoneRaised;
+
+        /// <summary>Is the phone out and on its phone screen right now.</summary>
+        public static readonly Func<bool> IsPhoneRaised = Registry.IsPhoneRaised;
+
         // ------------------------------------------------------- companion mirror (added after ABI 1) --
         // For a server that serves the SAME bundle to a real phone. Read-only apart from Invoke, which is the call a
         // page already makes - none of this grants a capability that did not exist, it moves the existing surface to

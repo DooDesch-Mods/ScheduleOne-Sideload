@@ -27,6 +27,17 @@ namespace Sideload.Devtools
 
             Script.Bridge.Handle(Id, "host.info", (app, arg) =>
                 $"{app} on Unity {UnityEngine.Application.unityVersion}, frame {UnityEngine.Time.frameCount}");
+
+            // Takes the phone out of the player's pocket and puts it back. The only part of the 1.5.0 surface that
+            // cannot be checked by looking at the screen, because it is what decides whether there is a screen: drive
+            // it from a probe with s1.call('host.phone', 'down') and a timer that calls back with 'up'.
+            Script.Bridge.Handle(Id, "host.phone", (app, arg) =>
+            {
+                bool up = !string.Equals(arg, "down", StringComparison.OrdinalIgnoreCase);
+                bool allowed = Registry.SetPhoneRaised(up);
+
+                return $"{(up ? "raise" : "lower")}: {(allowed ? "done" : "refused")}, raised={Registry.IsPhoneRaised()}";
+            });
         }
     }
 }

@@ -1,3 +1,4 @@
+using System.Globalization;
 using Il2CppTMPro;
 using Sideload.Css;
 using Sideload.Layout;
@@ -122,6 +123,7 @@ namespace Sideload.Paint
             try
             {
                 Apply(_probe, style);
+                text = Content(text, style);
 
                 float width = float.IsPositiveInfinity(availableWidth) || availableWidth <= 0f ? Unbounded : availableWidth;
 
@@ -152,6 +154,25 @@ namespace Sideload.Paint
             }
         }
 
+        /// <summary>
+        /// The string TextMeshPro is actually given: the leaf's text, wrapped in an <c>mspace</c> tag when the style
+        /// asked for a fixed advance.
+        ///
+        /// A tag rather than a component property because TMP has no monospace switch - <c>mspace</c> is the only
+        /// lever, and it lives in the markup. Prepending is safe in front of whatever the inline compiler produced:
+        /// the tags nest, and this one is never closed because it applies to one text object that ends with the leaf.
+        ///
+        /// Shared by measuring and rendering for the same reason <see cref="Apply"/> is: a measured line that was not
+        /// monospaced and a drawn line that was would disagree by exactly the amount that makes a column look right
+        /// and then wrap one character early.
+        /// </summary>
+        internal static string Content(string text, ComputedStyle s)
+        {
+            if (string.IsNullOrEmpty(text) || s == null || s.MonoAdvance <= 0f) return text;
+
+            return "<mspace=" + s.MonoAdvance.ToString("0.###", CultureInfo.InvariantCulture) + "px>" + text;
+        }
+
         /// <summary>Push the CSS text properties onto a TMP component - shared by measuring and rendering so the two
         /// can never disagree.</summary>
         internal static void Apply(TMP_Text tmp, ComputedStyle s)
@@ -166,7 +187,8 @@ namespace Sideload.Paint
             tmp.characterSpacing = s.LetterSpacing;
             tmp.lineSpacing = 0f;
             tmp.richText = true;
-            tmp.enableWordWrapping = s.WhiteSpace != WhiteSpaceKind.NoWrap;
+            // `pre` and `nowrap` both refuse to wrap; `pre-wrap` keeps the spaces but still fits itself to the box.
+            tmp.enableWordWrapping = s.WhiteSpace == WhiteSpaceKind.Normal || s.WhiteSpace == WhiteSpaceKind.PreWrap;
             tmp.overflowMode = s.TextOverflowEllipsis ? TextOverflowModes.Ellipsis : TextOverflowModes.Overflow;
 
             // TMP folds both axes into one enum. Its "Top*" family is top-aligned, the unprefixed family is vertically

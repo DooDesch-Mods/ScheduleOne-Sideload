@@ -250,6 +250,21 @@ namespace Sideload
         }
 
         /// <summary>
+        /// Take the phone out or put it away. Independent of any app, because the phone is: an app opened while the
+        /// phone is in the player's pocket is open and invisible, which is the correct behaviour for a background
+        /// update and the wrong one for a key the player just pressed.
+        ///
+        /// Returns whether the game allowed it. Raising is refused while paused, asleep, dead or arrested; lowering
+        /// is refused when the phone was not out to begin with.
+        /// </summary>
+        internal static bool SetPhoneRaised(bool raised) =>
+            raised ? Phone.PhoneScreen.Raise() : Phone.PhoneScreen.Lower();
+
+        /// <summary>Whether the phone is out and showing its home screen or an app, as opposed to the character
+        /// tab.</summary>
+        internal static bool IsPhoneRaised() => Phone.PhoneScreen.IsRaised;
+
+        /// <summary>
         /// Whether this app is the one the phone has open - even with the phone in the player's pocket. For "can the
         /// player SEE it", <see cref="IsOnScreen"/> is the right question.
         /// </summary>

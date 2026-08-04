@@ -128,12 +128,25 @@ namespace Sideload.Css
                 case "font-style": s.FontStyle = Is(value, "italic") || Is(value, "oblique") ? FontStyleKind.Italic : FontStyleKind.Normal; break;
                 case "line-height": ApplyLineHeight(s, value); break;
                 case "letter-spacing": if (Is(value, "normal")) s.LetterSpacing = 0f; else if (TryPx(value, out float ls)) s.LetterSpacing = ls; break;
+
+                // Sideload's own, hence the prefix: the web reaches monospace by naming a family, and there is no
+                // monospace family here to name. `normal` turns it back off, so a subtree can opt out of an inherited
+                // grid the way `letter-spacing: normal` does.
+                case "-s1-mono-advance":
+                    if (Is(value, "normal") || Is(value, "none")) s.MonoAdvance = 0f;
+                    else if (TryPx(value, out float adv)) s.MonoAdvance = adv < 0f ? 0f : adv;
+                    break;
                 case "text-align":
                     if (Is(value, "center")) s.TextAlign = TextAlignKind.Center;
                     else if (Is(value, "right") || Is(value, "end")) s.TextAlign = TextAlignKind.Right;
                     else if (Is(value, "left") || Is(value, "start")) s.TextAlign = TextAlignKind.Left;
                     break;
-                case "white-space": s.WhiteSpace = Is(value, "nowrap") ? WhiteSpaceKind.NoWrap : WhiteSpaceKind.Normal; break;
+                case "white-space":
+                    if (Is(value, "nowrap")) s.WhiteSpace = WhiteSpaceKind.NoWrap;
+                    else if (Is(value, "pre")) s.WhiteSpace = WhiteSpaceKind.Pre;
+                    else if (Is(value, "pre-wrap") || Is(value, "break-spaces")) s.WhiteSpace = WhiteSpaceKind.PreWrap;
+                    else s.WhiteSpace = WhiteSpaceKind.Normal;
+                    break;
                 case "text-overflow": s.TextOverflowEllipsis = Is(value, "ellipsis"); break;
             }
         }

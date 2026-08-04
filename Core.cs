@@ -1,8 +1,8 @@
-using System.Reflection;
+﻿using System.Reflection;
 using MelonLoader;
 using MelonLoader.Utils;
 
-[assembly: MelonInfo(typeof(Sideload.Core), "Sideload", "1.4.2", "DooDesch", "https://github.com/DooDesch-Mods/ScheduleOne-Sideload")]
+[assembly: MelonInfo(typeof(Sideload.Core), "Sideload", "1.5.0", "DooDesch", "https://github.com/DooDesch-Mods/ScheduleOne-Sideload")]
 [assembly: MelonGame("TVGS", "Schedule I")]
 
 namespace Sideload
@@ -47,6 +47,11 @@ namespace Sideload
             {
                 Log.Error("[Sideload] PatchAll failed - no app will reach the phone: " + e);
             }
+
+            // Separate from PatchAll on purpose. These targets are TextMeshPro's, not the game's, and their protected
+            // overload set has moved between Unity versions - a missing one must cost a page its arrow keys, not cost
+            // every app the HomeScreen patch that puts it on the phone in the first place.
+            Input.TmpCaretGuard.Apply(HarmonyInstance);
 
             Config.Preferences.Initialize();
 
