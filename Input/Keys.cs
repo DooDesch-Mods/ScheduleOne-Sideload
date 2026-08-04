@@ -40,6 +40,22 @@ namespace Sideload.Input
         private const float SecondGearAfter = 1.2f;
         private const float SecondGearInterval = 0.03f;
 
+        /// <summary>One declaration with its keycode already looked up. Resolving at publish time rather than per
+        /// frame means a name the keycode table does not know is dropped once, loudly, instead of silently failing
+        /// to match sixty times a second.</summary>
+        internal readonly struct Bound
+        {
+            internal Bound(KeyDeclaration key, KeyCode code)
+            {
+                Key = key;
+                Code = code;
+            }
+
+            internal KeyDeclaration Key { get; }
+
+            internal KeyCode Code { get; }
+        }
+
         /// <summary>
         /// Which field declared what, keyed by the field's instance id.
         ///
@@ -47,18 +63,50 @@ namespace Sideload.Input
         /// prefix that knows only the TMP_InputField it was called on. Each view withdraws its own ids before
         /// publishing new ones, so a rebuild replaces its entries instead of piling more on.
         /// </summary>
-        private static readonly Dictionary<int, KeyDeclarationSet> Declared = new Dictionary<int, KeyDeclarationSet>();
+        private static readonly Dictionary<int, Bound[]> Declared = new Dictionary<int, Bound[]>();
 
         private KeyDeclaration _held;
+        private KeyCode _heldCode;
         private bool _holding;
         private float _pressedAt;
         private float _nextAt;
 
-        /// <summary>Record what a freshly painted field declared. Called once per render, not per frame.</summary>
-        internal static void Publish(int fieldId, KeyDeclarationSet keys)
+        /// <summary>
+        /// Record what a freshly painted field declared, with every keycode resolved. Called once per render.
+        ///
+        /// Returns the bound set so the caller can hand the same array straight to <see cref="Tick"/> instead of
+        /// looking it up again every frame.
+        /// </summary>
+        internal static Bound[] Publish(int fieldId, KeyDeclarationSet keys)
         {
-            if (keys == null || keys.Count == 0) Declared.Remove(fieldId);
-            else Declared[fieldId] = keys;
+            if (keys == null || keys.Count == 0)
+            {
+                Declared.Remove(fieldId);
+                return Array.Empty<Bound>();
+            }
+
+            var bound = new List<Bound>(keys.Count);
+            for (int i = 0; i < keys.Count; i++)
+            {
+                KeyDeclaration key = keys[i];
+                if (!KeyCodes.TryResolve(key.Name, out KeyCode code))
+                {
+                    Core.Log?.Error($"[Sideload] key '{key.Name}' parsed but has no keycode - it will never fire.");
+                    continue;
+                }
+
+                bound.Add(new Bound(key, code));
+            }
+
+            if (bound.Count == 0)
+            {
+                Declared.Remove(fieldId);
+                return Array.Empty<Bound>();
+            }
+
+            Bound[] result = bound.ToArray();
+            Declared[fieldId] = result;
+            return result;
         }
 
         internal static void Withdraw(int fieldId) => Declared.Remove(fieldId);
@@ -72,9 +120,12 @@ namespace Sideload.Input
         /// </summary>
         internal static bool Suppresses(TMP_InputField field, string keyName)
         {
-            if (field == null) return false;
+            if (field == null || !Declared.TryGetValue(field.GetInstanceID(), out Bound[] keys)) return false;
 
-            return Declared.TryGetValue(field.GetInstanceID(), out KeyDeclarationSet keys) && keys.Uses(keyName);
+            for (int i = 0; i < keys.Length; i++)
+                if (string.Equals(keys[i].Key.Name, keyName, StringComparison.Ordinal)) return true;
+
+            return false;
         }
 
         /// <summary>
@@ -84,7 +135,7 @@ namespace Sideload.Input
         /// At most one key per frame, which is what a keyboard can actually produce and what keeps a page from having
         /// to reason about two completions arriving together.
         /// </summary>
-        internal bool Tick(TMP_InputField field, KeyDeclarationSet keys, out KeyDeclaration fired, out bool repeat)
+        internal bool Tick(TMP_InputField field, Bound[] keys, out KeyDeclaration fired, out bool repeat)
         {
             fired = default;
             repeat = false;
@@ -92,7 +143,7 @@ namespace Sideload.Input
             // Not focused means not typing here: a page must not walk its list because the player pressed Up while
             // driving. isFocused rather than a remembered flag, because focus can move to another view's field
             // without this one hearing about it.
-            if (field == null || keys == null || keys.Count == 0 || !field.isFocused)
+            if (field == null || keys == null || keys.Length == 0 || !field.isFocused)
             {
                 _holding = false;
                 return false;
@@ -102,18 +153,18 @@ namespace Sideload.Input
             // exactly when a menu-like app is most likely to be open.
             float now = Time.unscaledTime;
 
-            for (int i = 0; i < keys.Count; i++)
+            for (int i = 0; i < keys.Length; i++)
             {
-                KeyDeclaration key = keys[i];
-                if (!KeyCodes.TryResolve(key.Name, out KeyCode code)) continue;
-                if (!UnityEngine.Input.GetKeyDown(code) || !ModifiersHeld(key)) continue;
+                Bound bound = keys[i];
+                if (!UnityEngine.Input.GetKeyDown(bound.Code) || !ModifiersHeld(bound.Key)) continue;
 
-                _held = key;
+                _held = bound.Key;
+                _heldCode = bound.Code;
                 _holding = true;
                 _pressedAt = now;
                 _nextAt = now + RepeatDelay;
 
-                fired = key;
+                fired = bound.Key;
                 return true;
             }
 
@@ -121,8 +172,7 @@ namespace Sideload.Input
 
             // Released, or a modifier let go mid-hold - either way the gesture is over. Checking the modifiers here
             // too is what stops Ctrl+R firing on after Ctrl comes up while R is still down.
-            if (!KeyCodes.TryResolve(_held.Name, out KeyCode heldCode)
-                || !UnityEngine.Input.GetKey(heldCode) || !ModifiersHeld(_held))
+            if (!UnityEngine.Input.GetKey(_heldCode) || !ModifiersHeld(_held))
             {
                 _holding = false;
                 return false;
@@ -188,6 +238,9 @@ namespace Sideload.Input
             map["ArrowRight"] = KeyCode.RightArrow;
             map["Space"] = KeyCode.Space;
 
+            // The vocabulary is the authority on what an app may declare; this table only has to keep up. A name
+            // added there and forgotten here would parse cleanly, publish cleanly and never fire, so it says so at
+            // startup rather than costing an evening.
             foreach (string name in KeyDeclarationSet.Vocabulary)
                 if (!map.ContainsKey(name))
                     Core.Log?.Error($"[Sideload] key '{name}' is declarable but has no keycode - it will never fire.");

@@ -61,9 +61,9 @@ namespace Sideload.Host
         /// its own document, so a shared map would hand one app's field to the other's script.</summary>
         private readonly Dictionary<IElement, Il2CppTMPro.TMP_InputField> _inputs = new();
 
-        /// <summary>Keys each field declared through `data-keys`, parsed once per render. Empty for a page that asked
-        /// for none, which is every page written before the keyboard channel existed.</summary>
-        private readonly Dictionary<IElement, Model.KeyDeclarationSet> _inputKeys = new();
+        /// <summary>Keys each field declared through `data-keys`, parsed and resolved once per render. Empty for a
+        /// page that asked for none, which is every page written before the keyboard channel existed.</summary>
+        private readonly Dictionary<IElement, Input.Keys.Bound[]> _inputKeys = new();
 
         /// <summary>Field instance ids this view last published to the caret guard, so a rebuild replaces its own
         /// entries instead of leaving one behind for every field it ever painted.</summary>
@@ -612,19 +612,20 @@ namespace Sideload.Host
 
                 if (keys.Count == 0) continue;
 
-                _inputKeys[pair.Key] = keys;
-
                 int id = pair.Value.GetInstanceID();
-                Input.Keys.Publish(id, keys);
+                Input.Keys.Bound[] bound = Input.Keys.Publish(id, keys);
+                if (bound.Length == 0) continue;
+
+                _inputKeys[pair.Key] = bound;
                 _publishedKeys.Add(id);
 
                 // Unity's selection navigation would answer some of these keys before the page ever sees them, and a
                 // page built fresh every render has no meaningful tab order anyway. Only touched on fields that
-                // declared keys, so no existing page changes behaviour.
-                var selectable = (UnityEngine.UI.Selectable)pair.Value;
-                UnityEngine.UI.Navigation navigation = selectable.navigation;
+                // declared keys, so no existing page changes behaviour. Reached through the field rather than through
+                // a Selectable cast: a managed cast on an interop wrapper is the one that quietly returns null.
+                UnityEngine.UI.Navigation navigation = pair.Value.navigation;
                 navigation.mode = UnityEngine.UI.Navigation.Mode.None;
-                selectable.navigation = navigation;
+                pair.Value.navigation = navigation;
             }
         }
 
@@ -635,7 +636,7 @@ namespace Sideload.Host
         private void TickKeyboard()
         {
             if (_focused == null || _script == null || _inputKeys.Count == 0) return;
-            if (!_inputKeys.TryGetValue(_focused, out Model.KeyDeclarationSet keys)) return;
+            if (!_inputKeys.TryGetValue(_focused, out Input.Keys.Bound[] keys)) return;
             if (!_inputs.TryGetValue(_focused, out Il2CppTMPro.TMP_InputField field)) return;
 
             if (!_keyboard.Tick(field, keys, out Model.KeyDeclaration fired, out bool repeat)) return;
