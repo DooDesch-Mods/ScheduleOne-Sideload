@@ -309,14 +309,15 @@ namespace Sideload.Script
         internal JsEvent Dispatch(IElement target, string type, string value = "", string key = "", string source = "",
                                   Input.PointerSpot spot = default,
                                   float deltaX = 0f, float deltaY = 0f, float wheelDelta = 0f,
-                                  bool ctrl = false, bool shift = false, bool alt = false, bool repeat = false)
+                                  bool ctrl = false, bool shift = false, bool alt = false, bool repeat = false,
+                                  bool hasSelection = false)
         {
             var evt = new JsEvent(type, Wrap(target))
             {
                 Value = value ?? "", Key = key ?? "", Source = source ?? "",
                 OffsetX = spot.OffsetX, OffsetY = spot.OffsetY, NormX = spot.NormX, NormY = spot.NormY,
                 DeltaX = deltaX, DeltaY = deltaY, WheelDelta = wheelDelta,
-                CtrlKey = ctrl, ShiftKey = shift, AltKey = alt, Repeat = repeat,
+                CtrlKey = ctrl, ShiftKey = shift, AltKey = alt, Repeat = repeat, HasSelection = hasSelection,
             };
             if (_failed || target == null) return evt;
 

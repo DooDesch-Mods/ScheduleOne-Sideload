@@ -112,18 +112,24 @@ namespace Sideload.Input
         internal static void Withdraw(int fieldId) => Declared.Remove(fieldId);
 
         /// <summary>
-        /// Asked by the caret guard: does the page own this key, so TextMeshPro must keep its hands off?
+        /// Asked by the caret guard: does the page own this key RIGHT NOW, so TextMeshPro must keep its hands off?
         ///
-        /// Modifiers are deliberately not compared. TMP moves the caret on Up whether or not Ctrl is down, so a page
-        /// that declared <c>Ctrl+ArrowUp</c> and nothing else would still watch its caret jump on the plain key. One
-        /// declaration for a key claims that key.
+        /// Modifiers are part of the question, because for some keys the plain press and the modified press are
+        /// different features that both have to work. `Ctrl+Backspace` deletes a word - TMP has no such thing and
+        /// would delete one character - while a plain Backspace must stay TMP's, or the field stops erasing.
+        ///
+        /// Declaring a key with NO modifier claims it whenever no modifier is held, which leaves Shift+Up free to
+        /// select text on a page that only asked for Up.
         /// </summary>
         internal static bool Suppresses(TMP_InputField field, string keyName)
         {
             if (field == null || !Declared.TryGetValue(field.GetInstanceID(), out Bound[] keys)) return false;
 
             for (int i = 0; i < keys.Length; i++)
-                if (string.Equals(keys[i].Key.Name, keyName, StringComparison.Ordinal)) return true;
+            {
+                if (!string.Equals(keys[i].Key.Name, keyName, StringComparison.Ordinal)) continue;
+                if (ModifiersHeld(keys[i].Key)) return true;
+            }
 
             return false;
         }

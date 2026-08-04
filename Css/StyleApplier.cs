@@ -136,6 +136,25 @@ namespace Sideload.Css
                     if (Is(value, "normal") || Is(value, "none")) s.MonoAdvance = 0f;
                     else if (TryPx(value, out float adv)) s.MonoAdvance = adv < 0f ? 0f : adv;
                     break;
+
+                // Standard CSS. `auto` hands the caret back to the text colour, which is the default.
+                case "caret-color":
+                    if (Is(value, "auto")) s.CaretColor = null;
+                    else if (ValueParser.TryColor(value, out RgbaColor caret)) s.CaretColor = caret;
+                    break;
+
+                // Sideload's own: CSS has a caret colour but no caret width, and a block cursor is the difference
+                // between a text field and a terminal.
+                case "-s1-caret-width":
+                    if (TryPx(value, out float caretWidth)) s.CaretWidth = caretWidth < 0f ? 0f : caretWidth;
+                    break;
+
+                // The inline suggestion behind the caret. `auto` is the text colour faded, which is what fish and
+                // PSReadLine both draw and what anyone reading it expects.
+                case "-s1-ghost-color":
+                    if (Is(value, "auto")) s.GhostColor = null;
+                    else if (ValueParser.TryColor(value, out RgbaColor ghost)) s.GhostColor = ghost;
+                    break;
                 case "text-align":
                     if (Is(value, "center")) s.TextAlign = TextAlignKind.Center;
                     else if (Is(value, "right") || Is(value, "end")) s.TextAlign = TextAlignKind.Right;

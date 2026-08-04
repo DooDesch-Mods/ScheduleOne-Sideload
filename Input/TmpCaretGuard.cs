@@ -37,6 +37,12 @@ namespace Sideload.Input
 
             Patch(harmony, "MoveTextStart", new HarmonyMethod(typeof(TmpCaretGuard), nameof(SkipHome)), typeof(bool));
             Patch(harmony, "MoveTextEnd", new HarmonyMethod(typeof(TmpCaretGuard), nameof(SkipEnd)), typeof(bool));
+
+            // Backspace is the one key here that TMP handles WITHOUT looking at modifiers: Ctrl+Backspace deletes a
+            // single character, the same as a bare one. A page that wants the Windows behaviour - delete the word -
+            // has to do it itself, and TMP has to be stopped from eating a character on the way past.
+            Patch(harmony, "Backspace", new HarmonyMethod(typeof(TmpCaretGuard), nameof(SkipBackspace)));
+            Patch(harmony, "DeleteKey", new HarmonyMethod(typeof(TmpCaretGuard), nameof(SkipDelete)));
         }
 
         private static void Patch(HarmonyLib.Harmony harmony, string name, HarmonyMethod prefix, params Type[] parameters)
@@ -66,5 +72,9 @@ namespace Sideload.Input
         private static bool SkipHome(TMP_InputField __instance) => !Keys.Suppresses(__instance, "Home");
 
         private static bool SkipEnd(TMP_InputField __instance) => !Keys.Suppresses(__instance, "End");
+
+        private static bool SkipBackspace(TMP_InputField __instance) => !Keys.Suppresses(__instance, "Backspace");
+
+        private static bool SkipDelete(TMP_InputField __instance) => !Keys.Suppresses(__instance, "Delete");
     }
 }

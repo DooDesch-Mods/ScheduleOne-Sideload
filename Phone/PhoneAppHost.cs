@@ -590,6 +590,16 @@ namespace Sideload.Phone
             }
 
             Il2CppScheduleOne.UI.Phone.Phone.ActiveApp = open ? _panel : null;
+
+            // Let go of the keyboard before the page disappears.
+            //
+            // A focused TMP_InputField holds GameInput.IsTyping true so that typing "w" edits instead of walking.
+            // Deactivating the container does NOT deselect it - the field simply vanishes with the flag still set,
+            // and the game is then in a state with no way out of it: the player cannot move, Escape does nothing
+            // (GameplayMenu ignores every key while IsTyping), and the phone key does nothing either. The only
+            // thing still listening is whatever opened the app in the first place.
+            if (!open) Paint.Painter.ReleaseKeyboard();
+
             if (_container != null) _container.SetActive(open);
         }
     }

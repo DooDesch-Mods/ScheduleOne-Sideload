@@ -84,6 +84,11 @@ namespace Sideload.Phone
                 GameplayMenu menu = Menu();
                 if (menu == null || !menu.IsOpen) return false;
 
+                // Same reason as in PhoneAppHost.SetOpen: a page can be on screen with its prompt focused, and a
+                // phone that goes away while GameInput.IsTyping is still set leaves a player who cannot move and a
+                // game that ignores every key.
+                Paint.Painter.ReleaseKeyboard();
+
                 menu.State.RemoveFromDefaultParent();
                 return true;
             }

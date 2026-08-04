@@ -53,6 +53,10 @@ namespace Sideload.Host
         private IElement _focused;
         private IElement _pinToEnd;
 
+        /// <summary>A focus asked for before the field was painted, granted by the next render. See
+        /// <see cref="Focus"/>.</summary>
+        private IElement _focusWanted;
+
         /// <summary>The style each interactive box was last painted with, so a transition knows where it is coming
         /// from. Only elements that actually change state ever land in here.</summary>
         private readonly Dictionary<IElement, ComputedStyle> _styleWas = new();
@@ -432,6 +436,7 @@ namespace Sideload.Host
             PublishDeclaredKeys();
             WireInteraction(styles);
             ApplyPin();
+            ApplyPendingFocus();
 
             foreach (KeyValuePair<IElement, Painter.PaintedBox> pair in _painted)
                 if (styles.TryGetValue(pair.Key, out ComputedStyle painted)) _styleWas[pair.Key] = painted;
@@ -641,17 +646,46 @@ namespace Sideload.Host
 
             if (!_keyboard.Tick(field, keys, out Model.KeyDeclaration fired, out bool repeat)) return;
 
+            // The field acted on this press too - Sideload polls the keyboard rather than intercepting it - so the
+            // page is told whether there was a selection. Ctrl+C is the case that needs it: TMP has already copied.
+            bool selected = field.selectionAnchorPosition != field.selectionFocusPosition;
+
             _script.Dispatch(_focused, "keydown", field.text ?? "", fired.Name,
-                             ctrl: fired.Ctrl, shift: fired.Shift, alt: fired.Alt, repeat: repeat);
+                             ctrl: fired.Ctrl, shift: fired.Shift, alt: fired.Alt, repeat: repeat,
+                             hasSelection: selected);
         }
 
-        /// <summary>Put the caret in a field, from script (`el.focus()`) or after a rebuild.</summary>
+        /// <summary>
+        /// Put the caret in a field, from script (`el.focus()`) or after a rebuild.
+        ///
+        /// A request for a field that has not been painted yet is REMEMBERED rather than dropped. Scripts run before
+        /// the first render on purpose - the listeners they register decide which boxes need a hit target - so a page
+        /// that focuses its prompt in its startup code is asking for a field that does not exist yet. Silently doing
+        /// nothing there is how an app ends up opening with a prompt nobody can type into.
+        /// </summary>
         private void Focus(IElement element)
         {
-            if (element == null || !_inputs.TryGetValue(element, out Il2CppTMPro.TMP_InputField field) || field == null) return;
+            if (element == null) return;
+
+            if (!_inputs.TryGetValue(element, out Il2CppTMPro.TMP_InputField field) || field == null)
+            {
+                _focusWanted = element;
+                return;
+            }
 
             _focused = element;
             field.ActivateInputField();
+        }
+
+        /// <summary>Grant a focus that was asked for before the field existed. Runs after the render that created
+        /// it, which is the first moment it can work.</summary>
+        private void ApplyPendingFocus()
+        {
+            if (_focusWanted == null) return;
+
+            IElement wanted = _focusWanted;
+            _focusWanted = null;
+            Focus(wanted);
         }
 
         /// <summary>

@@ -67,9 +67,15 @@ namespace Sideload.Dom
         /// <summary>
         /// True when this element is a run of text rather than a container.
         ///
-        /// It must contain DIRECT text of its own - inline children alone are not enough. Every element is a flex
-        /// container in this engine, so a bar holding two spans genuinely has two flex items to lay out; collapsing it
-        /// into one string would silently discard justify-content and glue the two labels together.
+        /// Normally it must contain DIRECT text of its own - inline children alone are not enough. Every element is a
+        /// flex container in this engine, so a bar holding two spans genuinely has two flex items to lay out;
+        /// collapsing it into one string would silently discard justify-content and glue the two labels together.
+        ///
+        /// Preserved whitespace overrides that, because it says the opposite. An author who writes
+        /// <c>white-space: pre</c> has declared that the spaces between these children are content, and spaces are
+        /// only content inside a run of text. Without this a block of nothing but coloured spans - a syntax-
+        /// highlighted line, a terminal row where every part is a colour - came out as one full-width box per span,
+        /// stacked down the screen instead of laid along the line.
         /// </summary>
         private static bool IsInlineOnly(IElement element, ComputedStyle style)
         {
@@ -100,7 +106,7 @@ namespace Sideload.Dom
                 }
             }
 
-            return sawDirectText;
+            return sawDirectText || preserves;
         }
 
         private static string CompileInline(IElement element, Dictionary<IElement, ComputedStyle> styles, ComputedStyle inherited)

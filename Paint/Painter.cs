@@ -550,7 +550,11 @@ namespace Sideload.Paint
 
                 // Only when the document disagrees: assigning the same string still moves the caret to the end.
                 string wanted = element.GetAttribute("value") ?? "";
-                if (!string.Equals(field.text, wanted, StringComparison.Ordinal)) field.text = wanted;
+                if (!string.Equals(field.text, wanted, StringComparison.Ordinal))
+                {
+                    field.text = wanted;
+                    PutCaretAtEnd(field);
+                }
 
                 field.interactable = !element.HasAttribute("disabled");
 
@@ -567,6 +571,10 @@ namespace Sideload.Paint
 
                 field.characterLimit = int.TryParse(element.GetAttribute("maxlength"), out int max) && max > 0 ? max : 0;
 
+                // The suggestion changes with every keystroke, and the control survives the rebuild that carries it.
+                foreach (TextMeshProUGUI child in kept.GetComponentsInChildren<TextMeshProUGUI>(true))
+                    if (child != null && child.gameObject.name == "input-ghost") WriteGhost(child, element, node.Style);
+
                 // The control moved and may have changed size - most visibly when the phone turns - so the rectangle
                 // its text clips to has to be recomputed. Nothing else maintains it: the clip lives on the
                 // CanvasRenderer, which survives the rebuild along with the control.
@@ -582,6 +590,32 @@ namespace Sideload.Paint
             }
 
             return kept;
+        }
+
+        /// <summary>
+        /// Put the inline suggestion in place: the typed text made invisible, then the part that would be added.
+        ///
+        /// `data-ghost` holds only the REMAINDER - a page that has worked out `give` from `gi` sets "ve". The typed
+        /// text is read back from the element so the two cannot disagree about where the visible part starts.
+        ///
+        /// The typed run goes inside noparse, because a player typing `give &lt;item&gt;` would otherwise watch their
+        /// argument disappear into a tag that does not exist.
+        /// </summary>
+        private static void WriteGhost(TextMeshProUGUI ghost, AngleSharp.Dom.IElement element, ComputedStyle s)
+        {
+            if (ghost == null) return;
+
+            string rest = element.GetAttribute("data-ghost") ?? "";
+            if (rest.Length == 0) { ghost.text = ""; return; }
+
+            string typed = element.GetAttribute("value") ?? "";
+
+            RgbaColor colour = s.GhostColor ?? new RgbaColor(s.Color.R, s.Color.G, s.Color.B, s.Color.A * 0.45f);
+            ghost.color = new Color(colour.R, colour.G, colour.B, colour.A);
+
+            ghost.text = typed.Length > 0
+                ? "<color=#00000000><noparse>" + typed + "</noparse></color>" + rest
+                : rest;
         }
 
         private static void PaintInput(LayoutNode node, RectTransform box, bool multiline, float absX, float absY)
@@ -616,6 +650,21 @@ namespace Sideload.Paint
             placeholder.color = new Color(s.Color.R, s.Color.G, s.Color.B, s.Color.A * 0.45f);
             ClipTo(placeholder, clip);
 
+            // The inline suggestion, drawn behind the caret in the field's own font.
+            //
+            // Its own text leaf rather than something written into the field: the field's text is what the player
+            // typed and what Enter submits, and a suggestion pushed in there would be both. Laid out by TMP instead
+            // of positioned by hand - it holds the typed text in full, made invisible with an alpha-zero colour tag,
+            // so the visible part starts exactly where the typing stops. No measuring, and nothing to drift.
+            RectTransform ghostRect = UiFactory.Rect("input-ghost", viewport);
+            UiFactory.Stretch(ghostRect);
+            var ghost = ghostRect.gameObject.AddComponent<TextMeshProUGUI>();
+            TmpMeasure.Apply(ghost, s);
+            ghost.richText = true;
+            ghost.raycastTarget = false;
+            ClipTo(ghost, clip);
+            WriteGhost(ghost, element, s);
+
             var field = box.gameObject.AddComponent<TMP_InputField>();
             field.textViewport = viewport;
             field.textComponent = text;
@@ -636,9 +685,15 @@ namespace Sideload.Paint
             field.resetOnDeActivation = false;
 
             // The caret has its own colour and is invisible unless told to follow the text. Width 0 would hide it too.
+            //
+            // Both are stylable. `caret-color` is standard CSS and defaults to the text colour, which is what a form
+            // field wants. `-s1-caret-width` has no standard equivalent and is the whole difference between a text
+            // cursor and the block a terminal draws: set it to one character cell and the caret covers a glyph.
+            RgbaColor caret = s.CaretColor ?? s.Color;
+
             field.customCaretColor = true;
-            field.caretColor = new Color(s.Color.R, s.Color.G, s.Color.B, 1f);
-            field.caretWidth = 2;
+            field.caretColor = new Color(caret.R, caret.G, caret.B, 1f);
+            field.caretWidth = Math.Max(1, (int)Math.Round(s.CaretWidth));
             field.caretBlinkRate = 1.5f;
             field.selectionColor = new Color(0.369f, 0.416f, 0.824f, 0.5f);
 
@@ -665,6 +720,8 @@ namespace Sideload.Paint
             field.onSelect.AddListener((UnityEngine.Events.UnityAction<string>)(_ => SetTyping(true)));
             field.onDeselect.AddListener((UnityEngine.Events.UnityAction<string>)(_ => SetTyping(false)));
 
+            RejectLeadingCharacters(field, element.GetAttribute("data-reject-first"));
+
             // Mirroring every keystroke onto the element is what makes `el.value` work from script AND what lets a
             // rebuild restore the text: the DOM, not the Unity component, is the source of truth for what was typed.
             field.onValueChanged.AddListener((UnityEngine.Events.UnityAction<string>)(v =>
@@ -676,10 +733,106 @@ namespace Sideload.Paint
             if (_inputs != null) _inputs[element] = field;
         }
 
+        /// <summary>
+        /// Refuse a set of characters at the very front of a field: <c>data-reject-first="^`´~"</c>.
+        ///
+        /// This exists for one problem, and it is a problem no page can solve for itself. A key that opens an app is
+        /// often a DEAD KEY - `^` on German and Swiss layouts is the usual one - and a dead key emits nothing when
+        /// pressed and then delivers its mark a moment later, into the field the app just focused. The player sees
+        /// `^help` and never typed the caret.
+        ///
+        /// REFUSED, NOT DELETED, and that distinction is the whole feature. TMP asks this before inserting and drops
+        /// the character when the answer is 0, so nothing is written and no caret needs repairing. Taking the mark
+        /// out afterwards cannot be made to work: caret positions are mapped through the RENDERED text, so a field
+        /// rewritten behind TMP's back pulls the caret back onto the old string and the next keystroke lands at the
+        /// front - which turns `give` into `iveg`.
+        ///
+        /// Position 0 only. A mark anywhere else is somebody's argument, not the key that opened the app.
+        /// </summary>
+        private static void RejectLeadingCharacters(TMP_InputField field, string rejected)
+        {
+            if (field == null || string.IsNullOrEmpty(rejected)) return;
+
+            string marks = rejected;
+
+            try
+            {
+                // Converted rather than assigned: OnValidateInput is an Il2Cpp delegate and a managed method group
+                // cannot be handed to it. Assigning also REPLACES TMP's own validator, which is fine here because
+                // the field leaves characterValidation at None.
+                field.onValidateInput = Il2CppInterop.Runtime.DelegateSupport
+                    .ConvertDelegate<TMP_InputField.OnValidateInput>(
+                        (Func<string, int, char, char>)((text, index, added) =>
+                            index == 0 && marks.IndexOf(added) >= 0 ? '\0' : added));
+            }
+            catch (Exception e)
+            {
+                Core.Log?.Warning("[Sideload] data-reject-first could not be installed: " + e.Message);
+            }
+        }
+
+        /// <summary>
+        /// Put the caret after the text the page just wrote.
+        ///
+        /// A browser does this when script assigns <c>input.value</c>, and without it a page that completes a word
+        /// for the player leaves the caret wherever it was - so typing the arguments after an accepted completion
+        /// inserts them into the middle of the command.
+        ///
+        /// Two things make this fiddly, and both are load-bearing. The label is forced first: both cursors are
+        /// mapped through <c>textInfo.characterInfo</c>, which describes the RENDERED text, and right after the
+        /// assignment that is still the old, shorter string - so TMP clamps everything set here back onto it. And
+        /// all six positions are set, because a TMP_InputField keeps the caret twice: <c>caretPosition</c> is where
+        /// the bar is drawn and <c>stringPosition</c> is where the next character goes. Setting only the visible one
+        /// leaves the field looking right and typing wrong, which turns `give` into `iveg`.
+        /// </summary>
+        private static void PutCaretAtEnd(TMP_InputField field)
+        {
+            try
+            {
+                int at = field.text?.Length ?? 0;
+
+                field.ForceLabelUpdate();
+
+                field.caretPosition = at;
+                field.selectionAnchorPosition = at;
+                field.selectionFocusPosition = at;
+                field.stringPosition = at;
+                field.selectionStringAnchorPosition = at;
+                field.selectionStringFocusPosition = at;
+            }
+            catch (Exception e)
+            {
+                Core.Log?.Warning("[Sideload] could not move the caret to the end: " + e.Message);
+            }
+        }
+
         private static void SetTyping(bool typing)
         {
             try { Il2CppScheduleOne.GameInput.IsTyping = typing; }
             catch (Exception e) { Core.Log?.Warning("[Sideload] IsTyping toggle failed: " + e.Message); }
+        }
+
+        /// <summary>
+        /// Drop keyboard focus and put the game's typing flag back, whatever is holding it.
+        ///
+        /// Called when a page leaves the screen. A field only fires onDeselect when something else takes the
+        /// selection, and nothing does when the whole container is switched off - so the flag it raised stays
+        /// raised, and a raised flag means the player cannot move and no key reaches the game. Deselecting first is
+        /// what makes the field's own handler run; clearing the flag afterwards covers the case where it did not.
+        /// </summary>
+        internal static void ReleaseKeyboard()
+        {
+            try
+            {
+                UnityEngine.EventSystems.EventSystem events = UnityEngine.EventSystems.EventSystem.current;
+                if (events != null && events.currentSelectedGameObject != null) events.SetSelectedGameObject(null);
+            }
+            catch (Exception e)
+            {
+                Core.Log?.Warning("[Sideload] could not drop keyboard focus: " + e.Message);
+            }
+
+            SetTyping(false);
         }
 
         private static bool IsImage(LayoutNode node) =>

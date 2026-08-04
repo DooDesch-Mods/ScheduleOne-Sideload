@@ -95,6 +95,28 @@ namespace Sideload.Css
         internal RgbaColor Color = new RgbaColor(0.925f, 0.929f, 0.945f, 1f);   // --text
         internal bool TextOverflowEllipsis;
 
+        // --- caret (inherited, so a terminal sets it once on the shell and every field inside obeys) ---
+
+        /// <summary>The colour of the insertion point. Unset means it follows <see cref="Color"/>, which is what a
+        /// field wants when nobody has said otherwise.</summary>
+        internal RgbaColor? CaretColor;
+
+        /// <summary>
+        /// How wide the insertion point is drawn, in CSS pixels.
+        ///
+        /// Two is a text cursor. Set it to one character cell and it is a block, which is what a terminal wants and
+        /// what nothing else in CSS can express - there is a standard `caret-color` but no standard caret width.
+        /// </summary>
+        internal float CaretWidth = 2f;
+
+        /// <summary>
+        /// The colour of the inline suggestion drawn behind the caret - what `data-ghost` puts there.
+        ///
+        /// Unset means the text colour at 45% alpha, which is the muted grey every shell uses for this. Inherited
+        /// like the caret properties, so a terminal sets it once on the shell.
+        /// </summary>
+        internal RgbaColor? GhostColor;
+
         /// <summary>Custom properties in effect on this element. Inherited, so `var()` works on descendants.</summary>
         internal Dictionary<string, string> Variables;
 
@@ -123,6 +145,9 @@ namespace Sideload.Css
             s.LineHeight = parent.LineHeight;
             s.LetterSpacing = parent.LetterSpacing;
             s.MonoAdvance = parent.MonoAdvance;
+            s.CaretColor = parent.CaretColor;
+            s.GhostColor = parent.GhostColor;
+            s.CaretWidth = parent.CaretWidth;
             s.TextAlign = parent.TextAlign;
             s.WhiteSpace = parent.WhiteSpace;
             s.Color = parent.Color;

@@ -384,6 +384,15 @@ namespace Sideload.Script
         /// once per press - accepting a completion, submitting - checks this and returns early.</summary>
         public bool Repeat { get; internal set; }
 
+        /// <summary>
+        /// Whether the field had text selected when the key was pressed.
+        ///
+        /// Here because the field acts on some of the same keys the page claimed, and for one of them both meanings
+        /// are right depending on this: Ctrl+C copies a selection and interrupts when there is none, which is what
+        /// every terminal on Windows does. A page that claims Ctrl+C without checking this takes copy away.
+        /// </summary>
+        public bool HasSelection { get; internal set; }
+
         /// <summary>What raised the event, where more than one thing can: "rightClick" or "escape" for `back`.
         /// Empty otherwise. Most pages should treat every source alike; it is here for the ones that must not.</summary>
         public string Source { get; internal set; } = "";
