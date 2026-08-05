@@ -246,6 +246,7 @@ jobs:
           VERSION: ${{ needs.build.outputs.version }}
           NOTES: ${{ needs.build.outputs.notes }}
           REPO: ${{ github.repository }}
+          NEXUS_MOD_ID: ${{ secrets.NEXUS_MOD_ID }}
         run: |
           if [ -z "$WEBHOOK" ]; then echo "DISCORD_RELEASE_WEBHOOK is not set - nothing announced."; exit 0; fi
 
@@ -259,13 +260,30 @@ jobs:
             LINKS="[Thunderstore](https://thunderstore.io/package/DooDesch/$NAME/) · $LINKS"
           fi
 
+          # NEXUS_MOD_ID is the global uid, game_id * 2^32 + page_id, and the page id is what the URL wants.
+          # Only Schedule I is mapped, so a repo for another game simply goes without the link.
+          if [ -n "$NEXUS_MOD_ID" ]; then
+            GAME_ID=$(( NEXUS_MOD_ID / 4294967296 ))
+            PAGE_ID=$(( NEXUS_MOD_ID % 4294967296 ))
+            if [ "$GAME_ID" = "7381" ]; then
+              LINKS="[Nexus](https://www.nexusmods.com/schedule1/mods/$PAGE_ID) · $LINKS"
+            fi
+          fi
+
+          case "$SHORT" in
+            ScheduleOne-*) FOOTER="Schedule I · $SHORT" ;;
+            Palworld-*)    FOOTER="Palworld · $SHORT" ;;
+            Mimesis-*)     FOOTER="Mimesis · $SHORT" ;;
+            *)             FOOTER="$SHORT" ;;
+          esac
+
           # jq builds the JSON so a changelog with quotes, backticks or newlines cannot break the payload.
           jq -n --arg title "$NAME $VERSION" \
                 --arg url "https://github.com/$REPO/releases/tag/v$VERSION" \
                 --arg desc "$NOTES" \
                 --arg icon "https://raw.githubusercontent.com/$REPO/main/thunderstore/icon.png" \
                 --arg links "$LINKS" \
-                --arg foot "$SHORT" \
+                --arg foot "$FOOTER" \
             '{embeds: [{
                 title: $title,
                 url: $url,
