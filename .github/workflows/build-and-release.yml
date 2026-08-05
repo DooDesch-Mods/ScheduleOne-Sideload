@@ -205,6 +205,9 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Download built ZIP
         uses: actions/download-artifact@v4
         with:
@@ -232,6 +235,49 @@ jobs:
             goes into the game's `UserLibs/` folder.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Discord renders a `release` webhook as an empty box - no title, no version, no notes. So the embed is
+      # built here, where the version and the changelog section are already known. Skipped when the secret is
+      # not set, so a fork or a repo without the feed just builds and releases.
+      - name: Announce the release in Discord
+        if: ${{ !cancelled() }}
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_RELEASE_WEBHOOK }}
+          VERSION: ${{ needs.build.outputs.version }}
+          NOTES: ${{ needs.build.outputs.notes }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then echo "DISCORD_RELEASE_WEBHOOK is not set - nothing announced."; exit 0; fi
+
+          SHORT="${REPO#*/}"
+          NAME=$(echo "$SHORT" | sed -E 's/^(ScheduleOne|Palworld|Mimesis)-//')
+          [ -f thunderstore/manifest.json ] && NAME=$(jq -r '.name // empty' thunderstore/manifest.json)
+          [ -z "$NAME" ] && NAME="$SHORT"
+
+          LINKS="[GitHub](https://github.com/$REPO/releases/tag/v$VERSION)"
+          if [ -f thunderstore/manifest.json ]; then
+            LINKS="[Thunderstore](https://thunderstore.io/package/DooDesch/$NAME/) · $LINKS"
+          fi
+
+          # jq builds the JSON so a changelog with quotes, backticks or newlines cannot break the payload.
+          jq -n --arg title "$NAME $VERSION" \
+                --arg url "https://github.com/$REPO/releases/tag/v$VERSION" \
+                --arg desc "$NOTES" \
+                --arg icon "https://raw.githubusercontent.com/$REPO/main/thunderstore/icon.png" \
+                --arg links "$LINKS" \
+                --arg foot "$SHORT" \
+            '{embeds: [{
+                title: $title,
+                url: $url,
+                description: ($desc | if length > 1400 then .[0:1400] + "\n..." else . end),
+                color: 8256434,
+                thumbnail: {url: $icon},
+                fields: [{name: "Get it", value: $links}],
+                footer: {text: $foot}
+             }]}' > payload.json
+
+          curl -sS -f -X POST -H "Content-Type: application/json" -d @payload.json "$WEBHOOK" \
+            && echo "announced $NAME $VERSION"
 
   thunderstore:
     needs: build
