@@ -700,6 +700,21 @@ namespace Sideload.Host
             field.ActivateInputField();
         }
 
+        /// <summary>
+        /// Put the caret back where it was when the page was last on screen.
+        ///
+        /// Closing an app releases the keyboard - it has to, or the game is left with no way to move (see
+        /// Painter.ReleaseKeyboard). Reopening does not rebuild the page, so nothing in it runs again to ask for
+        /// the focus back, and the app comes up with a prompt that looks ready and swallows nothing: every key
+        /// goes to the game instead, which starts opening things. Restoring it here means a page never has to
+        /// notice it was hidden, whichever way the player opened it.
+        /// </summary>
+        internal void RestoreFocus()
+        {
+            if (_focused == null) return;
+            Focus(_focused);
+        }
+
         /// <summary>Grant a focus that was asked for before the field existed. Runs after the render that created
         /// it, which is the first moment it can work.</summary>
         private void ApplyPendingFocus()

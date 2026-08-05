@@ -3,6 +3,14 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.8.2] - 2026-08-05
+
+### Fixed
+
+- An app you reopen has its caret back in the text field. Closing one releases the keyboard, and
+  nothing handed it back unless the app happened to ask - so a terminal or search box came up looking
+  ready, ate nothing, and every key you typed went to the game and started opening things instead.
+
 ## [1.8.1] - 2026-08-05
 
 ### Fixed

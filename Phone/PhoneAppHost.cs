@@ -604,6 +604,10 @@ namespace Sideload.Phone
 
                 _view?.EnsureBuilt();
 
+                // A reopen does not rebuild the page, so nothing in it asks for the caret back after SetOpen(false)
+                // released the keyboard. Hand it back here, where every way of opening an app passes through.
+                if (!building) _view?.RestoreFocus();
+
                 if (fade != null) AppFade.Play(fade);
 
 #if DEBUG
