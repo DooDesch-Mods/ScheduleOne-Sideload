@@ -3,6 +3,14 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.8.1] - 2026-08-05
+
+### Fixed
+
+- Sideload reports its own version correctly again. Since 1.6.0 it announced itself as "1.5.0" to
+  MelonLoader, so the console, mod managers and update checks all showed you an ancient build and
+  kept telling you to update one you already had.
+
 ## [1.8.0] - 2026-08-05
 
 ### Changed
