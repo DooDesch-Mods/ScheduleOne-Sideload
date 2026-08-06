@@ -321,10 +321,13 @@ structured. `s1.call` is synchronous and returns a string, not a Promise.
 
 Honest limits, because a browser sets different expectations:
 
-- **CSS:** flexbox and absolute positioning, the box and paint properties, text properties, custom
+- **CSS:** flexbox, absolute positioning, and `position: fixed` as a top layer (measured against the
+  screen, drawn over everything else, and it takes the pointer - which is how an app gets a modal), the
+  box and paint properties, text properties, custom
   properties with `var()`, `transform` and `transition`, `overflow` (`hidden` clips, `auto` and `scroll`
   clip and scroll), and `@media (orientation: ...)`. Units are `px` and `%` only. No Grid, no `float`, no `z-index`, no `em`/`rem`/`vh`/`vw`, no `calc()`, no `hsl()`. Anything
-  unsupported is parsed and dropped silently.
+  unsupported is named in the log, once per app, so a rule that never took effect is findable instead
+  of a mystery.
 - **Text that has to line up.** `font-family: monospace` draws in a real monospaced face - the game ships none,
   so Sideload builds one from the machine's own font file (Consolas first, then Cascadia Mono, Lucida Console,
   Courier New, DejaVu Sans Mono) and the log says which it took. Nothing is shipped with the mod. Where none of
