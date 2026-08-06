@@ -289,7 +289,11 @@ namespace Sideload.Input
                 AddWithData(trigger, EventTriggerType.Scroll, data =>
                 {
                     var pointer = data.TryCast<PointerEventData>();
-                    if (pointer != null) scroll.OnScroll(pointer);
+                    if (pointer == null) return;
+
+                    // Eased when this area is smoothed; handed straight to uGUI when it is not, or when there is
+                    // nothing to scroll and the walk would have no distance to cover.
+                    if (!SmoothScroll.Wheel(scroll, pointer)) scroll.OnScroll(pointer);
                 });
 
             if (!forwardDrag) return;
@@ -297,7 +301,12 @@ namespace Sideload.Input
             AddWithData(trigger, EventTriggerType.BeginDrag, data =>
             {
                 var pointer = data.TryCast<PointerEventData>();
-                if (pointer != null) scroll.OnBeginDrag(pointer);
+                if (pointer == null) return;
+
+                // Taking hold of the content cancels whatever the wheel was still aiming at, or the list snaps back
+                // to it the moment the drag ends.
+                SmoothScroll.Release(scroll);
+                scroll.OnBeginDrag(pointer);
             });
 
             AddWithData(trigger, EventTriggerType.Drag, data =>

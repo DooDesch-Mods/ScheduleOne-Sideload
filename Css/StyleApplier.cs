@@ -137,6 +137,10 @@ namespace Sideload.Css
                 // Sideload's own, hence the prefix: the web reaches monospace by naming a family, and there is no
                 // monospace family here to name. `normal` turns it back off, so a subtree can opt out of an inherited
                 // grid the way `letter-spacing: normal` does.
+                case "-s1-scroll":
+                    s.SmoothScroll = !Is(value, "instant") && !Is(value, "auto");
+                    break;
+
                 case "-s1-mono-advance":
                     if (Is(value, "normal") || Is(value, "none")) s.MonoAdvance = 0f;
                     else if (TryPx(value, out float adv)) s.MonoAdvance = adv < 0f ? 0f : adv;

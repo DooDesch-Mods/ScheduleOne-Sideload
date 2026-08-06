@@ -360,6 +360,10 @@ namespace Sideload.Paint
             scroll.inertia = true;
             scroll.decelerationRate = 0.135f;
 
+            // A wheel notch is eased by Input.SmoothScroll unless this box opted out. uGUI's own inertia only ever
+            // applied to dragging, so without that a notch teleported the content.
+            if (!node.Style.SmoothScroll) Input.SmoothScroll.MarkInstant(scroll);
+
             clip = ClipRectInCanvasSpace(absX, absY, node.Width, node.Height);
 
             // Put the clip back on every child each time the list moves.

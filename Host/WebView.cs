@@ -135,6 +135,8 @@ namespace Sideload.Host
         /// <summary>Drive every live view one frame: script timers first, then any rebuild those timers asked for.</summary>
         internal static void TickAll(float deltaSeconds)
         {
+            Input.SmoothScroll.Advance(deltaSeconds);
+
             for (int i = _live.Count - 1; i >= 0; i--)
             {
                 WebView view = _live[i];
