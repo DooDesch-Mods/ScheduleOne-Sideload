@@ -33,6 +33,35 @@ namespace Sideload.Layout
             LayoutBox(root, availableWidth, availableHeight, measure, forcedWidth);
             root.X = 0f;
             root.Y = 0f;
+
+            LayoutFixed(root, availableWidth, availableHeight, measure);
+        }
+
+        /// <summary>
+        /// Place every <c>position: fixed</c> box against the VIEWPORT, wherever in the tree it was written.
+        ///
+        /// This runs after the page is otherwise laid out, and separately from the main pass, for one reason: a
+        /// containing block is walked DOWN the tree, and the viewport is not one of those - it is the same rectangle
+        /// for a box nested ten deep as for a child of the root. Doing it here also makes the result independent of
+        /// how often <see cref="LayoutChildren"/> re-ran for an ancestor (it runs at least twice for any box whose
+        /// height gets clamped), which a collect-as-you-go list would not be.
+        ///
+        /// The resulting X/Y are therefore viewport coordinates, NOT parent-relative like every other node - which is
+        /// exactly what the painter needs, because it reparents these to the view root.
+        /// </summary>
+        private static void LayoutFixed(LayoutNode node, float viewWidth, float viewHeight, IMeasureText measure)
+        {
+            foreach (LayoutNode child in node.Children)
+            {
+                if (child.Style.Display == DisplayKind.None) continue;
+
+                if (child.Style.Position == PositionKind.Fixed)
+                    LayoutAbsolute(child, viewWidth, viewHeight, measure);
+
+                // Descend regardless: a fixed box may be written inside any subtree, and one nested inside another
+                // fixed box is still measured against the viewport - there is only ever the one top layer.
+                LayoutFixed(child, viewWidth, viewHeight, measure);
+            }
         }
 
         /// <summary>
@@ -111,7 +140,9 @@ namespace Sideload.Layout
             {
                 if (child.Style.Display == DisplayKind.None) { child.Width = 0f; child.Height = 0f; continue; }
                 if (child.Style.Position == PositionKind.Absolute) absolute.Add(child);
-                else flow.Add(child);
+                // A fixed child is out of the flow AND out of this box entirely - Compute lays it out against the
+                // viewport once the page is otherwise finished, so it is skipped rather than collected here.
+                else if (child.Style.Position != PositionKind.Fixed) flow.Add(child);
             }
 
             // row-gap separates lines, column-gap separates items in a line - which of the two is the main axis
@@ -561,7 +592,7 @@ namespace Sideload.Layout
             foreach (LayoutNode child in node.Children)
             {
                 if (child.Style.Display == DisplayKind.None) continue;
-                if (child.Style.Position == PositionKind.Absolute) continue;
+                if (child.Style.Position != PositionKind.Static) continue;
 
                 LayoutBox(child, availWidth, float.NaN, measure);
                 float outer = child.Width + Horizontal(child.Style.Margin, availWidth);

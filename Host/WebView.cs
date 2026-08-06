@@ -741,6 +741,21 @@ namespace Sideload.Host
             foreach (IElement control in _document.QuerySelectorAll("button, a, input, textarea"))
                 stateful.Add(control);
 
+            // A top-layer box is modal by nature, so it takes the pointer whether or not anything listens to it.
+            //
+            // Without this an overlay is only a picture: the engine gives a hit target to elements that can react,
+            // and a plain backdrop reacts to nothing, so every click sailed straight through to the page underneath -
+            // which is the one thing a modal exists to prevent. The blocking is not a special case in the raycast; it
+            // falls out of the painter putting these last under the view root, where uGUI meets them first.
+            //
+            // Scoped to the fixed box ITSELF, not its subtree. A backdrop stretched over the viewport therefore
+            // blocks the viewport, and a small toast blocks only the pixels it covers - which is what it should do,
+            // there being no `pointer-events: none` here to say otherwise.
+            if (styles != null)
+                foreach (KeyValuePair<IElement, ComputedStyle> entry in styles)
+                    if (entry.Value != null && entry.Value.Position == PositionKind.Fixed)
+                        stateful.Add(entry.Key);
+
             // A script that listens on a plain div still needs that div to receive the pointer.
             var draggable = new HashSet<IElement>();
             var wheeled = new HashSet<IElement>();

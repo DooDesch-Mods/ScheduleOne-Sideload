@@ -154,6 +154,14 @@ namespace Sideload.Input
                 RectTransform hitRect = Paint.UiFactory.Rect(Paint.Painter.HitTargetName, rect);
                 Paint.UiFactory.Stretch(hitRect);
 
+                // BEHIND the element's own content, not on top of it. uGUI resolves a raycast to the front-most
+                // Graphic, and front-most here means last in the hierarchy - so a hit target appended after the
+                // children covers them and eats their clicks. That is fine for a button, whose icon and label
+                // raycast to nothing anyway, and fatal for anything interactive nested inside something else
+                // interactive: a dialog on a scrim, where every button lives inside a box that also takes clicks.
+                // As the first child it stays above the element's own painted box and below everything in it.
+                hitRect.SetAsFirstSibling();
+
                 var hit = hitRect.gameObject.AddComponent<Image>();
                 hit.color = new Color(0f, 0f, 0f, 0f);
                 hit.raycastTarget = true;

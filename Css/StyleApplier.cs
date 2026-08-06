@@ -77,7 +77,8 @@ namespace Sideload.Css
                 case "max-height": if (ValueParser.TryLength(value, out Len mxh)) s.MaxHeight = mxh; break;
 
                 case "position":
-                    if (Is(value, "absolute") || Is(value, "fixed")) s.Position = PositionKind.Absolute;
+                    if (Is(value, "fixed")) s.Position = PositionKind.Fixed;
+                    else if (Is(value, "absolute")) s.Position = PositionKind.Absolute;
                     else if (Is(value, "static") || Is(value, "relative")) s.Position = PositionKind.Static;
                     break;
 

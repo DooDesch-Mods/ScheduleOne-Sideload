@@ -60,6 +60,7 @@ namespace Sideload.Paint
         private static Bundle.AppBundle _bundle;   // resolves <img src="..."> against the app's own files
         private static string _appId;
         private static Dictionary<AngleSharp.Dom.IElement, RectTransform> _reuse;
+        private static List<LayoutNode> _topLayer;   // `position: fixed` boxes deferred to the end of the pass
 
         /// <summary><paramref name="reuse"/> maps elements whose GameObject must SURVIVE this pass onto that object.
         /// Only form controls qualify: a TMP_InputField owns the caret, the selection and the half-typed word, and all
@@ -88,9 +89,33 @@ namespace Sideload.Paint
             _appId = appId ?? "";
             BoxRenderer.ActiveClip = null;
             BoxRenderer.BeginPass(host.GetInstanceID());
-            try { PaintNode(root, host, 0, painted, 0f, 0f); }
+
+            var topLayer = new List<LayoutNode>();
+            _topLayer = topLayer;
+            try
+            {
+                PaintNode(root, host, 0, painted, 0f, 0f);
+
+                // The top layer: every `position: fixed` box, hoisted out of wherever it was written and drawn here
+                // instead. Three things follow from doing it at this point, and all three are the reason overlays
+                // work at all:
+                //
+                //   * AFTER the page, so it draws on top. Paint order in this engine is document order and there is
+                //     no z-index, so "last" is the only way to be above something.
+                //   * UNDER THE VIEW ROOT, so no ancestor's `overflow` crops it and no scroll area carries it off
+                //     screen - and, because uGUI raycasts front-most first, so a backdrop over the page actually
+                //     swallows the clicks meant for what is behind it.
+                //   * With the clip stack back at nothing, which the walk above restores on its way out.
+                //
+                // The list grows while it is being walked: a fixed box nested inside another one appends to it and is
+                // picked up by the same loop, which is why this is an index loop and not a foreach.
+                BoxRenderer.ActiveClip = null;
+                for (int i = 0; i < topLayer.Count; i++)
+                    PaintNode(topLayer[i], host, 0, painted, 0f, 0f, hoisted: true);
+            }
             finally
             {
+                _topLayer = null;
                 BoxRenderer.EndPass();
                 _reuse = null;
                 _inputs = null;
@@ -105,11 +130,20 @@ namespace Sideload.Paint
         /// <summary><paramref name="absX"/>/<paramref name="absY"/> accumulate the node's position from the view root,
         /// in CSS pixels with y growing downwards - the clip rectangle is derived from these instead of from a
         /// RectTransform, which has no usable rect until the canvas has laid it out.</summary>
+        /// <param name="hoisted">This node IS the top-layer box being drawn, so it must not defer itself again. Its
+        /// X/Y are viewport coordinates rather than parent-relative ones, which is what makes the view root the right
+        /// parent for it.</param>
         private static void PaintNode(LayoutNode node, Transform parent, int depth,
                                       Dictionary<AngleSharp.Dom.IElement, PaintedBox> painted,
-                                      float absX, float absY)
+                                      float absX, float absY, bool hoisted = false)
         {
             if (node.Style.Display == DisplayKind.None) return;
+
+            if (!hoisted && node.Style.Position == PositionKind.Fixed)
+            {
+                _topLayer?.Add(node);
+                return;
+            }
 
             absX += node.X;
             absY += node.Y;
