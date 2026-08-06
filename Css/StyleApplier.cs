@@ -197,24 +197,65 @@ namespace Sideload.Css
 
         // ------------------------------------------------------------------ shorthands --
 
+        /// <summary>
+        /// The `flex` shorthand, to the grammar rather than to a guess.
+        ///
+        ///     none            0 0 auto
+        ///     initial         0 1 auto
+        ///     auto            1 1 auto
+        ///     &lt;number&gt;        &lt;number&gt; 1 0%          - the basis is the part people forget, and the reason a
+        ///                                             single `flex: 1` child fills its line instead of hugging
+        ///     &lt;width&gt;         1 1 &lt;width&gt;
+        ///     &lt;n&gt; &lt;n&gt;         grow shrink, basis 0%
+        ///     &lt;n&gt; &lt;width&gt;     grow basis, shrink 1
+        ///     &lt;n&gt; &lt;n&gt; &lt;width&gt; all three
+        ///
+        /// Position two is a shrink factor only when it is a BARE number; anything carrying a unit, a percentage
+        /// or `auto` is a basis. `0` is both a valid number and a valid length, so the order of those two tests
+        /// is what decides `flex: 1 0` - and reading it as a basis is how shrink used to get quietly reset to 1.
+        ///
+        /// Nothing is written until the whole value has parsed. A shorthand is one declaration: half of it
+        /// applied and half not is worse than none of it, because the half that landed is invisible.
+        /// </summary>
         private static void ApplyFlex(ComputedStyle s, string value)
         {
             if (Is(value, "none")) { s.FlexGrow = 0f; s.FlexShrink = 0f; s.FlexBasis = Len.Auto; return; }
+            if (Is(value, "initial")) { s.FlexGrow = 0f; s.FlexShrink = 1f; s.FlexBasis = Len.Auto; return; }
             if (Is(value, "auto")) { s.FlexGrow = 1f; s.FlexShrink = 1f; s.FlexBasis = Len.Auto; return; }
 
             string[] p = ValueParser.SplitTopLevel(value);
-            if (p.Length == 1 && ValueParser.TryNumber(p[0], out float single))
+            if (p.Length == 0 || p.Length > 3) return;
+
+            float grow = 1f;
+            float shrink = 1f;
+            Len basis = Len.Percent(0f);
+            bool haveGrow = false;
+            bool haveBasis = false;
+            int at = 0;
+
+            if (ValueParser.TryNumber(p[at], out float g)) { grow = g; haveGrow = true; at++; }
+
+            if (haveGrow && at < p.Length && ValueParser.TryNumber(p[at], out float sh)) { shrink = sh; at++; }
+
+            if (at < p.Length)
             {
-                // `flex: 1` is grow 1 / shrink 1 / basis 0% - the basis is the part people forget, and the reason a
-                // single flex:1 child fills its line instead of hugging its content.
-                s.FlexGrow = single; s.FlexShrink = 1f; s.FlexBasis = Len.Percent(0f);
-                return;
+                if (Is(p[at], "auto")) basis = Len.Auto;
+                else if (ValueParser.TryLength(p[at], out Len b)) basis = b;
+                else return;                                    // not a basis either - the whole value is junk
+
+                haveBasis = true;
+                at++;
             }
 
-            if (p.Length >= 1 && ValueParser.TryNumber(p[0], out float grow)) s.FlexGrow = grow;
-            if (p.Length >= 2 && ValueParser.TryNumber(p[1], out float shrink)) s.FlexShrink = shrink;
-            if (p.Length >= 3 && ValueParser.TryLength(p[2], out Len basis)) s.FlexBasis = basis;
-            else if (p.Length == 2 && ValueParser.TryLength(p[1], out Len basis2)) { s.FlexBasis = basis2; s.FlexShrink = 1f; }
+            if (at != p.Length) return;                         // something left over: do not guess at it
+            if (!haveGrow && !haveBasis) return;                // nothing understood at all
+
+            // A basis on its own is `1 1 <width>`: it says how big to start, not that it may not move.
+            if (!haveGrow) { grow = 1f; shrink = 1f; }
+
+            s.FlexGrow = grow;
+            s.FlexShrink = shrink;
+            s.FlexBasis = basis;
         }
 
         private static void ApplyBackground(ComputedStyle s, string value)

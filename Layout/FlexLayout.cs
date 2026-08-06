@@ -241,6 +241,7 @@ namespace Sideload.Layout
         {
             internal LayoutNode Node;
             internal float BaseSize;      // flex base size, before growing or shrinking
+            internal float ContentMain;   // what the item's own content needs - the floor for an auto minimum
             internal float MainSize;      // resolved
             internal float CrossSize;
             internal float MainMarginStart, MainMarginEnd;
@@ -266,8 +267,17 @@ namespace Sideload.Layout
             Len minProperty = row ? cs.MinWidth : cs.MinHeight;
             Len maxProperty = row ? cs.MaxWidth : cs.MaxHeight;
 
+            AlignKind selfAlign = cs.AlignSelf != AlignKind.Auto ? cs.AlignSelf : parentAlign;
+            bool stretchedCross = !row && selfAlign == AlignKind.Stretch && !cs.Width.IsDefinite && !float.IsNaN(crossAvail);
+
             float basis = ResolveOrNaN(cs.FlexBasis, mainAvail);
+
+            // Where the basis came from decides whether the content still has to be measured for the automatic
+            // minimum below. A basis taken from `flex-basis` says nothing about how big the content is.
+            bool basisFromFlexBasis = !float.IsNaN(basis);
             if (float.IsNaN(basis)) basis = ResolveOrNaN(mainSizeProperty, mainAvail);
+            bool basisMeasured = false;
+
             if (float.IsNaN(basis))
             {
                 // No size to go on: measure what the item wants. Along a row that is its intrinsic width; down a
@@ -276,15 +286,27 @@ namespace Sideload.Layout
                 // An item that will be stretched has to be measured AT its stretched width, not at the width it would
                 // pick for itself. Measuring first and stretching afterwards reports the height of a paragraph that
                 // never wrapped, and the flex pass then hands out space that the final, taller box does not fit into.
-                AlignKind align = cs.AlignSelf != AlignKind.Auto ? cs.AlignSelf : parentAlign;
-                bool stretched = !row && align == AlignKind.Stretch && !cs.Width.IsDefinite && !float.IsNaN(crossAvail);
-
                 LayoutBox(child, row ? mainAvail : crossAvail, row ? crossAvail : mainAvail, measure,
-                          stretched ? crossAvail : float.NaN);
+                          stretchedCross ? crossAvail : float.NaN);
                 basis = row ? child.Width : child.Height;
+                basisMeasured = true;
             }
 
             item.BaseSize = Math.Max(basis, 0f);
+
+            // The content size the automatic minimum needs. When the basis was measured it already IS the content;
+            // when it came from an explicit width or height, that declared size is deliberately the floor (see
+            // AutomaticMinimum). Only a `flex-basis` leaves us with a number that says nothing about the content -
+            // and `flex: 1` and `flex: 0` both set one, so this is the common case, not the exotic one.
+            item.ContentMain = item.BaseSize;
+
+            if (basisFromFlexBasis && !basisMeasured && !row && !minProperty.IsDefinite
+                && cs.OverflowX == OverflowKind.Visible && cs.OverflowY == OverflowKind.Visible)
+            {
+                LayoutBox(child, crossAvail, mainAvail, measure, stretchedCross ? crossAvail : float.NaN);
+                item.ContentMain = child.Height;
+            }
+
             item.MinMain = AutomaticMinimum(item, minProperty, row, mainAvail);
             item.MaxMain = maxProperty.IsDefinite ? maxProperty.Resolve(mainAvail) : float.PositiveInfinity;
             item.MainSize = Math.Clamp(item.BaseSize, item.MinMain, item.MaxMain);
@@ -303,6 +325,11 @@ namespace Sideload.Layout
         ///     buttons and icons with `flex: 1` or a fixed width, where the difference does not show.
         ///   * <b>An explicit main size is never shrunk past.</b> The spec would allow it when the content is smaller
         ///     than the declared size; honouring an author's `height: 96px` is the less surprising of the two.
+        ///
+        /// The floor is <see cref="Item.ContentMain"/>, NOT the flex base size. Those differ exactly when the basis
+        /// came from `flex-basis` - which `flex: 1` and `flex: 0` both set - and reading the base size there gave
+        /// `flex: 0` a minimum of zero, so a row of sized boxes collapsed into nothing instead of holding at its
+        /// content. That was this renderer disagreeing with every browser, not a narrowing of the spec.
         /// </summary>
         private static float AutomaticMinimum(Item item, Len minProperty, bool row, float mainAvail)
         {
@@ -314,7 +341,7 @@ namespace Sideload.Layout
             ComputedStyle cs = item.Node.Style;
             if (cs.OverflowY != OverflowKind.Visible || cs.OverflowX != OverflowKind.Visible) return 0f;
 
-            return item.BaseSize;
+            return item.ContentMain;
         }
 
         private static List<List<Item>> BreakIntoLines(List<Item> items, FlexWrap wrap, float mainAvail, float mainGap)
