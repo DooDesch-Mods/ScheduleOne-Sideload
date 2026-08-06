@@ -360,9 +360,10 @@ namespace Sideload.Paint
             scroll.inertia = true;
             scroll.decelerationRate = 0.135f;
 
-            // A wheel notch is eased by Input.SmoothScroll unless this box opted out. uGUI's own inertia only ever
-            // applied to dragging, so without that a notch teleported the content.
-            if (!node.Style.SmoothScroll) Input.SmoothScroll.MarkInstant(scroll);
+            // Hand the wheel to Input.SmoothScroll unless this box opted out with `-s1-scroll: instant`. It zeroes
+            // the sensitivity above and catches the event on the viewport, because over empty space uGUI dispatches
+            // straight to the ScrollRect and never passes through anything Sideload wired.
+            if (node.Style.SmoothScroll) Input.SmoothScroll.Install(scroll, viewport, 24f);
 
             clip = ClipRectInCanvasSpace(absX, absY, node.Width, node.Height);
 
