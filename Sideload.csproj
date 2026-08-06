@@ -27,9 +27,9 @@
     <RootNamespace>Sideload</RootNamespace>
     <AssemblyName>Sideload</AssemblyName>
     <NeutralLanguage>en-US</NeutralLanguage>
-    <Version>1.8.2</Version>
-    <AssemblyVersion>1.8.2.0</AssemblyVersion>
-    <FileVersion>1.8.2.0</FileVersion>
+    <Version>1.9.0</Version>
+    <AssemblyVersion>1.9.0.0</AssemblyVersion>
+    <FileVersion>1.9.0.0</FileVersion>
     <!-- Copy PackageReference assemblies (AngleSharp) to the output so they can be deployed to UserLibs. -->
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <!-- A RID is required to get the WINDOWS implementation of RID-specific packages. Without it MSBuild copies the
