@@ -7,13 +7,18 @@ namespace Sideload.Css
     /// </summary>
     internal static class StyleApplier
     {
-        internal static void Apply(ComputedStyle s, string property, string value)
+        /// <summary>
+        /// Apply one declaration. Returns FALSE when this renderer has no case for that property - which is the
+        /// only signal that exists, because an unsupported declaration is otherwise dropped without a trace.
+        /// <see cref="Supports"/> is the same switch asked the same question, so the two can never drift.
+        /// </summary>
+        internal static bool Apply(ComputedStyle s, string property, string value)
         {
-            if (s == null || string.IsNullOrEmpty(property) || value == null) return;
+            if (s == null || string.IsNullOrEmpty(property) || value == null) return true;
 
             property = property.Trim().ToLowerInvariant();
             value = value.Trim();
-            if (value.Length == 0) return;
+            if (value.Length == 0) return true;
 
             switch (property)
             {
@@ -167,7 +172,27 @@ namespace Sideload.Css
                     else s.WhiteSpace = WhiteSpaceKind.Normal;
                     break;
                 case "text-overflow": s.TextOverflowEllipsis = Is(value, "ellipsis"); break;
+
+                default: return false;
             }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Whether this renderer implements a property at all. Answered by running the real switch against a
+        /// throwaway style, so there is no second list to keep in step - the cases above ARE the list.
+        ///
+        /// Custom properties are always "supported": they are storage for var(), not something to implement.
+        /// </summary>
+        internal static bool Supports(string property)
+        {
+            if (string.IsNullOrEmpty(property)) return true;
+            if (property.StartsWith("--", StringComparison.Ordinal)) return true;
+
+            // A value the parsers all tolerate, so this measures the property name and nothing else.
+            try { return Apply(new ComputedStyle(), property, "0"); }
+            catch { return true; }
         }
 
         // ------------------------------------------------------------------ shorthands --

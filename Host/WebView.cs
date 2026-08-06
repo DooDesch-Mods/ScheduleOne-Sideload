@@ -367,6 +367,7 @@ namespace Sideload.Host
             string tooBig = TooLargeToRender(_document);
             if (tooBig != null) { ShowError(tooBig); return; }
             _sheet = CssParser.Parse(CollectCss(_document));
+            WarnAboutUnsupportedCss(_sheet);
             tCss = phase.ElapsedMilliseconds;
 
             _interaction = new Interaction(OnStateChanged, OnClicked, OnDragged, OnWheel, _root);
@@ -1020,6 +1021,41 @@ namespace Sideload.Host
 
         /// <summary>Stylesheets in document order: every &lt;link&gt; resolved from the bundle, then every inline
         /// &lt;style&gt;, so a page can override what it imports.</summary>
+        /// <summary>
+        /// Name every declaration this renderer has no case for, once per property per load.
+        ///
+        /// Without this an unsupported property is dropped in total silence: the rule is valid CSS, a browser
+        /// honours it, and the page simply comes out different with nothing anywhere to say why. That has already
+        /// shipped in more than one mod - a nav underline written as , and whole screens
+        /// carrying ,  and  that never did anything.
+        ///
+        /// Once per PROPERTY, not per declaration or per element: a stylesheet mentions the same one many times
+        /// and the resolver runs per matched element, which would turn one mistake into a wall of log.
+        /// </summary>
+        private void WarnAboutUnsupportedCss(Css.Stylesheet sheet)
+        {
+            if (sheet == null) return;
+
+            HashSet<string> seen = null;
+
+            foreach (Css.StyleRule rule in sheet.Rules)
+            {
+                foreach (Css.Declaration declaration in rule.Declarations)
+                {
+                    string property = declaration.Property;
+                    if (Css.StyleApplier.Supports(property)) continue;
+
+                    seen ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    if (!seen.Add(property)) continue;
+
+                    Core.Log?.Warning(
+                        $"[Sideload] {_appId}: CSS property '{property}' is not implemented, so every rule that " +
+                        "uses it is ignored. Check whether the page needs it - if it does, it wants adding to " +
+                        "Sideload rather than working around in the app.");
+                }
+            }
+        }
+
         private string CollectCss(IDocument document)
         {
             var sb = new StringBuilder();
