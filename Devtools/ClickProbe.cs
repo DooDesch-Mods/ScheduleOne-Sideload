@@ -39,6 +39,14 @@ namespace Sideload.Devtools
             data.pointerCurrentRaycast = top;
             data.pointerPressRaycast = top;
 
+            // Selection first, exactly where StandaloneInputModule does it - on the press, before the click handlers.
+            //
+            // Without this the probe could not click a text field: a TMP_InputField takes the caret by being
+            // SELECTED, not by being clicked, so the field lit up its hover state and stayed dead. And the null case
+            // carries as much as the hit one - clicking something that is not selectable deselects whatever was, and
+            // that is the press that has to hand the keyboard back to a page's data-typing field.
+            system.SetSelectedGameObject(ExecuteEvents.GetEventHandler<ISelectHandler>(top.gameObject), data);
+
             // The same three-step uGUI itself performs, so a handler that only listens for one of them still fires.
             ExecuteEvents.ExecuteHierarchy(top.gameObject, data, ExecuteEvents.pointerDownHandler);
             ExecuteEvents.ExecuteHierarchy(top.gameObject, data, ExecuteEvents.pointerUpHandler);

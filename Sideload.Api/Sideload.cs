@@ -45,6 +45,7 @@ namespace Sideload.Api
         private static Func<string, bool> _isAppOpen;
         private static Func<bool, bool> _setPhoneRaised;
         private static Func<bool> _isPhoneRaised;
+        private static Action<string, string, Func<string, string, bool>> _claimKeys;
 
         /// <summary>True only when the Sideload host is installed AND bound. You rarely need this - the API is a safe
         /// no-op when absent; use it to decide whether to build a fallback UI instead.</summary>
@@ -125,6 +126,13 @@ namespace Sideload.Api
 
         internal static bool PhoneIsRaised() => _isPhoneRaised != null && _isPhoneRaised();
 
+        internal static void ClaimKeys(string appId, string keys, Func<string, string, bool> handler) =>
+            _claimKeys?.Invoke(appId, keys, handler);
+
+        /// <summary>Whether the installed host can hand an app a key at all. False against a Sideload older than
+        /// 1.10.0, where <see cref="AppHandle.OnKey"/> is a silent no-op.</summary>
+        internal static bool HasKeys { get { EnsureBound(); return _claimKeys != null; } }
+
         /// <summary>Whether the installed host can take the phone out of the player's pocket. False against a Sideload
         /// older than 1.5.0, where an app reached by a key rather than an icon has no way to make itself visible.</summary>
         internal static bool HasPhone { get { EnsureBound(); return _setPhoneRaised != null; } }
@@ -167,6 +175,7 @@ namespace Sideload.Api
                 _isAppOpen = Get<Func<string, bool>>(t, "IsAppOpen");
                 _setPhoneRaised = Get<Func<bool, bool>>(t, "SetPhoneRaised");
                 _isPhoneRaised = Get<Func<bool>>(t, "IsPhoneRaised");
+                _claimKeys = Get<Action<string, string, Func<string, string, bool>>>(t, "ClaimKeys");
 
                 _bound = true;
 
@@ -440,6 +449,49 @@ namespace Sideload.Api
             Apps.OpenApp(_id, true);
             return true;
         }
+
+        /// <summary>
+        /// Ask for a key that reaches this app with the phone still in the player's pocket - the way IN, as opposed to
+        /// <c>data-keys</c>, which only ever reaches a focused field in an already-open page.
+        ///
+        /// Spell keys the way the DOM does, several separated by spaces or commas: <c>Enter</c>, <c>F8</c>,
+        /// <c>Ctrl+Shift+K</c>. Modifiers match exactly, so <c>Enter</c> does not fire for Shift+Enter. <c>Escape</c>
+        /// is refused - it is the game's own exit action.
+        ///
+        /// <para><b>Your handler returns whether it TOOK the press.</b> Return false and the key goes to the next app
+        /// that wants it, which is how you decline a key you cannot use right now - a chat with no lobby behind it
+        /// should not open, and should not swallow the key on its way past. The argument is the key that fired, so one
+        /// handler can serve several.</para>
+        ///
+        /// <para><b>When two apps want the same key, the one that notified most recently gets it.</b> Two messengers
+        /// installed together then behave the way a phone should: the key answers the conversation that is actually
+        /// waiting. An app that has never notified still wins a key nobody else claimed - it simply sorts last.</para>
+        ///
+        /// <para>Sideload only reads the key where the game would let the player take their phone out anyway: never
+        /// while they are typing, paused, asleep, arrested, or standing at a station, a shop or the developer console.
+        /// While one of your apps is on screen it owns every key it claimed, and no other app is offered them.</para>
+        ///
+        /// <code>
+        ///   app.OnKey("Enter", _ =&gt; { if (!Online) return false; return app.Show(); });
+        /// </code>
+        /// </summary>
+        /// <param name="keys">One or more key declarations, separated by whitespace or commas.</param>
+        /// <param name="handler">Runs on the Unity main thread. Null gives back every key this app holds.</param>
+        public AppHandle OnKey(string keys, Func<string, bool> handler)
+        {
+            string id = _id;
+            Apps.WhenBound(() => Apps.ClaimKeys(id, keys, handler == null ? null : (_, key) => handler(key)));
+            return this;
+        }
+
+        /// <summary>
+        /// Whether the installed Sideload can hand an app a key. False against anything older than 1.10.0, where
+        /// <see cref="OnKey"/> is a silent no-op.
+        ///
+        /// Worth checking only when the key is the ONLY way into your app - pair it with <see cref="NoIcon"/> and a
+        /// host that ignores both leaves the player with an app they can neither see nor reach.
+        /// </summary>
+        public static bool CanClaimKeys { get { return Apps.Available && Apps.HasKeys; } }
 
         /// <summary>Close this app and put the phone away. The mirror of <see cref="Show"/>.</summary>
         public AppHandle Hide()

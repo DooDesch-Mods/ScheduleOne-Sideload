@@ -90,6 +90,10 @@ namespace Sideload.Css
         /// </summary>
         internal float MonoAdvance = 0f;
 
+        /// <summary>False for `-s1-scroll: instant`. A wheel notch is eased by default; a box that follows the
+        /// pointer - a map, a canvas - wants the jump, because there smoothing is lag.</summary>
+        internal bool SmoothScroll = true;
+
         internal TextAlignKind TextAlign = TextAlignKind.Left;
         internal WhiteSpaceKind WhiteSpace = WhiteSpaceKind.Normal;
         internal RgbaColor Color = new RgbaColor(0.925f, 0.929f, 0.945f, 1f);   // --text
@@ -145,6 +149,7 @@ namespace Sideload.Css
             s.LineHeight = parent.LineHeight;
             s.LetterSpacing = parent.LetterSpacing;
             s.MonoAdvance = parent.MonoAdvance;
+            s.SmoothScroll = parent.SmoothScroll;
             s.CaretColor = parent.CaretColor;
             s.GhostColor = parent.GhostColor;
             s.CaretWidth = parent.CaretWidth;

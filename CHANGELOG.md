@@ -3,6 +3,51 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.10.0] - 2026-08-07
+
+### Added
+
+- An app can answer a key while your phone is in your pocket. Press it and the app is up and ready to
+  use, with no home screen in between. Sideload only reads keys an app asked for, and only where the
+  game would let you take your phone out anyway: never while you are typing, paused, asleep, arrested,
+  or standing at a station, a shop or the console.
+- Two apps that want the same key do not fight over it. The key goes to whichever one notified you
+  most recently, so with two messengers installed it answers whichever conversation is waiting. An app
+  you are looking at keeps its own keys either way.
+- An app can keep the keyboard in one text box while it is on screen, so typing a message does not also
+  walk your character forward and swap two inventory slots. It only holds the box the app named, only
+  while that box is visible, and it lets go the moment you click somewhere else that takes typing.
+- `AppKeys` in `MelonPreferences.cfg` turns every app key off in one place. On by default.
+
+### Fixed
+
+- Escape and right-click leave an app on the first press while a text box has the cursor. It used to
+  take two, and the first one looked like nothing happened - the game stops delivering the press at all
+  while you are typing, so Sideload now delivers it itself.
+
+## [1.9.0] - 2026-08-07
+
+### Added
+
+- Lists glide when you scroll them instead of jumping a notch at a time, and the wheel now works over
+  the empty parts of a list as well as over its rows. An app that wants the old behaviour back sets
+  `-s1-scroll: instant`.
+- An app can put a dialog over the whole screen. `position: fixed` is measured against the phone screen
+  and drawn over everything else; while it is up it takes the clicks and the wheel, so a mod can ask
+  before doing something you cannot undo. Write it anywhere in the page - inside a scrolling list is
+  fine, it still covers the screen.
+- Sideload names every CSS property it does not implement, once per app, in the log. A rule it could not
+  read used to be dropped in silence, which is a long afternoon for whoever wrote it.
+- The Debug build now ships on the GitHub release next to the Release one, so building an app against
+  Sideload no longer starts with compiling Sideload.
+
+### Fixed
+
+- A button inside another clickable box can be pressed. The invisible hit area sat over its own
+  contents, so anything nested inside something clickable was unreachable.
+- A row of boxes set to `flex: 0` keeps its size instead of collapsing to an unreadable smear. `flex: 1 0`
+  and `flex: 20px` now parse the way a browser parses them.
+
 ## [1.8.2] - 2026-08-05
 
 ### Fixed

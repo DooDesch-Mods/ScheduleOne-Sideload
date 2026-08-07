@@ -7,13 +7,18 @@ namespace Sideload.Css
     /// </summary>
     internal static class StyleApplier
     {
-        internal static void Apply(ComputedStyle s, string property, string value)
+        /// <summary>
+        /// Apply one declaration. Returns FALSE when this renderer has no case for that property - which is the
+        /// only signal that exists, because an unsupported declaration is otherwise dropped without a trace.
+        /// <see cref="Supports"/> is the same switch asked the same question, so the two can never drift.
+        /// </summary>
+        internal static bool Apply(ComputedStyle s, string property, string value)
         {
-            if (s == null || string.IsNullOrEmpty(property) || value == null) return;
+            if (s == null || string.IsNullOrEmpty(property) || value == null) return true;
 
             property = property.Trim().ToLowerInvariant();
             value = value.Trim();
-            if (value.Length == 0) return;
+            if (value.Length == 0) return true;
 
             switch (property)
             {
@@ -72,7 +77,8 @@ namespace Sideload.Css
                 case "max-height": if (ValueParser.TryLength(value, out Len mxh)) s.MaxHeight = mxh; break;
 
                 case "position":
-                    if (Is(value, "absolute") || Is(value, "fixed")) s.Position = PositionKind.Absolute;
+                    if (Is(value, "fixed")) s.Position = PositionKind.Fixed;
+                    else if (Is(value, "absolute")) s.Position = PositionKind.Absolute;
                     else if (Is(value, "static") || Is(value, "relative")) s.Position = PositionKind.Static;
                     break;
 
@@ -132,6 +138,10 @@ namespace Sideload.Css
                 // Sideload's own, hence the prefix: the web reaches monospace by naming a family, and there is no
                 // monospace family here to name. `normal` turns it back off, so a subtree can opt out of an inherited
                 // grid the way `letter-spacing: normal` does.
+                case "-s1-scroll":
+                    s.SmoothScroll = !Is(value, "instant") && !Is(value, "auto");
+                    break;
+
                 case "-s1-mono-advance":
                     if (Is(value, "normal") || Is(value, "none")) s.MonoAdvance = 0f;
                     else if (TryPx(value, out float adv)) s.MonoAdvance = adv < 0f ? 0f : adv;
@@ -167,29 +177,90 @@ namespace Sideload.Css
                     else s.WhiteSpace = WhiteSpaceKind.Normal;
                     break;
                 case "text-overflow": s.TextOverflowEllipsis = Is(value, "ellipsis"); break;
+
+                default: return false;
             }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Whether this renderer implements a property at all. Answered by running the real switch against a
+        /// throwaway style, so there is no second list to keep in step - the cases above ARE the list.
+        ///
+        /// Custom properties are always "supported": they are storage for var(), not something to implement.
+        /// </summary>
+        internal static bool Supports(string property)
+        {
+            if (string.IsNullOrEmpty(property)) return true;
+            if (property.StartsWith("--", StringComparison.Ordinal)) return true;
+
+            // A value the parsers all tolerate, so this measures the property name and nothing else.
+            try { return Apply(new ComputedStyle(), property, "0"); }
+            catch { return true; }
         }
 
         // ------------------------------------------------------------------ shorthands --
 
+        /// <summary>
+        /// The `flex` shorthand, to the grammar rather than to a guess.
+        ///
+        ///     none            0 0 auto
+        ///     initial         0 1 auto
+        ///     auto            1 1 auto
+        ///     &lt;number&gt;        &lt;number&gt; 1 0%          - the basis is the part people forget, and the reason a
+        ///                                             single `flex: 1` child fills its line instead of hugging
+        ///     &lt;width&gt;         1 1 &lt;width&gt;
+        ///     &lt;n&gt; &lt;n&gt;         grow shrink, basis 0%
+        ///     &lt;n&gt; &lt;width&gt;     grow basis, shrink 1
+        ///     &lt;n&gt; &lt;n&gt; &lt;width&gt; all three
+        ///
+        /// Position two is a shrink factor only when it is a BARE number; anything carrying a unit, a percentage
+        /// or `auto` is a basis. `0` is both a valid number and a valid length, so the order of those two tests
+        /// is what decides `flex: 1 0` - and reading it as a basis is how shrink used to get quietly reset to 1.
+        ///
+        /// Nothing is written until the whole value has parsed. A shorthand is one declaration: half of it
+        /// applied and half not is worse than none of it, because the half that landed is invisible.
+        /// </summary>
         private static void ApplyFlex(ComputedStyle s, string value)
         {
             if (Is(value, "none")) { s.FlexGrow = 0f; s.FlexShrink = 0f; s.FlexBasis = Len.Auto; return; }
+            if (Is(value, "initial")) { s.FlexGrow = 0f; s.FlexShrink = 1f; s.FlexBasis = Len.Auto; return; }
             if (Is(value, "auto")) { s.FlexGrow = 1f; s.FlexShrink = 1f; s.FlexBasis = Len.Auto; return; }
 
             string[] p = ValueParser.SplitTopLevel(value);
-            if (p.Length == 1 && ValueParser.TryNumber(p[0], out float single))
+            if (p.Length == 0 || p.Length > 3) return;
+
+            float grow = 1f;
+            float shrink = 1f;
+            Len basis = Len.Percent(0f);
+            bool haveGrow = false;
+            bool haveBasis = false;
+            int at = 0;
+
+            if (ValueParser.TryNumber(p[at], out float g)) { grow = g; haveGrow = true; at++; }
+
+            if (haveGrow && at < p.Length && ValueParser.TryNumber(p[at], out float sh)) { shrink = sh; at++; }
+
+            if (at < p.Length)
             {
-                // `flex: 1` is grow 1 / shrink 1 / basis 0% - the basis is the part people forget, and the reason a
-                // single flex:1 child fills its line instead of hugging its content.
-                s.FlexGrow = single; s.FlexShrink = 1f; s.FlexBasis = Len.Percent(0f);
-                return;
+                if (Is(p[at], "auto")) basis = Len.Auto;
+                else if (ValueParser.TryLength(p[at], out Len b)) basis = b;
+                else return;                                    // not a basis either - the whole value is junk
+
+                haveBasis = true;
+                at++;
             }
 
-            if (p.Length >= 1 && ValueParser.TryNumber(p[0], out float grow)) s.FlexGrow = grow;
-            if (p.Length >= 2 && ValueParser.TryNumber(p[1], out float shrink)) s.FlexShrink = shrink;
-            if (p.Length >= 3 && ValueParser.TryLength(p[2], out Len basis)) s.FlexBasis = basis;
-            else if (p.Length == 2 && ValueParser.TryLength(p[1], out Len basis2)) { s.FlexBasis = basis2; s.FlexShrink = 1f; }
+            if (at != p.Length) return;                         // something left over: do not guess at it
+            if (!haveGrow && !haveBasis) return;                // nothing understood at all
+
+            // A basis on its own is `1 1 <width>`: it says how big to start, not that it may not move.
+            if (!haveGrow) { grow = 1f; shrink = 1f; }
+
+            s.FlexGrow = grow;
+            s.FlexShrink = shrink;
+            s.FlexBasis = basis;
         }
 
         private static void ApplyBackground(ComputedStyle s, string value)

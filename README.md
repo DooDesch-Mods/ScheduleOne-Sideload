@@ -7,7 +7,7 @@
 > objects and TextMeshPro text. No browser, no native code, no subprocess. The in game phone is the first
 > place it mounts, not the foundation.
 
-![Version](https://img.shields.io/badge/version-1.8.2-blue)
+![Version](https://img.shields.io/badge/version-1.10.0-blue)
 ![Game](https://img.shields.io/badge/game-Schedule%20I-purple)
 ![MelonLoader](https://img.shields.io/badge/MelonLoader-0.7.3+-green)
 ![Type](https://img.shields.io/badge/type-framework-orange)
@@ -75,10 +75,11 @@ Missing support DLLs are the one failure mode worth knowing: the log says
 ## Configuration
 
 Settings live in `UserData/MelonPreferences.cfg` under
-`Sideload_01_Main`. Everything here is a developer tool and everything is off by default.
+`Sideload_01_Main`. Apart from `AppKeys` everything here is a developer tool and is off by default.
 
 | Setting | Default | What it does |
 |---|---|---|
+| `AppKeys` | `true` | ON: an app may ask for a key that reaches it with the phone in your pocket - press it and the app comes up ready to use. Only a key the app asked for is read, only while the game would let you take your phone out anyway, and never while you are typing, paused, or in a station, shop or the console. OFF: no app gets a key and you open everything from the home screen. |
 | `DevTools` | `false` | OFF: nothing listens and no page can be inspected from outside the game. ON: Sideload runs a Chrome DevTools Protocol server on `127.0.0.1` so you can attach the real DevTools UI to a mounted page - console, evaluate, Elements tree. Anything that can reach the port can run code in your pages, so leave this off unless you are building an app. |
 | `DevToolsPort` | `9333` | The loopback port the devtools server listens on. Change it only if 9333 clashes with another tool. Clamped 1024-65535. |
 | `DevToolsAutoOpen` | `true` | ON: once the first page is mounted, Chrome (or Edge) opens at the devtools landing page, where one click attaches the inspector. OFF: the address is only written to the log. Has no effect while `DevTools` is off. |
@@ -298,6 +299,9 @@ bool open = app.IsOpen;              // is it the app the phone currently has op
 
 app.Show(); app.Hide();              // take the phone out AND open the app, or reverse both
 PhoneScreen.Raise(); PhoneScreen.Lower();   // move the phone on its own, no app involved
+
+app.OnKey("Enter", key => app.Show());     // a key that reaches you with the phone still in the pocket;
+                                           // return false to pass it to the next app that wants it
 bool up = PhoneScreen.IsRaised;      // is the phone out and on its phone screen
 
 bool looking = app.IsOnScreen;       // is your app the one the phone is showing right now
@@ -321,10 +325,13 @@ structured. `s1.call` is synchronous and returns a string, not a Promise.
 
 Honest limits, because a browser sets different expectations:
 
-- **CSS:** flexbox and absolute positioning, the box and paint properties, text properties, custom
+- **CSS:** flexbox, absolute positioning, and `position: fixed` as a top layer (measured against the
+  screen, drawn over everything else, and it takes the pointer - which is how an app gets a modal), the
+  box and paint properties, text properties, custom
   properties with `var()`, `transform` and `transition`, `overflow` (`hidden` clips, `auto` and `scroll`
   clip and scroll), and `@media (orientation: ...)`. Units are `px` and `%` only. No Grid, no `float`, no `z-index`, no `em`/`rem`/`vh`/`vw`, no `calc()`, no `hsl()`. Anything
-  unsupported is parsed and dropped silently.
+  unsupported is named in the log, once per app, so a rule that never took effect is findable instead
+  of a mystery.
 - **Text that has to line up.** `font-family: monospace` draws in a real monospaced face - the game ships none,
   so Sideload builds one from the machine's own font file (Consolas first, then Cascadia Mono, Lucida Console,
   Courier New, DejaVu Sans Mono) and the log says which it took. Nothing is shipped with the mod. Where none of
@@ -356,6 +363,19 @@ Honest limits, because a browser sets different expectations:
   Ctrl+Backspace can delete a word while plain Backspace stays the field's own. Holding a key repeats it after
   0.35 s, then every 0.06 s, dropping to 0.03 s after 1.2 s. Enter and Escape are refused: they already arrive
   as `keydown` and `back`. `data-reject-first` keeps a dead key from opening a fresh line.
+- **One box can keep the keyboard.** Put `data-typing` on an `<input>` and, while that field is painted and on
+  screen, the caret comes back to it whenever nothing else in the page has it. Without it a chat where the
+  player has not clicked the message box is a chat where typing "hello" walks them forward, crouches them and
+  swaps two inventory slots - a field only holds `GameInput.IsTyping` while it has the caret, and every other
+  key is a game binding. It never reaches past its own app: a control the player clicked keeps the caret, and
+  the game's console or a vanilla dialog keeps it too. Escape and right-click still leave on the first press.
+- **A key can be the way IN.** `app.OnKey("Enter", key => ...)` reaches your mod with the phone still in the
+  player's pocket, so one press can raise it with your app already open - what `data-keys` cannot do, because
+  it needs a page that is on screen. Spelling is the same, `Escape` is refused, and Sideload only reads the
+  key where the game's own phone key would work: never while typing, paused, asleep, arrested, or at a
+  station, a shop or the console. When two apps want one key it goes to whichever notified last, and an app
+  that is on screen keeps its keys regardless; returning `false` passes the press to the next one. The player
+  can switch the whole mechanism off with `AppKeys` in `MelonPreferences.cfg`.
 - **Where the pointer landed.** A `click` carries `e.offsetX` / `e.offsetY` in the element's own CSS pixels
   and `e.normX` / `e.normY` as a 0..1 fraction of its size - enough for a page that stands for a space of its
   own, a map, to answer "what did they point at". A `drag` carries `e.deltaX` / `e.deltaY` since the last

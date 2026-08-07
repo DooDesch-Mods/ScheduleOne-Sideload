@@ -178,6 +178,30 @@ jobs:
           name: Sideload
           path: "Sideload_${{ steps.version-check.outputs.version }}.zip"
 
+      # DEBUG BUILD - GitHub release only, never Thunderstore or Nexus.
+      #
+      # Anyone building against this mod wants the Debug DLL, and building it themselves means cloning this repo
+      # and the private build-libs one first. Shipping it here costs one extra compile and saves every one of
+      # them that detour. It is deliberately NOT on the player channels: it carries developer tooling and
+      # verbose logging, and a player installing it by accident would just make their log noisier and slower.
+      - name: Build the project (Debug, IL2CPP)
+        run: dotnet build Sideload.csproj --configuration Debug /p:WorkspaceLibPath="${{ github.workspace }}/Workspace/lib"
+
+      - name: Package the Debug build
+        run: |
+          mkdir -p debug
+          cp bin/Debug/net6.0/Sideload.dll debug/
+          mkdir -p debug/UserLibs
+          find bin/Debug/net6.0 -maxdepth 1 -name '*.dll' ! -name 'Sideload.dll' -exec cp {} debug/UserLibs/ \;
+          [ -f "LICENSE.md" ] && cp LICENSE.md debug/ || true
+          (cd debug && zip -r "../Sideload_${{ steps.version-check.outputs.version }}_debug.zip" .)
+
+      - name: Upload Debug ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sideload-debug
+          path: "Sideload_${{ steps.version-check.outputs.version }}_debug.zip"
+
       # Nexus is installed through Vortex, whose Schedule 1 extension deploys relative to the game root and
       # maps loose non-.md files at the archive root (manifest.json, icon.png) to a bare "mods" path - which
       # lands a FILE named "mods" in the game folder, replacing the real Mods DIRECTORY and wiping other mods.
@@ -218,6 +242,11 @@ jobs:
           unzip -q "Sideload_${{ needs.build.outputs.version }}.zip" -d release/
           ls -la release/
 
+      - name: Download Debug ZIP
+        uses: actions/download-artifact@v4
+        with:
+          name: Sideload-debug
+
       # The raw DLL alone is not installable for this mod, so the GitHub Release carries the full zip as well.
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v1
@@ -226,8 +255,11 @@ jobs:
           files: |
             release/Sideload.dll
             Sideload_${{ needs.build.outputs.version }}.zip
+            Sideload_${{ needs.build.outputs.version }}_debug.zip
           body: |
             ## Changes in ${{ needs.build.outputs.version }}
+
+            **Building a mod on top of Sideload?** `Sideload_${{ needs.build.outputs.version }}_debug.zip` is the same version built in Debug, which turns on hot reload from `Mods/<appId>/`, the F9 dev overlay, Ctrl+F10 box outlines, the Chrome DevTools bridge and the MCP probe that lets an agent drive a page. Players want the file above it; you probably want this one.
 
             ${{ needs.build.outputs.notes }}
 

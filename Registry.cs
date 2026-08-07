@@ -198,11 +198,29 @@ namespace Sideload
             // notification even when the app was never spawned on the in-game phone.
             NotifyTap?.Invoke(appId, title ?? "", subtitle ?? "");
 
+            // "Who spoke to you last" is the tie-break for a key two apps both want, and this is the only place that
+            // knows. Recorded even for an app with no phone behind it - the notification still happened, it just had
+            // nowhere to draw itself.
+            Input.GlobalKeys.Attend(appId);
+
             Phone.PhoneAppHost host = LiveHost(appId);
             if (host == null) return;
 
             host.Notify(title, subtitle, seconds);
         }
+
+        /// <summary>
+        /// Let an app be reached by a key with the phone still in the player's pocket.
+        ///
+        /// The declaration is a whitespace- or comma-separated list spelled like a <c>data-keys</c> attribute -
+        /// <c>Enter</c>, <c>F8</c>, <c>Ctrl+Shift+K</c>. The handler receives (appId, key) and returns whether it TOOK
+        /// the press; returning false passes it to the next app that wants the same key. A null handler gives every
+        /// key this app holds back.
+        ///
+        /// Pure bookkeeping, like registration itself: a mod may call this during init, long before there is a phone.
+        /// </summary>
+        internal static void ClaimKeys(string appId, string declaration, Func<string, string, bool> handler) =>
+            Input.GlobalKeys.Claim(appId, declaration, handler);
 
         /// <summary>appId, count - every badge change, for a mirror of the phone outside this process.</summary>
         internal static Action<string, int> BadgeTap;

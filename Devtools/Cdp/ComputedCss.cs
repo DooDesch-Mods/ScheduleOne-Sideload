@@ -66,7 +66,9 @@ namespace Sideload.Devtools.Cdp
             Put("max-width", style.MaxWidth.ToString());
             Put("max-height", style.MaxHeight.ToString());
 
-            Put("position", style.Position == PositionKind.Absolute ? "absolute" : "static");
+            Put("position", style.Position == PositionKind.Absolute ? "absolute"
+                          : style.Position == PositionKind.Fixed ? "fixed"
+                          : "static");
             Put("top", style.Inset.Top.ToString());
             Put("right", style.Inset.Right.ToString());
             Put("bottom", style.Inset.Bottom.ToString());

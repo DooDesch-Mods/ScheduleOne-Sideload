@@ -105,7 +105,13 @@ namespace Sideload.Css
     internal enum FlexWrap { NoWrap, Wrap, WrapReverse }
     internal enum Justify { FlexStart, FlexEnd, Center, SpaceBetween, SpaceAround, SpaceEvenly }
     internal enum AlignKind { Auto, FlexStart, FlexEnd, Center, Stretch, Baseline }
-    internal enum PositionKind { Static, Absolute }
+    /// <summary>
+    /// <c>Fixed</c> is the TOP LAYER: taken out of the flow like <c>Absolute</c>, but positioned against the viewport
+    /// instead of the parent, painted after everything else, and clipped by nothing. That last part is the reason it
+    /// is a separate kind rather than a flag - an overlay written next to the thing it belongs to sits inside some
+    /// scrolling pane, and as an absolute box it would be cropped to that pane and scroll away with it.
+    /// </summary>
+    internal enum PositionKind { Static, Absolute, Fixed }
     internal enum OverflowKind { Visible, Hidden, Scroll, Auto }
 
     /// <summary>The easing curves worth having. `linear` for a value that must read as constant, the ease family for
