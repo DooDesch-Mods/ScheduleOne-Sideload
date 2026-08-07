@@ -71,6 +71,11 @@ namespace Sideload.Bridge
         /// <summary>Is the phone out and on its phone screen right now.</summary>
         public static readonly Func<bool> IsPhoneRaised = Registry.IsPhoneRaised;
 
+        /// <summary>appId, key declaration, handler(appId, key) -> did you take it. A key that reaches the app with
+        /// the phone in the player's pocket. When more than one app wants the same key it goes to whichever notified
+        /// last; a handler returning false passes it to the next one. A null handler releases this app's keys.</summary>
+        public static readonly Action<string, string, Func<string, string, bool>> ClaimKeys = Registry.ClaimKeys;
+
         // ------------------------------------------------------- companion mirror (added after ABI 1) --
         // For a server that serves the SAME bundle to a real phone. Read-only apart from Invoke, which is the call a
         // page already makes - none of this grants a capability that did not exist, it moves the existing surface to

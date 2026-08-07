@@ -110,6 +110,12 @@ namespace Sideload.Phone
 
             _view = WebView.Mount(containerRect, _reg.Bundle, _reg.Id);
 
+            // "Can the player see this", which the view cannot work out for itself: an app stays open on a phone that
+            // has gone back in the pocket, and its container stays active the whole time. The page's data-typing rule
+            // hangs off this, and getting it wrong means taking the keyboard away with the phone - see
+            // WebView.HoldTyping.
+            _view.IsVisible = () => IsShowing;
+
             // Assigned, not combined: HomeScreen.Start can run again for a fresh hierarchy, and a += would leave the
             // dead host of the previous one listening.
             _reg.OrientationChanged = OnOrientationChanged;
@@ -556,11 +562,36 @@ namespace Sideload.Phone
         /// open one level up; a page that did not, or that never listened, closes exactly as it always did. The press
         /// is marked used either way, otherwise the same press would also open the pause menu.
         /// </summary>
+        /// <summary>
+        /// The same press, arriving the one way the game cannot deliver it. See <see cref="TypingExit"/>: while a
+        /// field holds the caret the game refuses to raise the exit action at all, so this is the rescue path rather
+        /// than a second way in - it builds the action the listener would have received and runs the same handler.
+        /// </summary>
+        internal void ExitWhileTyping(bool secondary)
+        {
+            // Whether the game's own listener chain already delivered this press decides everything, and it depends on
+            // a script execution order: if TextMeshPro deactivated the field before GameInput read the keyboard, the
+            // real exit fired and this call is the same press arriving twice - which would step out of a conversation
+            // AND close the app on one Escape. The frame stamp is the only thing that can tell the two apart.
+            if (_exitFrame == UnityEngine.Time.frameCount) return;
+
+            // Let go of the keyboard FIRST. A page that takes the back and stays open must not immediately be handed
+            // the caret again by the data-typing rule, or the next press is swallowed exactly like this one was.
+            Paint.Painter.ReleaseKeyboard();
+
+            OnExit(new ExitAction(secondary ? ExitType.Secondary : ExitType.Primary));
+        }
+
+        /// <summary>The frame <see cref="OnExit"/> last acted on, so the rescue path can tell "the game never
+        /// delivered this press" from "it did, and I am the echo".</summary>
+        private int _exitFrame = -1;
+
         private void OnExit(ExitAction exit)
         {
             if (exit.Used || !IsShowing) return;
 
             exit.Used = true;
+            _exitFrame = UnityEngine.Time.frameCount;
 
             try
             {
@@ -575,6 +606,18 @@ namespace Sideload.Phone
 
         /// <summary>True while this host's panel still exists - a destroyed one means the phone was rebuilt.</summary>
         internal bool IsAlive => _panel != null;
+
+        /// <summary>Whether this app's page owns the keyboard, or would take it back next frame. The question
+        /// <see cref="TypingExit"/> asks before rescuing a press, so it never takes one meant for the console.</summary>
+        internal bool OwnsTyping => _view != null && _view.OwnsTyping;
+
+#if DEBUG
+        /// <summary>One line for the sideloadkeys console command: where this app's keyboard actually is.</summary>
+        internal string TypingReport =>
+            $"{Id}: caret in {_view?.FocusedFieldName ?? "nothing"}, "
+            + $"data-typing on {_view?.TypingHomeName ?? "nothing"}, "
+            + $"{(IsShowing ? "on screen" : "not on screen")}";
+#endif
 
         /// <summary>Whether the app declared both orientations, and so may be turned by the player.</summary>
         internal bool CanTurn => _reg.CanTurn;

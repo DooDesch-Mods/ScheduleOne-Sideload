@@ -22,6 +22,7 @@ namespace Sideload.Config
         private static MelonPreferences_Entry<string> _devToolsFrontend;
         private static MelonPreferences_Entry<bool> _devToolsFetchFrontend;
         private static MelonPreferences_Entry<bool> _autoOpenApp;
+        private static MelonPreferences_Entry<bool> _appKeys;
 
         internal static void Initialize()
         {
@@ -69,6 +70,12 @@ namespace Sideload.Config
                 "keys. OFF: the phone is left alone. Turn this off when you are photographing the game's OWN " +
                 "screens - an app opened this way sits on top of them and cannot be dismissed from the home " +
                 "screen. No effect in a release build, where this never runs at all.");
+
+            _appKeys = _category.CreateEntry("AppKeys", true, "Let apps answer a key",
+                "ON (default): an app may ask for a key that reaches it with the phone in your pocket - press it and " +
+                "the app comes up ready to use. Only a key the app asked for is read, only while the game would let " +
+                "you take your phone out anyway, and never while you are typing, paused, or in a station, shop or " +
+                "the console. OFF: no app gets a key and you open everything from the home screen.");
         }
 
         /// <summary>The gate for the whole devtools feature. False on a fresh install and in every shipped build.</summary>
@@ -76,6 +83,10 @@ namespace Sideload.Config
 
         /// <summary>Whether a debug build may open an app on its own. Irrelevant in release, where it cannot.</summary>
         internal static bool AutoOpenAppInDebug => _autoOpenApp?.Value ?? true;
+
+        /// <summary>The player's one switch over every key an app claimed. On by default: an app only gets the keys it
+        /// asked for, and only where the game's own phone key would work.</summary>
+        internal static bool AppKeys => _appKeys?.Value ?? true;
 
         internal static int DevToolsPort => Math.Clamp(_devToolsPort?.Value ?? 9333, 1024, 65535);
 

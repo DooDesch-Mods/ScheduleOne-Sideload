@@ -213,9 +213,22 @@ namespace Sideload.Input
     {
         private static readonly Dictionary<string, KeyCode> Map = Build();
 
+        /// <summary>A second physical key that means the same thing. Only the number pad has one worth honouring: a
+        /// player pressing the big Enter and a player pressing the one by the numbers mean Enter.</summary>
+        private static readonly Dictionary<string, KeyCode> Alternates =
+            new Dictionary<string, KeyCode>(StringComparer.Ordinal) { ["Enter"] = KeyCode.KeypadEnter };
+
         internal static bool TryResolve(string name, out KeyCode code)
         {
             if (!string.IsNullOrEmpty(name) && Map.TryGetValue(name, out code)) return true;
+
+            code = KeyCode.None;
+            return false;
+        }
+
+        internal static bool TryResolveAlternate(string name, out KeyCode code)
+        {
+            if (!string.IsNullOrEmpty(name) && Alternates.TryGetValue(name, out code)) return true;
 
             code = KeyCode.None;
             return false;
@@ -244,10 +257,14 @@ namespace Sideload.Input
             map["ArrowRight"] = KeyCode.RightArrow;
             map["Space"] = KeyCode.Space;
 
+            // Global only - a page may not declare Enter, because a focused field already delivers it as its own
+            // submit. See GlobalKey for why the same name means something different outside a page.
+            map["Enter"] = KeyCode.Return;
+
             // The vocabulary is the authority on what an app may declare; this table only has to keep up. A name
             // added there and forgotten here would parse cleanly, publish cleanly and never fire, so it says so at
             // startup rather than costing an evening.
-            foreach (string name in KeyDeclarationSet.Vocabulary)
+            foreach (string name in GlobalKey.Vocabulary)
                 if (!map.ContainsKey(name))
                     Core.Log?.Error($"[Sideload] key '{name}' is declarable but has no keycode - it will never fire.");
 

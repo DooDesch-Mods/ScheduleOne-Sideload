@@ -112,6 +112,14 @@ namespace Sideload
             // The rotate keys, and the "Rotate Phone" line in the game's key strip that explains them.
             Phone.TurnInput.Tick();
 
+            // Keys that reach an app with the phone still in the player's pocket. Returns on the first line when no
+            // app claimed one, which is every frame unless something asked.
+            Input.GlobalKeys.Tick();
+
+            // Escape and right-click while one of our fields holds the keyboard - the game refuses to raise the exit
+            // action at all in that state, and an app that keeps the caret would otherwise have no way out.
+            Phone.TypingExit.Tick();
+
             // The first-open fade. Does nothing on a frame with no fade running.
             Phone.AppFade.Tick(UnityEngine.Time.unscaledDeltaTime);
 

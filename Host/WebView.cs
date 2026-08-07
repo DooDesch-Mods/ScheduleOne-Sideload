@@ -57,6 +57,20 @@ namespace Sideload.Host
         /// <see cref="Focus"/>.</summary>
         private IElement _focusWanted;
 
+        /// <summary>The painted field carrying <c>data-typing</c>, or null. See <see cref="HoldTyping"/>.</summary>
+        private IElement _typingHome;
+
+        /// <summary>
+        /// Whether the page is in front of the player, as opposed to merely being built and active.
+        ///
+        /// Supplied by whatever mounted the view, because only that knows: an app can be OPEN on a phone that is in
+        /// the player's pocket, and the root object stays active throughout. <see cref="HoldTyping"/> is the one rule
+        /// that must not run in that state - taking the keyboard with the phone away leaves a player who cannot move
+        /// and a game that ignores every key. Null means the caller has no better answer than the active check the
+        /// tick already made, which is correct for a view mounted outside the phone.
+        /// </summary>
+        internal Func<bool> IsVisible;
+
         /// <summary>The style each interactive box was last painted with, so a transition knows where it is coming
         /// from. Only elements that actually change state ever land in here.</summary>
         private readonly Dictionary<IElement, ComputedStyle> _styleWas = new();
@@ -218,6 +232,7 @@ namespace Sideload.Host
             // than waiting a frame, which is the difference between a list that walks with the arrows and one that
             // lags one press behind.
             TickKeyboard();
+            HoldTyping();
 
             // A resize lays the page out too, so it subsumes whatever rebuild was pending.
             if (_resizeQueued)
@@ -631,10 +646,17 @@ namespace Sideload.Host
             foreach (int id in _publishedKeys) Input.Keys.Withdraw(id);
             _publishedKeys.Clear();
             _inputKeys.Clear();
+            _typingHome = null;
 
             foreach (KeyValuePair<IElement, Il2CppTMPro.TMP_InputField> pair in _inputs)
             {
                 if (pair.Value == null) continue;
+
+                // Recorded here rather than looked up per frame, and only for a field that was actually PAINTED -
+                // which is what makes the attribute mean "while this box is on screen". A pane hidden with
+                // `display: none` paints nothing, so an app whose compose box is in the hidden half of a portrait
+                // layout does not silently hold the keyboard from behind it.
+                if (_typingHome == null && pair.Key.HasAttribute("data-typing")) _typingHome = pair.Key;
 
                 Model.KeyDeclarationSet keys = Model.KeyDeclarationSet.Parse(pair.Key.GetAttribute("data-keys"));
 
@@ -679,6 +701,146 @@ namespace Sideload.Host
             _script.Dispatch(_focused, "keydown", field.text ?? "", fired.Name,
                              ctrl: fired.Ctrl, shift: fired.Shift, alt: fired.Alt, repeat: repeat,
                              hasSelection: selected);
+        }
+
+        /// <summary>
+        /// Keep the caret in the field the page marked <c>data-typing</c>, for as long as that field is on screen.
+        ///
+        /// The problem it solves is not focus, it is what the other keys do. A chat with the caret NOT in its message
+        /// box is a chat where typing "hello" walks the player forward, crouches them, and swaps two inventory slots -
+        /// because a field only holds <c>GameInput.IsTyping</c> while it has the caret, and everything else on the
+        /// keyboard is a game binding. Somebody looking at a conversation obviously means to write in it, so the box
+        /// takes the keyboard and keeps it.
+        ///
+        /// Three conditions, and each is load-bearing:
+        ///
+        /// <list type="bullet">
+        /// <item><b>Only while the page is really visible.</b> An app stays open on a phone that has gone back in the
+        /// player's pocket, and grabbing the keyboard there is the bug that leaves someone unable to move with no way
+        /// out - Escape does nothing either, because the game ignores it while typing.</item>
+        /// <item><b>Only when nothing at all is selected.</b> A player who clicked the search box is typing in the
+        /// search box; taking the caret back would make that box unusable. Clicking something that is NOT a field - a
+        /// row, a list, a button - selects nothing, and that is the press that brings the keyboard home again.</item>
+        /// <item><b>Only a field that was painted.</b> Hidden panes paint nothing, so the compose box of a portrait
+        /// layout showing its thread list does not hold the keyboard from behind the pane the player can see.</item>
+        /// </list>
+        ///
+        /// Per frame rather than per render, because the click that loses the caret often changes nothing in the DOM
+        /// and so renders nothing.
+        /// </summary>
+        private void HoldTyping()
+        {
+            if (_typingHome == null) return;
+
+            // Gone from in front of the player while still holding the caret - the phone switched to its character
+            // tab, which neither closes the app nor releases the keyboard. Left alone, the player is typing into a
+            // box that is not on screen: they cannot move, and Escape does nothing because the game stops delivering
+            // it while IsTyping. Only ever OUR field, and only one this page put the caret in.
+            if (IsVisible != null && !IsVisible())
+            {
+                if (HoldsKeyboard) Paint.Painter.ReleaseKeyboard();
+                return;
+            }
+
+            if (!_inputs.TryGetValue(_typingHome, out Il2CppTMPro.TMP_InputField home) || home == null) return;
+            if (home.isFocused) return;
+
+            // ONLY when nothing at all is selected. Not "when no field is focused": TextMeshPro activates a field one
+            // frame AFTER the EventSystem selects it, so a player clicking the search box spends a frame selected but
+            // not yet focused - and a rule that only looked at focus would take the caret back inside that frame and
+            // the box would never come alive. Anything else selected keeps the keyboard, whether it is another of
+            // this page's controls or a screen of the game's own.
+            UnityEngine.EventSystems.EventSystem events = UnityEngine.EventSystems.EventSystem.current;
+            GameObject selected = events != null ? events.currentSelectedGameObject : null;
+            if (selected != null && selected != home.gameObject) return;
+
+            Focus(_typingHome);
+        }
+
+        /// <summary>
+        /// Whether a field of this page currently has the caret, and so is the reason the game believes the player is
+        /// typing. Read from TextMeshPro rather than from <c>_focused</c>: that one is this view's memory of where it
+        /// last put the caret, and TMP is where the caret actually is.
+        /// </summary>
+        internal bool HoldsKeyboard
+        {
+            get
+            {
+                foreach (KeyValuePair<IElement, Il2CppTMPro.TMP_InputField> pair in _inputs)
+                    if (pair.Value != null && pair.Value.isFocused) return true;
+
+                return false;
+            }
+        }
+
+#if DEBUG
+        /// <summary>
+        /// Which field of this page has the caret, named the way the page names it, or null when none does.
+        ///
+        /// Only a debug aid, and it earns its place: "is the keyboard where it should be" is otherwise a question
+        /// answered by looking for a blinking caret in a screenshot, which is half wrong half the time because the
+        /// caret is invisible on the off beat. Reported by the sideloadkeys console command.
+        /// </summary>
+        internal string FocusedFieldName
+        {
+            get
+            {
+                foreach (KeyValuePair<IElement, Il2CppTMPro.TMP_InputField> pair in _inputs)
+                {
+                    if (pair.Value == null || !pair.Value.isFocused) continue;
+
+                    string id = pair.Key.GetAttribute("id");
+                    return string.IsNullOrEmpty(id) ? "<" + pair.Key.LocalName + ">" : "#" + id;
+                }
+
+                return null;
+            }
+        }
+
+        /// <summary>The field this page marked <c>data-typing</c>, or null - so the console command can say whether a
+        /// page that looks wrong ever declared a keyboard home in the first place.</summary>
+        internal string TypingHomeName
+        {
+            get
+            {
+                if (_typingHome == null) return null;
+
+                string id = _typingHome.GetAttribute("id");
+                return string.IsNullOrEmpty(id) ? "<" + _typingHome.LocalName + ">" : "#" + id;
+            }
+        }
+#endif
+
+        /// <summary>
+        /// Whether this page is the keyboard's owner, or would be the moment nobody else wanted it: it declared a
+        /// <c>data-typing</c> field that is painted and on screen, and no control OUTSIDE this page holds the caret.
+        ///
+        /// The second half is what stops the rule reaching past its own app. The game's console selects its input
+        /// field when it opens, and it can be opened over the phone; without this check the compose box would take
+        /// the caret straight back off it and the player could not type a command. The same goes for the rename
+        /// dialog and every other vanilla screen that selects a field.
+        ///
+        /// Asked through the EventSystem rather than by counting focused fields, because "nothing at all is selected"
+        /// is the case that matters and only the EventSystem can answer it. Clicking a row, a message list or a
+        /// button deselects whatever had the caret without selecting anything new, which is exactly when the page
+        /// should get it back.
+        /// </summary>
+        internal bool OwnsTyping
+        {
+            get
+            {
+                if (_typingHome == null) return false;
+                if (IsVisible != null && !IsVisible()) return false;
+
+                UnityEngine.EventSystems.EventSystem events = UnityEngine.EventSystems.EventSystem.current;
+                GameObject selected = events != null ? events.currentSelectedGameObject : null;
+                if (selected == null) return true;
+
+                foreach (KeyValuePair<IElement, Il2CppTMPro.TMP_InputField> pair in _inputs)
+                    if (pair.Value != null && pair.Value.gameObject == selected) return true;
+
+                return false;
+            }
         }
 
         /// <summary>

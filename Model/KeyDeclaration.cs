@@ -114,12 +114,44 @@ namespace Sideload.Model
         internal static bool TryParseOne(string token, out KeyDeclaration key, out string refusal)
         {
             key = default;
+
+            if (!SplitModifiers(token, out string name, out bool ctrl, out bool shift, out bool alt, out refusal))
+                return false;
+
+            if (Same(name, "enter") || Same(name, "return"))
+            {
+                refusal = "Enter already arrives as a keydown from the field itself";
+                return false;
+            }
+
+            if (Same(name, "escape") || Same(name, "esc"))
+            {
+                refusal = "Escape already arrives as the 'back' event";
+                return false;
+            }
+
+            string canonical = Canonical(name);
+            if (canonical == null) { refusal = $"unknown key '{name}'"; return false; }
+
+            key = new KeyDeclaration(canonical, ctrl, shift, alt);
+            return true;
+        }
+
+        /// <summary>
+        /// Peel the modifiers off a declaration and hand back the bare name. Shared with the global keys in
+        /// <see cref="GlobalKey"/>, which spell modifiers identically and differ only in which NAMES they accept -
+        /// two copies of this loop would be two places for <c>Ctrl+Shift+K</c> to start meaning different things.
+        /// </summary>
+        internal static bool SplitModifiers(string token, out string name,
+                                            out bool ctrl, out bool shift, out bool alt, out string refusal)
+        {
+            name = null;
+            ctrl = shift = alt = false;
             refusal = null;
 
             if (string.IsNullOrWhiteSpace(token)) { refusal = "empty"; return false; }
 
-            bool ctrl = false, shift = false, alt = false;
-            string name = token.Trim();
+            name = token.Trim();
 
             while (true)
             {
@@ -138,22 +170,6 @@ namespace Sideload.Model
                 name = rest;
             }
 
-            if (Same(name, "enter") || Same(name, "return"))
-            {
-                refusal = "Enter already arrives as a keydown from the field itself";
-                return false;
-            }
-
-            if (Same(name, "escape") || Same(name, "esc"))
-            {
-                refusal = "Escape already arrives as the 'back' event";
-                return false;
-            }
-
-            string canonical = Canonical(name);
-            if (canonical == null) { refusal = $"unknown key '{name}'"; return false; }
-
-            key = new KeyDeclaration(canonical, ctrl, shift, alt);
             return true;
         }
 
@@ -201,6 +217,6 @@ namespace Sideload.Model
             return null;
         }
 
-        private static bool Same(string a, string b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
+        internal static bool Same(string a, string b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
     }
 }
