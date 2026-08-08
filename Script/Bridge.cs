@@ -1,6 +1,5 @@
 using Jint;
 using Jint.Native;
-using MelonLoader.Utils;
 
 namespace Sideload.Script
 {
@@ -95,14 +94,14 @@ namespace Sideload.Script
             if (!_handlers.TryGetValue(Key(appId, name), out Func<string, string, string> handler)
                 && !_handlers.TryGetValue(Key(null, name), out handler))
             {
-                Core.Log?.Warning($"{appId}: s1.call('{name}') has no handler.");
+                Model.Platform.Warning($"{appId}: s1.call('{name}') has no handler.");
                 return "";
             }
 
             try { return handler(appId, argument ?? "") ?? ""; }
             catch (Exception e)
             {
-                Core.Log?.Error($"{appId}: s1.call('{name}') threw: {e.Message}");
+                Model.Platform.Error($"{appId}: s1.call('{name}') threw: {e.Message}");
                 return "";
             }
         }
@@ -149,19 +148,19 @@ namespace Sideload.Script
         }
 
         public void Log(params object[] args) =>
-            Core.Log?.Msg($"[{_appId}] " + string.Join(" ", Array.ConvertAll(args ?? Array.Empty<object>(), a => a?.ToString() ?? "null")));
+            Model.Platform.Msg($"[{_appId}] " + string.Join(" ", Array.ConvertAll(args ?? Array.Empty<object>(), a => a?.ToString() ?? "null")));
 
         /// <summary>
         /// `s1.orientation` - "portrait" or "landscape". Reads the app's setting rather than the measured viewport, so
         /// it answers the same during the rotation animation as after it.
         /// </summary>
-        public string Orientation => Registry.Find(_appId)?.Portrait == true ? "portrait" : "landscape";
+        public string Orientation => Model.Platform.IsPortrait(_appId) ? "portrait" : "landscape";
 
         /// <summary>
         /// `s1.setOrientation(v)` - turn the phone. The page keeps its document and its script; only the viewport and
         /// the cascade change, so `@media (orientation: ...)` is what decides what the app looks like afterwards.
         /// </summary>
-        public void SetOrientation(string orientation) => Registry.SetOrientation(_appId, orientation);
+        public void SetOrientation(string orientation) => Model.Platform.SetOrientation(_appId, orientation);
 
         /// <summary>
         /// Unsubscribe this page from every host event. Without it a reload leaves the old bridge in the static
@@ -182,7 +181,7 @@ namespace Sideload.Script
             foreach (JsValue handler in list.ToArray())
             {
                 try { _host.Engine.Invoke(handler, payload); }
-                catch (Exception e) { Core.Log?.Error($"{_appId}: s1.on('{name}') handler failed: {e.Message}"); }
+                catch (Exception e) { Model.Platform.Error($"{_appId}: s1.on('{name}') handler failed: {e.Message}"); }
             }
         }
 
@@ -199,7 +198,7 @@ namespace Sideload.Script
 
             internal JsStorage(string appId)
             {
-                string folder = Path.Combine(MelonEnvironment.UserDataDirectory, "Sideload");
+                string folder = Path.Combine(Model.Platform.UserDataDirectory(), "Sideload");
                 _path = Path.Combine(folder, Sanitise(appId) + ".json");
             }
 
@@ -242,7 +241,7 @@ namespace Sideload.Script
                     foreach (KeyValuePair<string, string> pair in MiniJson.ParseObject(File.ReadAllText(_path)))
                         _values[pair.Key] = pair.Value;
                 }
-                catch (Exception e) { Core.Log?.Warning("storage read failed: " + e.Message); }
+                catch (Exception e) { Model.Platform.Warning("storage read failed: " + e.Message); }
             }
 
             private void Save()
@@ -252,7 +251,7 @@ namespace Sideload.Script
                     Directory.CreateDirectory(Path.GetDirectoryName(_path));
                     File.WriteAllText(_path, MiniJson.WriteObject(_values));
                 }
-                catch (Exception e) { Core.Log?.Warning("storage write failed: " + e.Message); }
+                catch (Exception e) { Model.Platform.Warning("storage write failed: " + e.Message); }
             }
 
             private static string Sanitise(string id)
