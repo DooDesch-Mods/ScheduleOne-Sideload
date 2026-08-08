@@ -35,6 +35,30 @@ namespace Sideload.Css
         internal Len RowGap = Len.Zero;
         internal Len ColumnGap = Len.Zero;
 
+        // --- grid ---------------------------------------------------------------------------------------------
+        // Only read when Display is Grid. They sit next to the flex properties rather than in a side object
+        // because ComputedStyle is copied per element per render, and a second allocation per box for fields
+        // that are null on almost every one of them costs more than the eight slots do.
+
+        /// <summary>`grid-template-columns`. Null means `none`: no explicit columns, so every column is implicit.</summary>
+        internal GridTemplate GridTemplateColumns;
+
+        /// <summary>`grid-template-rows`. Null means `none`.</summary>
+        internal GridTemplate GridTemplateRows;
+
+        /// <summary>How a row past the end of the explicit grid is sized. `auto` by default, as in CSS.</summary>
+        internal GridTrack GridAutoRows = GridTrack.Auto;
+
+        internal GridTrack GridAutoColumns = GridTrack.Auto;
+
+        internal GridPlacement GridColumn;
+        internal GridPlacement GridRow;
+
+        /// <summary>The inline-axis counterpart of <see cref="AlignItems"/> for a grid container.</summary>
+        internal AlignKind JustifyItems = AlignKind.Stretch;
+
+        internal AlignKind JustifySelf = AlignKind.Auto;
+
         internal Edges Padding = Edges.Zero;
         internal Edges Margin = Edges.Zero;
 

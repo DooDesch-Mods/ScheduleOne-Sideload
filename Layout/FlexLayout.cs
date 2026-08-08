@@ -3,7 +3,12 @@ using Sideload.Css;
 namespace Sideload.Layout
 {
     /// <summary>
-    /// The layout engine: flexbox plus absolute positioning, and nothing else.
+    /// The layout engine: flexbox, CSS grid and absolute positioning, and nothing else.
+    ///
+    /// This file owns the box - sizing, the box model, out-of-flow children - and the flexbox algorithm.
+    /// <see cref="GridLayout"/> owns the grid algorithm and is reached from <see cref="LayoutBox"/> whenever a
+    /// box says `display: grid`; the two share this file's sizing pass and nothing else, which is what keeps
+    /// either one readable.
     ///
     /// Deliberate simplifications, all of them documented promises rather than accidents:
     ///
@@ -65,10 +70,14 @@ namespace Sideload.Layout
         /// <summary>
         /// Size one node and position its children. <paramref name="availWidth"/>/<paramref name="availHeight"/> are
         /// the containing block's content box; a forced size wins over the style (used for the root and for children
-        /// whose size a flex line already decided).
+        /// whose size a flex line or a grid cell already decided).
+        ///
+        /// This is also where the two layout algorithms part company: everything above this point is the same for
+        /// both, and the only thing `display: grid` changes is which of them places the children. Internal rather
+        /// than private because <see cref="GridLayout"/> sizes its items through exactly this entry point.
         /// </summary>
-        private static void LayoutBox(LayoutNode node, float availWidth, float availHeight, IMeasureText measure,
-                                      float forcedWidth = float.NaN, float forcedHeight = float.NaN)
+        internal static void LayoutBox(LayoutNode node, float availWidth, float availHeight, IMeasureText measure,
+                                       float forcedWidth = float.NaN, float forcedHeight = float.NaN)
         {
             ComputedStyle s = node.Style;
 
@@ -106,7 +115,7 @@ namespace Sideload.Layout
             }
             else
             {
-                usedContentH = LayoutChildren(node, contentW, contentH, availWidth, measure);
+                usedContentH = PlaceChildren(node, contentW, contentH, availWidth, measure);
             }
 
             if (float.IsNaN(height)) height = usedContentH + padV;
@@ -116,11 +125,20 @@ namespace Sideload.Layout
             // A clamped height changes the content box the children were placed in, so stretch them once more.
             float finalContentH = Math.Max(height - padV, 0f);
             if (!node.IsTextLeaf && Math.Abs(finalContentH - usedContentH) > 0.01f)
-                LayoutChildren(node, contentW, finalContentH, availWidth, measure);
+                PlaceChildren(node, contentW, finalContentH, availWidth, measure);
 
             node.Width = width;
             node.Height = height;
         }
+
+        /// <summary>
+        /// Which algorithm places this box's children. The one dispatch point in the engine, so a box can never
+        /// end up laid out by the algorithm its `display` did not ask for.
+        /// </summary>
+        private static float PlaceChildren(LayoutNode node, float contentW, float contentH, float percentBasis, IMeasureText measure) =>
+            node.Style.Display == DisplayKind.Grid
+                ? GridLayout.LayoutChildren(node, contentW, contentH, percentBasis, measure)
+                : LayoutChildren(node, contentW, contentH, percentBasis, measure);
 
         /// <summary>
         /// Place the children inside a content box and report how tall they ended up. Returns the used cross extent
@@ -241,9 +259,27 @@ namespace Sideload.Layout
             float flowBottom = 0f;
             foreach (LayoutNode child in flow) flowBottom = Math.Max(flowBottom, child.Y + child.Height);
 
-            // Everything above placed children relative to the CONTENT box origin. Shift them into the parent's own
-            // coordinate space now: flow children clear border and padding, absolutely positioned ones only the
-            // border, because their containing block is the padding box.
+            FinishContainer(s, flow, absolute, contentW, contentH, percentBasis, measure);
+
+            // For a row container the used height is the stacked line extent; for a column it is where the main axis
+            // ended.
+            return row ? usedCross : flowBottom;
+        }
+
+        /// <summary>
+        /// The tail every container shares once its in-flow children are placed: move them out of the content box
+        /// into the parent's own coordinate space, then lay out the out-of-flow ones.
+        ///
+        /// Flow children clear border and padding; absolutely positioned ones only the border, because their
+        /// containing block is the padding box. Grid needs both steps exactly as flexbox does, and one copy is what
+        /// keeps `position: absolute` from meaning two different things depending on the parent's `display`.
+        ///
+        /// The caller measures its own content extent BEFORE calling this, otherwise the padding would be counted
+        /// twice - once there and again when <see cref="LayoutBox"/> adds it back to reach the border box.
+        /// </summary>
+        internal static void FinishContainer(ComputedStyle s, List<LayoutNode> flow, List<LayoutNode> absolute,
+                                             float contentW, float contentH, float percentBasis, IMeasureText measure)
+        {
             float borderLeft = s.BorderWidth.Left.Resolve(percentBasis);
             float borderTop = s.BorderWidth.Top.Resolve(percentBasis);
             float padLeft = s.Padding.Left.Resolve(percentBasis);
@@ -256,6 +292,8 @@ namespace Sideload.Layout
                 if (child.Style.Position == PositionKind.Relative) OffsetRelative(child, contentW, contentH);
             }
 
+            if (absolute.Count == 0) return;
+
             float paddingBoxW = contentW + padLeft + s.Padding.Right.Resolve(percentBasis);
             float paddingBoxH = float.IsNaN(contentH)
                 ? float.NaN
@@ -267,10 +305,6 @@ namespace Sideload.Layout
                 child.X += borderLeft;
                 child.Y += borderTop;
             }
-
-            // For a row container the used height is the stacked line extent; for a column it is where the main axis
-            // ended.
-            return row ? usedCross : flowBottom;
         }
 
         private sealed class Item
@@ -668,6 +702,8 @@ namespace Sideload.Layout
         private static float IntrinsicWidth(LayoutNode node, IMeasureText measure, float availWidth)
         {
             ComputedStyle s = node.Style;
+            if (s.Display == DisplayKind.Grid) return GridLayout.IntrinsicWidth(node, measure, availWidth);
+
             bool row = s.FlexDirection == FlexDirection.Row || s.FlexDirection == FlexDirection.RowReverse;
 
             float total = 0f, widest = 0f;
@@ -699,7 +735,7 @@ namespace Sideload.Layout
 
         // --------------------------------------------------------------------- helpers --
 
-        private static float ResolveOrNaN(Len len, float basis)
+        internal static float ResolveOrNaN(Len len, float basis)
         {
             if (!len.IsDefinite) return float.NaN;
             if (len.Unit == LenUnit.Percent && float.IsNaN(basis)) return float.NaN;
@@ -722,7 +758,7 @@ namespace Sideload.Layout
         }
 
         /// <summary>Left plus right. Percentages of both axes resolve against the WIDTH, as CSS specifies.</summary>
-        private static float Horizontal(Edges e, float basis) => e.Left.Resolve(basis) + e.Right.Resolve(basis);
+        internal static float Horizontal(Edges e, float basis) => e.Left.Resolve(basis) + e.Right.Resolve(basis);
 
         private static float Vertical(Edges e, float basis) => e.Top.Resolve(basis) + e.Bottom.Resolve(basis);
     }
