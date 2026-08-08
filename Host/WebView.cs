@@ -21,9 +21,21 @@ namespace Sideload.Host
     /// </summary>
     public sealed class WebView
     {
-        /// <summary>Short side of the CSS viewport. The host rect is scaled so that a stylesheet can always assume a
-        /// 400px-wide phone, whatever the real panel measures (see decision 5 in ARCHITECTURE.md).</summary>
-        private const float ReferenceShortSide = 400f;
+        /// <summary>Short side of the CSS viewport on the phone. The host rect is scaled so that a stylesheet can
+        /// always assume a 400px-wide phone, whatever the real panel measures (see decision 5 in
+        /// ARCHITECTURE.md).</summary>
+        internal const float PhoneShortSide = 400f;
+
+        /// <summary>
+        /// What this view's short side is worth in CSS pixels, or 0 for "one CSS pixel is one device unit".
+        ///
+        /// The phone is fixed at 400 because every app is written for the same panel. A surface mounted somewhere
+        /// else has no such agreement: a menu column is narrow and tall, a banner wide and flat, and the two cannot
+        /// share one number. So the caller either names the width it designed against - and gets the phone's
+        /// contract, a page that scales with the panel - or names nothing and gets device pixels, which is what a
+        /// panel already laid out by uGUI wants.
+        /// </summary>
+        private readonly float _referenceShortSide;
 
         /// <summary>Every live view, so the mod's update loop can drive their timers and pending rebuilds. A view
         /// whose root has been destroyed drops out on the next tick.</summary>
@@ -37,6 +49,14 @@ namespace Sideload.Host
         private bool _built;
         private bool _rebuildQueued;
         private bool _resizeQueued;
+
+        /// <summary>Build on the first frame the panel is up, and follow it when it changes shape. Set for a mounted
+        /// surface, never for a phone app - the phone builds on open and re-measures on turn, both on purpose.</summary>
+        internal bool AutoBuild;
+
+        /// <summary>The host rect as it was last measured, so <see cref="AutoBuild"/> can tell a real change of shape
+        /// from the same rect read again.</summary>
+        private Vector2 _hostWas;
 
 #if DEBUG
         private HotReload _watcher;
@@ -96,12 +116,37 @@ namespace Sideload.Host
         private float _lastRenderMs;
         private int _boxes;
 
-        private WebView(RectTransform host, RectTransform root, AppBundle bundle, string appId)
+        private WebView(RectTransform host, RectTransform root, AppBundle bundle, string appId, float referenceShortSide)
         {
             _host = host;
             _root = root;
             _bundle = bundle;
             _appId = appId;
+            _referenceShortSide = referenceShortSide;
+        }
+
+        /// <summary>Device units per CSS pixel for the rect as it stands now. One when the view maps 1:1.</summary>
+        private float ScaleFor(float hostW, float hostH) =>
+            _referenceShortSide > 0f ? Math.Min(hostW, hostH) / _referenceShortSide : 1f;
+
+        /// <summary>
+        /// Whether this view's colours have to be pre-converted to linear - see
+        /// <see cref="Paint.BoxRenderer.ConvertToLinear"/> for what that costs when it is wrong.
+        ///
+        /// Decided from the canvas rather than asked of the caller: a mod mounting a panel has no way to know which
+        /// answer its canvas needs, and getting it wrong is invisible until somebody looks at a dark surface.
+        /// A camera-drawn canvas (the phone's, and any world-space panel) is converted back downstream; an overlay
+        /// canvas is composited straight into the finished frame and is not.
+        /// </summary>
+        private bool WantsLinearColors()
+        {
+            try
+            {
+                Canvas canvas = _root != null ? _root.GetComponentInParent<Canvas>() : null;
+                if (canvas == null) return true;
+                return canvas.renderMode != RenderMode.ScreenSpaceOverlay;
+            }
+            catch { return true; }
         }
 
         /// <summary>The node everything of this view lives under. Destroying it disposes the view.</summary>
@@ -132,7 +177,8 @@ namespace Sideload.Host
             $"  renders {_renders} ({_lastRenderMs:0.0} ms)   reloads {_reloads}\n" +
             $"  script: {(_script == null ? "none" : _script.Failed ? "FAILED - " + _script.LastError : "ok")}";
 
-        internal static WebView Mount(RectTransform host, AppBundle bundle, string appId)
+        internal static WebView Mount(RectTransform host, AppBundle bundle, string appId,
+                                      float referenceShortSide = PhoneShortSide)
         {
             if (host == null)
             {
@@ -141,9 +187,22 @@ namespace Sideload.Host
             }
 
             RectTransform root = UiFactory.Rect("sideload-view", host);
-            var view = new WebView(host, root, bundle, appId);
+            var view = new WebView(host, root, bundle, appId, referenceShortSide);
             _live.Add(view);
             return view;
+        }
+
+        /// <summary>Take this view down now rather than waiting for its rect to be destroyed. A surface that
+        /// outlives its panel is the caller's to end; the phone never needs this because its panel dies with the
+        /// scene.</summary>
+        internal void Dispose()
+        {
+            _script?.Dispose();
+            _script = null;
+            foreach (int id in _publishedKeys) Input.Keys.Withdraw(id);
+            _publishedKeys.Clear();
+            _live.Remove(this);
+            if (_root != null) Object.Destroy(_root.gameObject);
         }
 
         /// <summary>Drive every live view one frame: script timers first, then any rebuild those timers asked for.</summary>
@@ -227,6 +286,20 @@ namespace Sideload.Host
             // hidden measures every line about ten times too short and comes back with one character per line. A
             // chat app hits this immediately, because messages arrive while the phone is in the player's pocket.
             if (!_root.gameObject.activeInHierarchy) return;
+
+            // A surface has no icon to press, so nothing else would ever build it, and nothing else watches its panel
+            // for a change of shape either. The phone opts out of both: it builds when the player opens the app, and
+            // it re-measures when the player turns it.
+            if (AutoBuild)
+            {
+                if (!_built) { EnsureBuilt(); return; }
+                Rect now = _host.rect;
+                if (!Mathf.Approximately(now.width, _hostWas.x) || !Mathf.Approximately(now.height, _hostWas.y))
+                {
+                    _hostWas = new Vector2(now.width, now.height);
+                    QueueResize();
+                }
+            }
 
             // Before the rebuild, not after: a key that changes the DOM should show up in THIS frame's render rather
             // than waiting a frame, which is the difference between a list that walks with the arrows and one that
@@ -319,7 +392,7 @@ namespace Sideload.Host
             float hostW = hostRect.width, hostH = hostRect.height;
             if (hostW < 1f || hostH < 1f) return;
 
-            float scale = Math.Min(hostW, hostH) / ReferenceShortSide;
+            float scale = ScaleFor(hostW, hostH);
             float cssW = hostW / scale, cssH = hostH / scale;
 
             if (Mathf.Approximately(cssW, _root.sizeDelta.x) && Mathf.Approximately(cssH, _root.sizeDelta.y)) return;
@@ -328,6 +401,7 @@ namespace Sideload.Host
 
             _root.sizeDelta = new Vector2(cssW, cssH);
             _root.localScale = new Vector3(scale, scale, 1f);
+            _hostWas = new Vector2(hostW, hostH);
             _context.Orientation = cssW >= cssH ? Orientation.Landscape : Orientation.Portrait;
 
             Rebuild();
@@ -355,8 +429,9 @@ namespace Sideload.Host
                 return;
             }
 
-            // One CSS pixel is `scale` device units, so every stylesheet works against the same 400px short side.
-            float scale = Math.Min(hostW, hostH) / ReferenceShortSide;
+            // One CSS pixel is `scale` device units, so every phone stylesheet works against the same 400px short
+            // side. A surface that named no reference gets scale 1 and therefore device pixels.
+            float scale = ScaleFor(hostW, hostH);
             float cssW = hostW / scale, cssH = hostH / scale;
 
             _root.anchorMin = _root.anchorMax = new Vector2(0.5f, 0.5f);
@@ -364,6 +439,7 @@ namespace Sideload.Host
             _root.anchoredPosition = Vector2.zero;
             _root.sizeDelta = new Vector2(cssW, cssH);
             _root.localScale = new Vector3(scale, scale, 1f);
+            _hostWas = new Vector2(hostW, hostH);
 
 #if DEBUG
             _watcher ??= HotReload.Start(_bundle?.OverrideRoot, _appId);
@@ -383,25 +459,39 @@ namespace Sideload.Host
 
             string tooBig = TooLargeToRender(_document);
             if (tooBig != null) { ShowError(tooBig); return; }
-            _sheet = CssParser.Parse(CollectCss(_document));
-            WarnAboutUnsupportedCss(_sheet);
-            tCss = phase.ElapsedMilliseconds;
 
-            _interaction = new Interaction(OnStateChanged, OnClicked, OnDragged, OnWheel, _root);
-            _context = new StyleContext
+            long css = 0, script = 0;
+
+            // One listener across parse, cascade, script and first render - every stage drops something, and a
+            // report split over four log lines is a report nobody assembles.
+            CollectDiagnostics(() =>
             {
-                Orientation = cssW >= cssH ? Orientation.Landscape : Orientation.Portrait,
-                StateOf = _interaction.StateOf,
-            };
+                _sheet = CssParser.Parse(CollectCss(_document));
 
-            // The script runs BEFORE the first render, not after: it may build half the page and it registers the
-            // click listeners that decide which boxes need a hit target. Rendering first would either miss those or
-            // force a second full pass one frame later.
-            _script = new ScriptHost(_appId, _document, QueueRebuild, Focus, PinToEnd, RepaintOnly);
-            RunScripts(_document);
-            tScript = phase.ElapsedMilliseconds;
+                // The whole sheet, not only what ends up matching. See SheetAudit for why that distinction is the
+                // difference between a useful report and silence on exactly the stylesheets that need one.
+                Css.SheetAudit.Scan(_sheet);
+                css = phase.ElapsedMilliseconds;
 
-            Render(cssW, cssH, hostW, hostH, scale);
+                _interaction = new Interaction(OnStateChanged, OnClicked, OnDragged, OnWheel, OnHover, _root);
+                _context = new StyleContext
+                {
+                    Orientation = cssW >= cssH ? Orientation.Landscape : Orientation.Portrait,
+                    StateOf = _interaction.StateOf,
+                };
+
+                // The script runs BEFORE the first render, not after: it may build half the page and it registers
+                // the click listeners that decide which boxes need a hit target. Rendering first would either miss
+                // those or force a second full pass one frame later.
+                _script = new ScriptHost(_appId, _document, QueueRebuild, Focus, PinToEnd, RepaintOnly, RectOf);
+                RunScripts(_document);
+                script = phase.ElapsedMilliseconds;
+
+                Render(cssW, cssH, hostW, hostH, scale);
+            });
+
+            tCss = css;
+            tScript = script;
 
             Core.Log?.Msg($"[Sideload] {_appId}: read {tRead} ms, html {tParse - tRead} ms, css {tCss - tParse} ms, "
                           + $"script {tScript - tCss} ms, render {phase.ElapsedMilliseconds - tScript} ms "
@@ -456,6 +546,10 @@ namespace Sideload.Host
         /// </summary>
         private void Render(float cssW, float cssH, float hostW, float hostH, float scale)
         {
+            // Tell the painter what one css pixel is worth in device pixels, so a hairline border can be snapped to
+            // a whole one instead of being smeared across two.
+            Paint.Painter.CssToDevice = scale;
+            Paint.BoxRenderer.ConvertToLinear = WantsLinearColors();
             long started = System.Diagnostics.Stopwatch.GetTimestamp();
             _interaction.ResetForRender(_document);
             Transitions.Clear();
@@ -510,7 +604,7 @@ namespace Sideload.Host
 
             try
             {
-                Dictionary<IElement, float> scroll = CaptureScroll();
+                Dictionary<IElement, ScrollMark> scroll = CaptureScroll();
                 _survivors = RescueControls();
 
                 for (int i = _root.childCount - 1; i >= 0; i--)
@@ -519,8 +613,14 @@ namespace Sideload.Host
                     if (!IsRescued(child)) Object.Destroy(child);
                 }
 
-                float scale = _root.localScale.x;
-                Render(_root.sizeDelta.x, _root.sizeDelta.y, _root.sizeDelta.x * scale, _root.sizeDelta.y * scale, scale);
+                // Under the listener as well, not only the first build. A page sets most of its styles from script,
+                // and an inline write never passes the stylesheet scan - so without this the most common way to
+                // write CSS in this engine would be the one way that never gets checked.
+                CollectDiagnostics(() =>
+                {
+                    float scale = _root.localScale.x;
+                    Render(_root.sizeDelta.x, _root.sizeDelta.y, _root.sizeDelta.x * scale, _root.sizeDelta.y * scale, scale);
+                });
 
                 RestoreScroll(scroll);
             }
@@ -559,9 +659,18 @@ namespace Sideload.Host
             return false;
         }
 
-        private Dictionary<IElement, float> CaptureScroll()
+        /// <summary>Where a scroll area stood, and how tall its content was at the time. The height is what makes the
+        /// offset mean anything: the position Unity stores is NORMALISED, so 0.4 of a short list and 0.4 of a long one
+        /// are different places entirely.</summary>
+        private struct ScrollMark
         {
-            var offsets = new Dictionary<IElement, float>();
+            internal float Position;
+            internal float ContentHeight;
+        }
+
+        private Dictionary<IElement, ScrollMark> CaptureScroll()
+        {
+            var offsets = new Dictionary<IElement, ScrollMark>();
             if (_painted == null) return offsets;
 
             foreach (KeyValuePair<IElement, Painter.PaintedBox> pair in _painted)
@@ -569,16 +678,30 @@ namespace Sideload.Host
                 if (pair.Value.Rect == null) continue;
 
                 var scroll = pair.Value.Rect.GetComponentInChildren<ScrollRect>();
-                if (scroll != null) offsets[pair.Key] = scroll.verticalNormalizedPosition;
+                if (scroll == null) continue;
+                offsets[pair.Key] = new ScrollMark
+                {
+                    Position = scroll.verticalNormalizedPosition,
+                    ContentHeight = scroll.content != null ? scroll.content.rect.height : 0f,
+                };
             }
             return offsets;
         }
 
-        private void RestoreScroll(Dictionary<IElement, float> offsets)
+        /// <summary>
+        /// Put every scroll area back where the player left it - but only where that still means something.
+        ///
+        /// Keeping the offset is what stops a page that rebuilds on every DOM write from yanking a reader back to the
+        /// top. It stops being a kindness the moment the content is not the same content: a pane that swapped its
+        /// whole subtree (an empty state replaced by a full one, a tab switch) opens somewhere in its own middle, and
+        /// the player sees a screen that starts halfway through itself. Unity stores the position normalised, so
+        /// there is no way to notice that from the number alone - hence the remembered height.
+        /// </summary>
+        private void RestoreScroll(Dictionary<IElement, ScrollMark> offsets)
         {
             if (offsets == null || _painted == null) return;
 
-            foreach (KeyValuePair<IElement, float> pair in offsets)
+            foreach (KeyValuePair<IElement, ScrollMark> pair in offsets)
             {
                 if (!_painted.TryGetValue(pair.Key, out Painter.PaintedBox box) || box.Rect == null) continue;
 
@@ -586,7 +709,15 @@ namespace Sideload.Host
                 if (scroll == null) continue;
 
                 // A box the script pinned to its end wins over where it happened to be scrolled a moment ago.
-                scroll.verticalNormalizedPosition = ReferenceEquals(pair.Key, _pinToEnd) ? 0f : pair.Value;
+                if (ReferenceEquals(pair.Key, _pinToEnd)) { scroll.verticalNormalizedPosition = 0f; continue; }
+
+                float was = pair.Value.ContentHeight;
+                float now = scroll.content != null ? scroll.content.rect.height : 0f;
+                // A quarter of the height, floored at 24px so a short list is not judged by a percentage. Growing by
+                // a message or a row stays inside it; replacing the contents does not.
+                bool comparable = was > 0f && Mathf.Abs(now - was) <= Mathf.Max(24f, was * 0.25f);
+                // 1 is the TOP for a normalised vertical position (0 is the bottom, which is why the pin above uses it).
+                scroll.verticalNormalizedPosition = comparable ? pair.Value.Position : 1f;
             }
         }
 
@@ -1003,6 +1134,49 @@ namespace Sideload.Host
             }
         }
 
+        /// <summary>
+        /// The pointer entered or left an element. Raised as `mouseenter` / `mouseleave`, the names a browser uses,
+        /// so a page written against one behaves the same here.
+        ///
+        /// They do NOT bubble, which is also what a browser does with this pair: a tooltip that fired again for every
+        /// ancestor would open and close as the pointer crossed each nested box. `:hover` was never enough on its
+        /// own - a state rule may repaint a box and may not lay one out, so anything that has to APPEAR on hover
+        /// needs the page to build it.
+        /// </summary>
+        /// <summary>
+        /// Where an element ended up, in css pixels from the top left of the viewport.
+        ///
+        /// Taken from the layout tree rather than from the Unity rect: the layout is already in css pixels and in
+        /// exactly the frame `position: fixed` is measured in, so a page can put a floating box against another box
+        /// without knowing anything about the panel it is drawn on.
+        ///
+        /// Zeroes for a node the last render did not lay out - a box the script created a moment ago is not on
+        /// screen yet, and a made-up position would be worse than an obviously empty one.
+        /// </summary>
+        private float[] RectOf(IElement element)
+        {
+            if (element == null || _painted == null) return new[] { 0f, 0f, 0f, 0f };
+            if (!_painted.TryGetValue(element, out Painter.PaintedBox box) || box.Node == null)
+                return new[] { 0f, 0f, 0f, 0f };
+
+            // A layout node's X/Y are RELATIVE TO ITS PARENT, so they have to be summed up the tree to mean anything
+            // to a page. Without this every rect reported the same y - the offset of a row inside its own container
+            // - and a tooltip anchored to it landed in the top left corner whichever icon you pointed at.
+            float x = box.Node.X, y = box.Node.Y;
+            for (IElement up = element.ParentElement; up != null; up = up.ParentElement)
+            {
+                if (!_painted.TryGetValue(up, out Painter.PaintedBox parent) || parent.Node == null) continue;
+                x += parent.Node.X;
+                y += parent.Node.Y;
+            }
+            return new[] { x, y, box.Node.Width, box.Node.Height };
+        }
+
+        private void OnHover(IElement element, bool entered)
+        {
+            _script?.Dispatch(element, entered ? "mouseenter" : "mouseleave", bubbles: false);
+        }
+
         private void OnClicked(IElement element, Input.PointerSpot spot)
         {
             if (element == null) return;
@@ -1201,38 +1375,56 @@ namespace Sideload.Host
         /// <summary>Stylesheets in document order: every &lt;link&gt; resolved from the bundle, then every inline
         /// &lt;style&gt;, so a page can override what it imports.</summary>
         /// <summary>
-        /// Name every declaration this renderer has no case for, once per property per load.
+        /// Everything the engine threw away that the property scan above cannot see.
         ///
-        /// Without this an unsupported property is dropped in total silence: the rule is valid CSS, a browser
-        /// honours it, and the page simply comes out different with nothing anywhere to say why. That has already
-        /// shipped in more than one mod - a nav underline written as , and whole screens
-        /// carrying ,  and  that never did anything.
+        /// That scan answers one question - is this property NAME implemented - and a page written by hand mostly
+        /// only trips over that one. A page out of a build tool trips over the other four the whole time, and all
+        /// four used to be silent: a value the parsers cannot read (`padding: 1rem`, `oklch(...)`, `calc(...)`),
+        /// a value they read and the layout then ignores (`align-items: baseline`), a selector the DOM library
+        /// rejects, and an at-rule block skipped whole (`@media (min-width:)`, `@keyframes`, `@layer`).
         ///
-        /// Once per PROPERTY, not per declaration or per element: a stylesheet mentions the same one many times
-        /// and the resolver runs per matched element, which would turn one mistake into a wall of log.
+        /// Deduplicated the same way and for the same reason: once per thing, not once per occurrence. A Tailwind
+        /// build mentions `rem` several thousand times and the resolver runs per matched element - without this
+        /// the log would be the only thing in the log.
+        ///
+        /// The seen-set lives as long as the VIEW, not as long as one call, and that is the point: a page writes
+        /// most of its styles from script, and it writes them again on every rebuild. Remembering per load would
+        /// miss `el.style.padding = "1rem"` entirely; remembering per rebuild would print it sixty times a second.
+        /// Remembering across the view's whole life names each mistake exactly once.
         /// </summary>
-        private void WarnAboutUnsupportedCss(Css.Stylesheet sheet)
+        private readonly HashSet<(Model.DiagnosticKind, string, string)> _reported = new();
+
+        /// <summary>
+        /// Run <paramref name="work"/> with the diagnostic listener attached, then say what fell out of it.
+        ///
+        /// The first call carries the page load and normally has plenty to report, so it goes out as one block - it
+        /// is a report about the page and a reader wants it in one place. Later calls are rebuilds, where the
+        /// seen-set means almost everything is already known and only a genuinely new mistake gets through.
+        /// </summary>
+        private void CollectDiagnostics(Action work)
         {
-            if (sheet == null) return;
+            var fresh = new List<string>();
 
-            HashSet<string> seen = null;
-
-            foreach (Css.StyleRule rule in sheet.Rules)
+            Action<Model.Diagnostic> previous = Model.Diagnostics.Sink;
+            Model.Diagnostics.Sink = d =>
             {
-                foreach (Css.Declaration declaration in rule.Declarations)
-                {
-                    string property = declaration.Property;
-                    if (Css.StyleApplier.Supports(property)) continue;
+                if (_reported.Add(d.Identity)) fresh.Add(d.ToString());
+            };
 
-                    seen ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                    if (!seen.Add(property)) continue;
+            try { work(); }
+            finally { Model.Diagnostics.Sink = previous; }
 
-                    Core.Log?.Warning(
-                        $"[Sideload] {_appId}: CSS property '{property}' is not implemented, so every rule that " +
-                        "uses it is ignored. Check whether the page needs it - if it does, it wants adding to " +
-                        "Sideload rather than working around in the app.");
-                }
-            }
+            if (fresh.Count == 0) return;
+
+            // The cap is there because a stylesheet nobody wrote for this engine can produce hundreds, and past the
+            // first few dozen the list stops being something anyone acts on.
+            const int Cap = 40;
+            var sb = new StringBuilder();
+            sb.Append($"[Sideload] {_appId}: {fresh.Count} Deklaration(en) wirkungslos - der Browser befolgt sie, diese Engine nicht:");
+            foreach (string line in fresh.Take(Cap)) sb.Append("\n    ").Append(line);
+            if (fresh.Count > Cap) sb.Append($"\n    ... und {fresh.Count - Cap} weitere.");
+
+            Core.Log?.Warning(sb.ToString());
         }
 
         private string CollectCss(IDocument document)

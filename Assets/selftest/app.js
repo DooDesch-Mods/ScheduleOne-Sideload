@@ -132,3 +132,7 @@ class SelfTest {
 }
 
 new SelfTest().start();
+
+// Ein Listener auf ein Ereignis, das diese Engine nie zustellt - die fuenfte stille Klasse.
+// Erwartet: eine Zeile im Log, nicht ein Handler, der stumm nie laeuft. Siehe app.css unten.
+document.getElementById("clock").addEventListener("change", () => {});

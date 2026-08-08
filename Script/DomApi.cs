@@ -179,6 +179,23 @@ namespace Sideload.Script
         /// </summary>
         public void ScrollToEnd() => _host.RequestScrollToEnd(Native);
 
+        /// <summary>
+        /// Where this box ended up on screen, in css pixels: `{ x, y, width, height }`, measured from the top left
+        /// of the viewport - the same frame `position: fixed` is measured in, which is the whole point.
+        ///
+        /// A page cannot place anything against another element without this. It is what a browser calls
+        /// getBoundingClientRect, and its absence is why an "on hover" label had to be laid out INSIDE the row it
+        /// belonged to, pushing everything along, instead of floating over it like a tooltip.
+        ///
+        /// Reflects the LAST render. A box the page has just created has not been laid out yet and reads as zeroes;
+        /// ask after the render that builds it, not in the handler that asks for it.
+        /// </summary>
+        public JsRect Rect()
+        {
+            float[] r = _host.RectOf(Native);
+            return new JsRect { x = r[0], y = r[1], width = r[2], height = r[3] };
+        }
+
         public override string ToString() => "<" + Native.LocalName + ">";
 
         /// <summary>
@@ -347,6 +364,16 @@ namespace Sideload.Script
 
         public void AddEventListener(string type, JsValue handler) =>
             _host.AddListener(_document.Body ?? _document.DocumentElement, type, handler);
+    }
+
+    /// <summary>A laid-out rectangle handed to script. Lowercase members on purpose: this crosses into JavaScript
+    /// and reads there exactly as a browser's rect does.</summary>
+    public sealed class JsRect
+    {
+        public double x { get; set; }
+        public double y { get; set; }
+        public double width { get; set; }
+        public double height { get; set; }
     }
 
     /// <summary>The event object handed to a listener.</summary>

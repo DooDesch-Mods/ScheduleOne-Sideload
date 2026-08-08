@@ -20,8 +20,7 @@
 You install Sideload because another mod needs it. It is a framework: on its own it adds no gameplay, no
 menu and no phone app of its own. Mods that build their interface with it list it as a dependency, and a mod
 manager pulls it in for you. It does nothing until such a mod registers an app, and every developer tool in
-it is off unless you switch it on. If you installed it by hand, make sure the three support DLLs landed in
-`UserLibs/` (see [Installation](#installation)) or nothing will load.
+it is off unless you switch it on. It is a single file - there is nothing else to place.
 
 ## For mod authors
 
@@ -60,17 +59,16 @@ because S1API discovers phone apps by type and Sideload declares them at runtime
 ### Recommended: a Thunderstore mod manager
 
 Install with a mod manager (r2modman / Gale) from the Schedule I community; MelonLoader is pulled in
-automatically and the support libraries land in the right folders.
+automatically.
 
 ### Manual
 
 1. Install **MelonLoader 0.7.3** for Schedule I.
 2. Drop **`Sideload.dll`** into your Schedule I `Mods/` folder.
-3. Drop **`AngleSharp.dll`**, **`Jint.dll`** and **`Esprima.dll`** into your Schedule I `UserLibs/` folder.
-   Sideload also accepts them next to itself in `Mods/`, which is where the Nexus package puts them.
 
-Missing support DLLs are the one failure mode worth knowing: the log says
-`[Sideload] runtime dependency not found in UserLibs or next to the mod: <file>` and no page will build.
+That is the whole install. AngleSharp, Jint and Esprima are inside `Sideload.dll`. Older versions shipped them
+as loose files in `UserLibs/`; if yours are still there they are used in preference to the built-in copies and
+nothing breaks, so you can delete them whenever you like.
 
 ## Configuration
 

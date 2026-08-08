@@ -27,9 +27,9 @@
     <RootNamespace>Sideload</RootNamespace>
     <AssemblyName>Sideload</AssemblyName>
     <NeutralLanguage>en-US</NeutralLanguage>
-    <Version>1.10.0</Version>
-    <AssemblyVersion>1.10.0.0</AssemblyVersion>
-    <FileVersion>1.10.0.0</FileVersion>
+    <Version>1.13.0</Version>
+    <AssemblyVersion>1.13.0.0</AssemblyVersion>
+    <FileVersion>1.13.0.0</FileVersion>
     <!-- Copy PackageReference assemblies (AngleSharp) to the output so they can be deployed to UserLibs. -->
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <!-- A RID is required to get the WINDOWS implementation of RID-specific packages. Without it MSBuild copies the
@@ -191,9 +191,16 @@
       <LogicalName>Sideload.Assets.Bundles.sideload-ui</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
-  <!-- AngleSharp 1.1.2 is MIT and pure-managed, so it loads in MelonLoader's .NET 6 runtime as-is. It is deployed to
-       UserLibs as its own DLL rather than merged into Sideload.dll: merging third-party assemblies is what triggered
-       the Nexus heuristic false positive on Personify. -->
+  <!-- The three runtime dependencies travel INSIDE Sideload.dll as embedded resources (see EmbedRuntimeDependencies
+       below and Core.PreloadRuntimeDependency). They used to ship as loose DLLs in UserLibs, and that is what players
+       kept reporting: a mod that "randomly brings four files with it" and no way to tell where they came from or
+       whether they are safe. One file answers that by never raising the question, and it removes a whole class of
+       sync failure with it - a joiner matching a host's mod set now needs Sideload.dll and nothing else.
+
+       The cost is known and accepted: an embedded PE image is exactly the shape an AV or store heuristic looks for,
+       and a merged third-party assembly is what tripped the Nexus false positive on Personify. Release builds are
+       hardened (DebugType=none, stripped assembly identity - Workspace/build/Hardening.props), and a Nexus upload
+       has to be watched rather than assumed. -->
   <ItemGroup>
     <PackageReference Include="AngleSharp" Version="1.1.2" />
     <!-- Jint 3.x (BSD-2, pure managed, Esprima as its parser) runs the app's JavaScript. Pinned to the 3 line because
@@ -209,19 +216,49 @@
   </ItemGroup>
 
   <!--
+    Embed AngleSharp, Jint and Esprima into Sideload.dll.
+
+    Taken from the RESOLVED package assets rather than named by path, so a version bump above changes exactly one
+    place and the embedded copy can never drift from the one the compiler built against.
+
+    The hook points are not interchangeable. AssignTargetPaths is what stamps an EmbeddedResource with the metadata
+    the compiler needs, so an item added after it is silently dropped - the build succeeds, the resource is simply not
+    there. Hooking earlier means ResolveReferences is not available to depend on (it would close a cycle through
+    PrepareForBuild), hence ResolvePackageAssets and its RuntimeCopyLocalItems, which is enough: these three come from
+    packages, not from project references.
+
+    Deliberately an allow-list of three names, not "everything copy-local": System.Text.Encoding.CodePages is also in
+    that set and must NOT ship - Microsoft.NETCore.App 6.0 already carries it, and a second copy is the FileLoadException
+    the PackageReference comment above warns about.
+  -->
+  <Target Name="EmbedRuntimeDependencies" BeforeTargets="AssignTargetPaths" DependsOnTargets="ResolvePackageAssets">
+    <ItemGroup>
+      <SideloadEmbeddedLib Include="@(RuntimeCopyLocalItems)"
+                           Condition="'%(Extension)' == '.dll' AND ('%(Filename)' == 'AngleSharp' OR '%(Filename)' == 'Jint' OR '%(Filename)' == 'Esprima')" />
+      <EmbeddedResource Include="@(SideloadEmbeddedLib)">
+        <LogicalName>Sideload.Libs.%(Filename).dll</LogicalName>
+        <Visible>false</Visible>
+      </EmbeddedResource>
+    </ItemGroup>
+    <Message Importance="high" Text="[Sideload] embedded runtime dependencies: @(SideloadEmbeddedLib->'%(Filename).dll', ', ')" />
+    <!-- Fail the build rather than ship a Sideload that cannot render anything. A package layout change upstream
+         would otherwise be silent here and only surface as "no app will render" on a player's machine. -->
+    <Error Condition="'@(SideloadEmbeddedLib->Count())' != '3'"
+           Text="[Sideload] expected AngleSharp, Jint and Esprima among the resolved package assets, found @(SideloadEmbeddedLib->Count()): @(SideloadEmbeddedLib->'%(Filename)', ', ')" />
+  </Target>
+
+  <!--
     NOTE: there is intentionally NO reference to Sideload.Api here. The modder shim is fully decoupled from the host:
     it locates Sideload.Bridge.SideloadBridge by reflection and everything crosses as BCL types, so the two
     assemblies share no type. The host publishes the bridge; modders consume the shim.
   -->
 
+  <!-- One file to deploy, same as the shipped package. The dependencies used to be copied to UserLibs from here;
+       they are inside the DLL now, and keeping the copy would be worse than pointless: Core.PreloadRuntimeDependency
+       prefers disk, so a stale UserLibs copy would quietly win on every dev machine and the embedded path - the one
+       players actually get - would never be exercised in testing. -->
   <Target Name="PostBuild" AfterTargets="Build" Condition="'$(OS)' == 'Windows_NT'">
     <Exec Condition="Exists('$(ModsDirectory)')" Command="cmd /c if exist &quot;$(ModsDirectory)&quot; copy /Y &quot;$(TargetPath)&quot; &quot;$(ModsDirectory)&quot;" ContinueOnError="true" />
-    <!-- Every runtime dependency goes to UserLibs so MelonLoader can resolve it. Enumerated rather than named one by
-         one: a package's transitive dependencies are easy to miss, and missing one only shows up at runtime. -->
-    <ItemGroup>
-      <SideloadRuntimeDeps Include="$(TargetDir)*.dll" Exclude="$(TargetPath)" />
-    </ItemGroup>
-    <Copy SourceFiles="@(SideloadRuntimeDeps)" DestinationFolder="$(UserLibsDirectory)" Condition="Exists('$(UserLibsDirectory)')" ContinueOnError="true" />
   </Target>
 
 </Project>

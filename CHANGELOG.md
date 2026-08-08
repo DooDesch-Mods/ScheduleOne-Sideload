@@ -3,6 +3,59 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.13.0] - 2026-08-08
+
+### Added
+
+- A mod can put a page anywhere now, not only on the phone: `Surfaces.Mount(rect, id, bundlePrefix)` renders a
+  bundle into any panel it owns, with the same `s1.call` and `s1.on` channel an app has. Side Hustle's main-menu
+  column is the first one.
+  - The page can be written for a fixed width and scale with the panel, the way a phone app does, or work in the
+    panel's own pixels. That is the `designShortSide` argument.
+
+### Fixed
+
+- Colours outside the phone come out as the colours you wrote. A page mounted on a screen overlay had every
+  fill converted a second time, so `#808080` arrived as `#383838` and dark surfaces disappeared into whatever
+  was behind them while the text stayed correct. Phone apps were never affected.
+
+## [1.12.0] - 2026-08-08
+
+### Added
+
+- A page can tell when the pointer arrives on something and when it leaves, through `mouseenter` and
+  `mouseleave`. They do not bubble, the same way a browser handles this pair.
+- `element.rect()` says where a box ended up: `x`, `y`, `width` and `height` in css pixels, measured from the
+  top left of the screen. Together with the two events above, that is what a hover tooltip needs - a floating
+  label that appears over the page instead of pushing the row it belongs to out of shape.
+- Every rule the engine cannot use is named in the log, with the value that got dropped. Until now only an
+  unknown property name was reported and everything else was dropped without a word.
+  - That covers a length it cannot read such as `1rem` or `calc(100% - 8px)`, a colour such as `oklch(...)`
+    or `hsl(...)`, a value it reads and then ignores such as `align-items: baseline` or `position: relative`,
+    a selector it had to reject, a skipped `@media (min-width: ...)` or `@keyframes` block, and a listener on
+    an event this engine never delivers. Each one is named once per app.
+
+### Fixed
+
+- Thin borders show up. A one-pixel border was drawn across 1.64 device pixels and washed out into the surface
+  behind it, so an outlined button could end up as a label with nothing around it. Border widths now land on
+  whole screen pixels.
+- A pane that swapped its whole contents opens at the top instead of halfway down itself. Scroll positions are
+  still kept across a redraw, but only where the content is recognisably the same.
+- The warning about `await fetch(...)` never appeared. Its check could not match anything, so the one mistake
+  that freezes the game for good went unmentioned.
+
+## [1.11.0] - 2026-08-07
+
+### Changed
+
+- Sideload is one file. AngleSharp, Jint and Esprima now live inside `Sideload.dll` instead of as loose
+  DLLs in `UserLibs/`, so a hand install is one drop into `Mods/` and there is nothing left over when you
+  remove the mod. Copies still in `UserLibs/` keep being used, so nothing breaks on an existing install.
+  Delete them whenever you like.
+- Matching a host's mods in Side Hustle no longer has to fetch three support libraries alongside
+  Sideload, which is where that sync used to stall.
+
 ## [1.10.0] - 2026-08-07
 
 ### Added
