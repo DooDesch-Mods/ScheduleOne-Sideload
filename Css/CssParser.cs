@@ -534,6 +534,7 @@ namespace Sideload.Css
             for (int i = 0; i < body.Length; i++)
             {
                 char c = body[i];
+                if (c == '"' || c == '\'') { i = StringEnd(body, i); continue; }
                 if (c == '(') depth++;
                 else if (c == ')') { if (depth > 0) depth--; }
                 else if (depth != 0) continue;
@@ -596,6 +597,10 @@ namespace Sideload.Css
                 if (i < body.Length)
                 {
                     char c = body[i];
+
+                    // A quoted string is text, not structure: `content: "{"` says nothing about nesting.
+                    if (c == '"' || c == '\'') { i = StringEnd(body, i); continue; }
+
                     // Only a top-level ';' ends a declaration. Parentheses adjust the depth and are never separators
                     // themselves, otherwise var(...) and linear-gradient(...) would be cut in half.
                     if (c == '(') { depth++; continue; }
@@ -1074,6 +1079,19 @@ namespace Sideload.Css
             return i;
         }
 
+        /// <summary>Index of the closing quote of the string that opens at <paramref name="quote"/>, or the last
+        /// character when it is never closed.</summary>
+        private static int StringEnd(string s, int quote)
+        {
+            char delimiter = s[quote];
+            for (int i = quote + 1; i < s.Length; i++)
+            {
+                if (s[i] == '\\') { i++; continue; }
+                if (s[i] == delimiter) return i;
+            }
+            return s.Length - 1;
+        }
+
         private static void SkipWhitespace(string s, ref int i)
         {
             while (i < s.Length && char.IsWhiteSpace(s[i])) i++;
@@ -1116,9 +1134,15 @@ namespace Sideload.Css
                 if (i < list.Length)
                 {
                     char c = list[i];
-                    if (c == '(' || c == '[') depth++;
-                    else if (c == ')' || c == ']') depth--;
-                    else if (c != ',' || depth != 0) continue;
+
+                    // The `continue` on the bracket cases is the whole point. Without it a bracket adjusted the
+                    // depth and then fell through to the split below, so EVERY parenthesis cut the list: the
+                    // perfectly ordinary `.a:not(.b), .c` came out as three fragments, two of which are not
+                    // selectors, and the DOM library then rejected the rule whole. Two shipped apps lost a rule
+                    // to this and nobody noticed until the engine started naming what it rejects.
+                    if (c == '(' || c == '[') { depth++; continue; }
+                    if (c == ')' || c == ']') { depth--; continue; }
+                    if (c != ',' || depth != 0) continue;
                 }
                 string s = list.Substring(start, i - start).Trim();
                 start = i + 1;

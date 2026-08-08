@@ -47,7 +47,19 @@ namespace Sideload.Css
             context ??= new StyleContext();
             Dictionary<IElement, List<StyleRule>> matches = MatchRules(document, sheet, context.Orientation);
 
-            Walk(document.DocumentElement, null, matches, context, result);
+            // `@property` declares what a custom property means when nobody has set it. Tailwind v4 leans on that
+            // hard: a utility writes `transform: translate(var(--tw-translate-x), ...)` and expects the registered
+            // initial value to stand in for the axis nobody touched. Without this the whole declaration is
+            // invalid, so a single translate utility takes the transform with it.
+            //
+            // Seeded at the ROOT, so it inherits like any other custom property and any real declaration - which
+            // is applied later, on the element itself - overrides it.
+            var root = ComputedStyle.CreateFrom(null);
+            if (sheet?.InitialVariables != null)
+                foreach (var initial in sheet.InitialVariables)
+                    root.SetVariable(initial.Key, initial.Value);
+
+            Walk(document.DocumentElement, root, matches, context, result);
             return result;
         }
 
@@ -140,7 +152,8 @@ namespace Sideload.Css
                     if ((rule.RequiredStates & state) != rule.RequiredStates) continue;
 
                     foreach (Declaration declaration in rule.Declarations)
-                        winners.Add(new Entry(declaration, rule.SpecificityA, rule.SpecificityB, rule.SpecificityC, rule.Order, false));
+                        winners.Add(new Entry(declaration, rule.SpecificityA, rule.SpecificityB, rule.SpecificityC,
+                                              rule.Order, false, rule.LayerRank));
                 }
             }
 
@@ -301,17 +314,25 @@ namespace Sideload.Css
         private readonly struct Entry
         {
             internal readonly Declaration Declaration;
-            internal readonly int A, B, C, Order;
+            internal readonly int A, B, C, Order, Layer;
             internal readonly bool Inline;
 
-            internal Entry(Declaration declaration, int a, int b, int c, int order, bool inline)
+            internal Entry(Declaration declaration, int a, int b, int c, int order, bool inline, int layer = 0)
             {
-                Declaration = declaration; A = a; B = b; C = c; Order = order; Inline = inline;
+                Declaration = declaration; A = a; B = b; C = c; Order = order; Inline = inline; Layer = layer;
             }
         }
 
-        /// <summary>Ascending cascade order - the last entry applied wins. Importance beats everything, then inline
-        /// style, then specificity, then document order.</summary>
+        /// <summary>
+        /// Ascending cascade order - the last entry applied wins. Importance beats everything, then inline style,
+        /// then the CASCADE LAYER, then specificity, then document order.
+        ///
+        /// The layer sits above specificity and that is the whole point of layers: a one-class utility has to be
+        /// able to beat a three-class component rule, which specificity alone can never let it do. It is also the
+        /// only reason Tailwind's base/components/utilities ordering works at all. `LayerRank` is 0 for unlayered
+        /// and negative for layered, earliest layer most negative, so ascending sort puts unlayered on top - which
+        /// is what CSS says: an author's unlayered styles win over anything they put in a layer.
+        /// </summary>
         private static int Compare(Entry x, Entry y)
         {
             int xi = x.Declaration.Important ? 1 : 0, yi = y.Declaration.Important ? 1 : 0;
@@ -319,6 +340,8 @@ namespace Sideload.Css
 
             int xin = x.Inline ? 1 : 0, yin = y.Inline ? 1 : 0;
             if (xin != yin) return xin - yin;
+
+            if (x.Layer != y.Layer) return x.Layer - y.Layer;
 
             if (x.A != y.A) return x.A - y.A;
             if (x.B != y.B) return x.B - y.B;
