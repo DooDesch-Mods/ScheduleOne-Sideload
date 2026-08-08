@@ -7,32 +7,27 @@ All notable changes to Sideload are documented here. This project adheres to
 
 ### Added
 
-- Sizes written the way the rest of the web writes them: `rem`, `em`, `vh`, `vw`, `vmin`, `vmax`, `ch` and the
-  print units, plus `calc()`, `min()`, `max()` and `clamp()`. One `rem` is 15px here, because that is this
-  renderer's text size; a page that wants the browser's 16 says `html { font-size: 16px }`.
-- Colours in any notation CSS has: `oklch`, `oklab`, `lab`, `lch`, `hsl`, `hwb`, `color-mix`, `currentColor`,
-  and all 148 named colours instead of 17.
-- `@layer`, `@property`, `@supports`, `@media` with a width or height, and nested rules. Layers sort where CSS
-  says they do, above specificity, which is what lets a one-class rule beat a three-class one.
-- A page can ask for the web's own defaults with `<meta name="sideload" content="web-defaults">`. Today that
-  means an undeclared box lays its children out in a ROW, the way a browser does, instead of a column. Existing
-  pages are untouched; this is something a page opts into.
-- Together: a stylesheet built by Tailwind v4 went from producing no rules at all to producing 268, and a v3
-  build from losing two thirds of its declarations to losing 44 percent.
+- Sizes in `rem`, `em`, `vh`, `vw`, `ch` and the print units, plus `calc()`, `min()`, `max()` and `clamp()`.
+  One rem is 15px; write `html { font-size: 16px }` for the browser's.
+- Colours in `oklch`, `oklab`, `lab`, `lch`, `hsl`, `hwb` and `color-mix`, plus `currentColor` and all 148
+  named colours instead of 17.
+- `@layer`, `@property`, `@supports`, width breakpoints and nested rules. Layers sort above specificity, so a
+  one-class rule can beat a three-class one.
+- `<meta name="sideload" content="web-defaults">` lays an undeclared box out as a row, the way a browser does.
+  Pages without it keep the column.
+- A Tailwind v4 build went from producing no rules at all to 268, and a v3 build from losing two thirds of its
+  declarations to 44 percent.
 
 ### Fixed
 
-- Shadows appear. Only one is drawable, and the first one written was taken - which for anything that stacks
-  shadows meant a transparent placeholder was drawn and the real shadow was not. The first VISIBLE one is now
-  used, an `inset` layer costs only itself instead of the whole declaration, and `0 0 0 3px` is a crisp ring
-  rather than a 3px blur around nothing.
-- A selector list with brackets in it survives. `.a:not(.b), .c` was split at every bracket into three
-  fragments, two of which are not selectors, so the rule was thrown away. Two shipped apps had a rule doing
-  nothing because of it.
-- An element that gets a click handler after the page is drawn becomes clickable. It used to stay dead until
-  something unrelated redrew the page.
-- Opening a page a second time no longer re-reads its script from scratch. A large bundle spends most of its
-  startup being parsed, and that work is now done once.
+- Stacked shadows appear. The first layer was drawn, and anything that stacks shadows puts a transparent one
+  first, so the visible shadow was skipped.
+- A selector list keeps its rule. `.a:not(.b), .c` was split at every bracket into fragments that are not
+  selectors, and the whole rule was dropped.
+- An element given a click handler after the page is drawn responds. It used to stay dead until something
+  unrelated redrew the page.
+- Reopening a page no longer reparses its script. A large bundle spends most of its startup being parsed, and
+  that now happens once.
 
 ## [1.13.2] - 2026-08-08
 
