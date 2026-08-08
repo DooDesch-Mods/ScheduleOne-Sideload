@@ -110,7 +110,7 @@ namespace Sideload.Devtools
     {
         private static bool Prefix(string args)
         {
-            try { return !KeyConsole.TryHandle(args); } catch { return true; }
+            try { return !KeyConsole.TryHandle(args) && !SurfaceConsole.TryHandle(args); } catch { return true; }
         }
     }
 
@@ -120,7 +120,7 @@ namespace Sideload.Devtools
     {
         private static bool Prefix(Il2CppSystem.Collections.Generic.List<string> args)
         {
-            try { return !KeyConsole.TryHandle(args); } catch { return true; }
+            try { return !KeyConsole.TryHandle(args) && !SurfaceConsole.TryHandle(args); } catch { return true; }
         }
     }
 }
