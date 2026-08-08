@@ -23,6 +23,7 @@ namespace Sideload.Config
         private static MelonPreferences_Entry<bool> _devToolsFetchFrontend;
         private static MelonPreferences_Entry<bool> _autoOpenApp;
         private static MelonPreferences_Entry<bool> _appKeys;
+        private static MelonPreferences_Entry<bool> _logPageBuilds;
 
         internal static void Initialize()
         {
@@ -76,6 +77,13 @@ namespace Sideload.Config
                 "the app comes up ready to use. Only a key the app asked for is read, only while the game would let " +
                 "you take your phone out anyway, and never while you are typing, paused, or in a station, shop or " +
                 "the console. OFF: no app gets a key and you open everything from the home screen.");
+
+            _logPageBuilds = _category.CreateEntry("LogPageBuilds", false, "Log a line for every page build",
+                "OFF (default): the log gets one line when an app first builds its page, and nothing more. ON: every " +
+                "rebuild reports its parse/style/script/render timings, the viewport it used, each scroll area it " +
+                "found and how many elements it wired. An app that redraws on a timer rebuilds once a second, which " +
+                "is several lines a second in everybody's log - useful while you are building an app, noise for the " +
+                "player running it.");
         }
 
         /// <summary>The gate for the whole devtools feature. False on a fresh install and in every shipped build.</summary>
@@ -87,6 +95,10 @@ namespace Sideload.Config
         /// <summary>The player's one switch over every key an app claimed. On by default: an app only gets the keys it
         /// asked for, and only where the game's own phone key would work.</summary>
         internal static bool AppKeys => _appKeys?.Value ?? true;
+
+        /// <summary>Whether every page build reports what it did. Off by default: a page that redraws on a timer would
+        /// otherwise write several lines a second into the log of every player running that app.</summary>
+        internal static bool LogPageBuilds => _logPageBuilds?.Value ?? false;
 
         internal static int DevToolsPort => Math.Clamp(_devToolsPort?.Value ?? 9333, 1024, 65535);
 
