@@ -7,11 +7,8 @@ All notable changes to Sideload are documented here. This project adheres to
 
 ### Fixed
 
-- Your log stays readable while an app is open. Four lines went out on every page build - the parse and render
-  timings, the viewport, each scroll area and how many elements got wired - and an app that redraws on a timer
-  rebuilds once a second, so those four lines arrived every second for as long as you had it open. Switch them back
-  on with `LogPageBuilds` while you are building an app. The first build of an app, a reload and a viewport change
-  still report on their own, because each happens once.
+- Log spam gone: every page build wrote four lines (timings, viewport, scroll areas, wiring), once a second in an
+  app that redraws. `LogPageBuilds` turns them back on.
 
 ## [1.13.1] - 2026-08-08
 
