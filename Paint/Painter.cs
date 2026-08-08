@@ -421,8 +421,10 @@ namespace Sideload.Paint
             // scroll, or a page that restores its position - would otherwise wait for the next wheel notch.
             CullHitTargets(content, viewport);
 
-            Core.Log?.Msg($"[Sideload] scroll area at ({absX:0.#},{absY:0.#}) size {node.Width:0.#}x{node.Height:0.#}, " +
-                          $"content {ContentBottom(node):0.#}, clip={clip}");
+            // One line per scroll area per build, so it follows the same developer switch as the build report itself.
+            if (Config.Preferences.LogPageBuilds)
+                Core.Log?.Msg($"[Sideload] scroll area at ({absX:0.#},{absY:0.#}) size {node.Width:0.#}x{node.Height:0.#}, " +
+                              $"content {ContentBottom(node):0.#}, clip={clip}");
 
             return content;
         }
