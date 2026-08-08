@@ -12,6 +12,13 @@ namespace Sideload.Dom
     /// markup collapses into a SINGLE text leaf carrying TextMeshPro rich text. That is what buys flowing text
     /// ("Du hast &lt;b&gt;500$&lt;/b&gt; verdient" wrapping as one paragraph) inside an engine whose only layout
     /// model is flexbox - without it, every &lt;b&gt; would become its own flex item and break the line.
+    ///
+    /// The other thing built here is the boxes that have no DOM node at all: <c>::before</c> and <c>::after</c>.
+    /// They come out of the cascade as a style each and are hung on the originating element as its first and last
+    /// child. In a browser they are INLINE and flow with the text; here they are flex items of the element, so
+    /// they stack the way that element stacks its children rather than sitting on the text baseline. The case
+    /// this exists for - an empty box with a size and a background: a badge dot, a divider, an overlay - does not
+    /// notice, and one that would notice usually says `position: absolute` anyway.
     /// </summary>
     internal static class DomBuilder
     {
@@ -25,7 +32,8 @@ namespace Sideload.Dom
             "head", "script", "style", "title", "meta", "link",
         };
 
-        internal static LayoutNode Build(IElement element, Dictionary<IElement, ComputedStyle> styles)
+        internal static LayoutNode Build(IElement element, Dictionary<IElement, ComputedStyle> styles,
+                                         PseudoStyles generated = null)
         {
             if (element == null) return null;
             if (SkippedTags.Contains(element.LocalName)) return null;
@@ -33,13 +41,28 @@ namespace Sideload.Dom
             ComputedStyle style = Style(element, styles);
             if (style.Display == DisplayKind.None) return null;
 
+            LayoutNode before = Generated(element, generated, PseudoElement.Before);
+            LayoutNode after = Generated(element, generated, PseudoElement.After);
+
             if (IsInlineOnly(element, style))
             {
                 string text = CompileInline(element, styles, style);
-                return string.IsNullOrEmpty(text) ? null : new LayoutNode(style, text) { Tag = element };
+                if (before == null && after == null)
+                    return string.IsNullOrEmpty(text) ? null : new LayoutNode(style, text) { Tag = element };
+
+                // A node carries text OR children, so an element that folded into a text leaf cannot hold a
+                // generated box as well. It becomes a container and the WHOLE run moves inside it as one leaf:
+                // splitting the run to make room would undo the fold, and the fold is the only reason a sentence
+                // with a &lt;b&gt; in it wraps as one paragraph instead of breaking into a flex item per tag.
+                var folded = new LayoutNode(style) { Tag = element };
+                if (before != null) folded.Add(before);
+                if (!string.IsNullOrEmpty(text)) folded.Add(new LayoutNode(Contents(style), text) { Tag = element });
+                if (after != null) folded.Add(after);
+                return folded;
             }
 
             var node = new LayoutNode(style) { Tag = element };
+            if (before != null) node.Add(before);
 
             foreach (INode child in element.ChildNodes)
             {
@@ -56,12 +79,86 @@ namespace Sideload.Dom
 
                 if (child is IElement childElement)
                 {
-                    LayoutNode built = Build(childElement, styles);
+                    LayoutNode built = Build(childElement, styles, generated);
                     if (built != null) node.Add(built);
                 }
             }
 
+            if (after != null) node.Add(after);
             return node;
+        }
+
+        /// <summary>
+        /// The box a <c>::before</c> or <c>::after</c> rule asked for, or null when the sheet asked for none.
+        ///
+        /// The cascade only hands one over once <c>content</c> has been set, so there is nothing left to test here
+        /// beyond <c>display: none</c>. A string becomes a text leaf; an empty string becomes an empty box, which
+        /// is the badge dot and the divider and why <c>content: ""</c> has to mean something.
+        ///
+        /// No Tag, on purpose. A generated box has no DOM node, and handing it the originating element would make
+        /// the painter treat it AS that element: reuse the element's input field, paint its &lt;img&gt; a second
+        /// time, and take over its entry in the painted map, which is what hover restyling looks the box up in.
+        ///
+        /// On an &lt;input&gt;, a &lt;textarea&gt; or an &lt;img&gt; the box is built and then never drawn, because
+        /// the painter stops at those without walking their children. A browser generates nothing there at all;
+        /// the difference is that the box still takes up room here.
+        /// </summary>
+        private static LayoutNode Generated(IElement element, PseudoStyles generated, PseudoElement which)
+        {
+            ComputedStyle style = generated?.Get(element, which);
+            if (style == null || style.Display == DisplayKind.None) return null;
+
+            return style.Content.Length == 0
+                ? new LayoutNode(style)
+                : new LayoutNode(style, Escape(style.Content));
+        }
+
+        /// <summary>
+        /// The element's style with everything belonging to its BOX taken back out.
+        ///
+        /// For the run of text that moves inside an element which grew a generated box. The element's own node is
+        /// now the container around it, so leaving the padding, border, background, size and transform on the text
+        /// as well would draw each of them twice and inset the words by double the padding. What stays is what a
+        /// run of text is made of: the font, the colour, the alignment and the whitespace handling.
+        /// </summary>
+        private static ComputedStyle Contents(ComputedStyle style)
+        {
+            ComputedStyle inner = style.Clone();
+
+            inner.Padding = Edges.Zero;
+            inner.Margin = Edges.Zero;
+            inner.BorderWidth = Edges.Zero;
+            inner.BorderColor = RgbaColor.Transparent;
+            inner.BorderRadius = default;
+            inner.BackgroundColor = RgbaColor.Transparent;
+            inner.HasGradient = false;
+            inner.HasShadow = false;
+
+            inner.Width = Len.Auto;
+            inner.Height = Len.Auto;
+            inner.MinWidth = Len.None;
+            inner.MinHeight = Len.None;
+            inner.MaxWidth = Len.None;
+            inner.MaxHeight = Len.None;
+
+            inner.Position = PositionKind.Static;
+            inner.Inset = new Edges { Top = Len.Auto, Right = Len.Auto, Bottom = Len.Auto, Left = Len.Auto };
+            inner.OverflowX = OverflowKind.Visible;
+            inner.OverflowY = OverflowKind.Visible;
+
+            inner.FlexGrow = 0f;
+            inner.FlexShrink = 1f;
+            inner.FlexBasis = Len.Auto;
+            inner.AlignSelf = AlignKind.Auto;
+
+            inner.TranslateX = 0f;
+            inner.TranslateY = 0f;
+            inner.ScaleX = 1f;
+            inner.ScaleY = 1f;
+            inner.RotateDeg = 0f;
+
+            inner.Content = null;
+            return inner;
         }
 
         /// <summary>
