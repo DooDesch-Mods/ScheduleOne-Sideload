@@ -27,9 +27,12 @@
     <RootNamespace>Sideload</RootNamespace>
     <AssemblyName>Sideload</AssemblyName>
     <NeutralLanguage>en-US</NeutralLanguage>
-    <Version>1.14.2</Version>
-    <AssemblyVersion>1.14.2.0</AssemblyVersion>
-    <FileVersion>1.14.2.0</FileVersion>
+    <!-- NEVER bumped. The release version comes from the tag: CI builds with -p:Version=X.Y.Z, which is a
+         global MSBuild property and therefore cannot be overwritten from here. A local build without one
+         says 0.0.0-dev, which is exactly what it is. AssemblyVersion and FileVersion are left to the SDK -
+         pinning them by hand is how they drift out of Version.
+         Rules: Workspace/docs/RELEASE-PROCESS.md, section "Versioning". -->
+    <Version Condition="'$(Version)' == ''">0.0.0-dev</Version>
     <!-- Copy PackageReference assemblies (AngleSharp) to the output so they can be deployed to UserLibs. -->
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <!-- A RID is required to get the WINDOWS implementation of RID-specific packages. Without it MSBuild copies the
