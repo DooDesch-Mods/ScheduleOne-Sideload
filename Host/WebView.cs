@@ -499,13 +499,18 @@ namespace Sideload.Host
             tCss = css;
             tScript = script;
 
-            Core.Log?.Msg($"[Sideload] {_appId}: read {tRead} ms, html {tParse - tRead} ms, css {tCss - tParse} ms, "
-                          + $"script {tScript - tCss} ms, render {phase.ElapsedMilliseconds - tScript} ms "
-                          + $"= {phase.ElapsedMilliseconds} ms.");
+            // Per-build reporting is off unless a developer asks for it: an app that redraws on a timer rebuilds once a
+            // second, and these two lines plus the wiring and scroll-area lines then fill the log of every player
+            // running that app. Config.Preferences.LogPageBuilds turns them all on together.
+            if (Config.Preferences.LogPageBuilds)
+                Core.Log?.Msg($"[Sideload] {_appId}: read {tRead} ms, html {tParse - tRead} ms, css {tCss - tParse} ms, "
+                              + $"script {tScript - tCss} ms, render {phase.ElapsedMilliseconds - tScript} ms "
+                              + $"= {phase.ElapsedMilliseconds} ms.");
             _rebuildQueued = false;   // the render above already covers whatever the script just changed
 
-            Core.Log?.Msg($"[Sideload] page built: viewport {cssW:0.#}x{cssH:0.#} css px at {scale:0.###}x, " +
-                          $"{_sheet.Rules.Count} rule(s).");
+            if (Config.Preferences.LogPageBuilds)
+                Core.Log?.Msg($"[Sideload] page built: viewport {cssW:0.#}x{cssH:0.#} css px at {scale:0.###}x, " +
+                              $"{_sheet.Rules.Count} rule(s).");
         }
 
         /// <summary>Elements a page may contain. Generous - the largest app here is under a hundred - but finite.</summary>
@@ -1097,7 +1102,7 @@ namespace Sideload.Host
                 wired++;
             }
 
-            Core.Log?.Msg($"[Sideload] interaction wired on {wired} element(s).");
+            if (Config.Preferences.LogPageBuilds) Core.Log?.Msg($"[Sideload] interaction wired on {wired} element(s).");
         }
 
         /// <summary>
