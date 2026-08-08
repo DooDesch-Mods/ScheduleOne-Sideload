@@ -484,6 +484,12 @@ namespace Sideload.Host
                     // not get two different answers.
                     ViewportWidth = cssW,
                     ViewportHeight = cssH,
+
+                    // `<meta name="sideload" content="web-defaults">`. Anything built by a web toolchain wants
+                    // this: Tailwind writes `.flex` and means a row, because in a browser it never has to say so.
+                    // Opt-in and not a new default - every existing app is written against the column, and
+                    // flipping it under them would reflow every box they did not think to declare.
+                    WebDefaults = WantsWebDefaults(_document),
                 };
 
                 // The script runs BEFORE the first render, not after: it may build half the page and it registers
@@ -1436,6 +1442,26 @@ namespace Sideload.Host
             if (fresh.Count > Cap) sb.Append($"\n    ... und {fresh.Count - Cap} weitere.");
 
             Core.Log?.Warning(sb.ToString());
+        }
+
+        /// <summary>
+        /// Whether the page asked for the web's defaults with `&lt;meta name="sideload" content="web-defaults"&gt;`.
+        ///
+        /// The meta element never reaches the box tree - `DomBuilder` drops the whole head - but AngleSharp has
+        /// parsed it and the document still carries it, which is exactly what makes a meta tag the right place
+        /// for this: it is where the web puts a document-level switch, and it costs the renderer nothing.
+        ///
+        /// Comma-separated, so later switches can join without a second attribute.
+        /// </summary>
+        private static bool WantsWebDefaults(IDocument document)
+        {
+            string content = document?.QuerySelector("meta[name=sideload]")?.GetAttribute("content");
+            if (string.IsNullOrWhiteSpace(content)) return false;
+
+            foreach (string flag in content.Split(','))
+                if (flag.Trim().Equals("web-defaults", StringComparison.OrdinalIgnoreCase)) return true;
+
+            return false;
         }
 
         private string CollectCss(IDocument document)

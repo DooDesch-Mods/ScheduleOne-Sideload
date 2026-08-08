@@ -194,6 +194,25 @@ namespace Sideload.Script
 
         /// <summary>Execute the app's script. Any error becomes a log line and disables scripting for this page - the
         /// rendered HTML stays on screen, which is far more useful than a blank panel.</summary>
+        /// <summary>
+        /// Scripts already parsed, keyed by their own text.
+        ///
+        /// Parsing dominates loading a page and nothing else comes close: a bundled framework measures around
+        /// 63 ms to parse and 3 ms to run, on a 250 ms budget for the whole build. The same bytes are parsed
+        /// again on every reload, on every reopen, and once per view when two apps share a library - so the
+        /// cache is keyed by the SOURCE rather than by the file name, and a hot reload that did not actually
+        /// change a file costs nothing.
+        ///
+        /// Static, and deliberately: two apps running the same framework should parse it once between them.
+        /// A prepared script carries no engine state, so sharing one across engines is safe.
+        /// </summary>
+        private static readonly Dictionary<string, Prepared<Esprima.Ast.Script>> _prepared =
+            new Dictionary<string, Prepared<Esprima.Ast.Script>>(StringComparer.Ordinal);
+
+        /// <summary>Above this the cache is not worth the memory - a small inline script parses in microseconds
+        /// and there are many of them, while the one that costs is always a bundle.</summary>
+        private const int PrepareFrom = 2048;
+
         internal void Run(string source, string fileName)
         {
             if (string.IsNullOrWhiteSpace(source)) return;
@@ -202,7 +221,18 @@ namespace Sideload.Script
 
             try
             {
-                Engine.Execute(source, fileName);
+                if (source.Length >= PrepareFrom)
+                {
+                    if (!_prepared.TryGetValue(source, out Prepared<Esprima.Ast.Script> script))
+                        _prepared[source] = script = Engine.PrepareScript(source, fileName);
+
+                    Engine.Execute(script);
+                }
+                else
+                {
+                    Engine.Execute(source, fileName);
+                }
+
                 Core.Log?.Msg($"[Sideload] {fileName} executed ({source.Length} chars).");
             }
             catch (Exception e)
@@ -305,6 +335,13 @@ namespace Sideload.Script
                 byType[type] = handlers = new List<JsValue>();
 
             handlers.Add(handler);
+
+            // A listener decides whether the element gets a hit target at all - WireInteraction asks
+            // ElementsListeningFor. Adding one to an already-painted box therefore has to rebuild, or the box
+            // stays inert until some unrelated change happens to repaint it. That is invisible while a page
+            // wires everything up front, and immediate the moment anything attaches a handler later, which is
+            // what every framework does when a prop appears.
+            MarkDirty();
         }
 
         internal void RemoveListener(IElement element, string type, JsValue handler)
@@ -313,7 +350,12 @@ namespace Sideload.Script
             if (!_listeners.TryGetValue(element, out Dictionary<string, List<JsValue>> byType)) return;
             if (!byType.TryGetValue(type, out List<JsValue> handlers)) return;
 
-            handlers.RemoveAll(h => ReferenceEquals(h, handler) || Equals(h, handler));
+            if (handlers.RemoveAll(h => ReferenceEquals(h, handler) || Equals(h, handler)) > 0)
+            {
+                // Same reason as adding one: the last listener leaving means the element should stop taking the
+                // pointer, and until a rebuild it keeps intercepting clicks meant for whatever is behind it.
+                MarkDirty();
+            }
         }
 
         /// <summary>Which elements listen for that event type. Asked before wiring pointer handling, so a page that

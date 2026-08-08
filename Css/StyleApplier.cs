@@ -579,18 +579,51 @@ namespace Sideload.Css
             }
         }
 
+        /// <summary>
+        /// The one shadow this engine can draw, picked out of however many the author wrote.
+        ///
+        /// Only one is drawable - the shader carries a single offset, blur and colour per box - but WHICH one
+        /// matters more than it sounds. The layers are read separately and the first VISIBLE one wins, rather
+        /// than the first one written. Tailwind composes `box-shadow` out of five slots and the first two are
+        /// normally `0 0 #0000`, so taking the first layer meant every `shadow-*` utility painted nothing at all.
+        ///
+        /// An `inset` layer is skipped rather than fatal, for the same reason: the outer-shadow pass cannot draw
+        /// it, but the layers after it may be perfectly drawable and used to be lost with it.
+        /// </summary>
         private static void ApplyShadow(ComputedStyle s, string value)
         {
             if (Is(value, "none")) { s.HasShadow = false; return; }
 
-            string[] p = ValueParser.SplitTopLevel(value);
-            float x = 0f, y = 0f, blur = 0f;
-            var color = new RgbaColor(0f, 0f, 0f, 0.5f);
-            int lengths = 0;
-
-            foreach (string part in p)
+            foreach (string layer in ValueParser.SplitTopLevel(value, commaSeparated: true))
             {
-                if (Is(part, "inset")) return;   // inset shadows are not drawable with the outer-shadow pass
+                if (!TryShadowLayer(layer, out float x, out float y, out float blur, out RgbaColor color)) continue;
+
+                // A fully transparent layer is a placeholder, not a shadow. Skipping it is the whole fix.
+                if (color.IsTransparent) continue;
+
+                s.HasShadow = true;
+                s.ShadowOffsetX = x;
+                s.ShadowOffsetY = y;
+                s.ShadowBlur = blur;
+                s.ShadowColor = color;
+                return;
+            }
+        }
+
+        /// <summary>One comma-separated layer. False for an inset layer or one without the two mandatory offsets.</summary>
+        private static bool TryShadowLayer(string layer, out float x, out float y, out float blur, out RgbaColor color)
+        {
+            x = y = blur = 0f;
+            color = new RgbaColor(0f, 0f, 0f, 0.5f);
+
+            int lengths = 0;
+            foreach (string part in ValueParser.SplitTopLevel(layer))
+            {
+                if (Is(part, "inset")) return false;
+
+                // The fourth length is the spread radius, which the shader has no channel for. Reading it as a
+                // blur would be worse than dropping it: a focus ring written `0 0 0 3px` would come out as a
+                // 3px blur around nothing.
                 if (lengths < 3 && ValueParser.TryLength(part, Context, out Len l) && l.Unit == LenUnit.Px)
                 {
                     if (lengths == 0) x = l.Value;
@@ -599,16 +632,11 @@ namespace Sideload.Css
                     lengths++;
                     continue;
                 }
-                if (ValueParser.TryColor(part, out RgbaColor c)) color = c;
+
+                if (ValueParser.TryColor(part, CurrentColor, out RgbaColor c)) color = c;
             }
 
-            if (lengths < 2) return;   // offset-x and offset-y are mandatory in CSS
-
-            s.HasShadow = true;
-            s.ShadowOffsetX = x;
-            s.ShadowOffsetY = y;
-            s.ShadowBlur = blur;
-            s.ShadowColor = color;
+            return lengths >= 2;   // offset-x and offset-y are mandatory in CSS
         }
 
         private static void ApplyLineHeight(ComputedStyle s, string value)

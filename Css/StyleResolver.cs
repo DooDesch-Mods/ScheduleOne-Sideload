@@ -26,6 +26,15 @@ namespace Sideload.Css
         /// A page that wants the browser's scale sets `html { font-size: 16px }` and gets it.
         /// </summary>
         internal float RootFontSize = 15f;
+
+        /// <summary>
+        /// Whether this page wants the web's defaults rather than the engine's.
+        ///
+        /// Set by `&lt;meta name="sideload" content="web-defaults"&gt;` in the bundle. Today that means one thing -
+        /// an undeclared flex container lays out as a ROW, the way a browser does - and it exists because a page
+        /// built by a web toolchain says `.flex` and means a row. See ComputedStyle.DefaultDirection.
+        /// </summary>
+        internal bool WebDefaults;
     }
 
     /// <summary>
@@ -45,6 +54,9 @@ namespace Sideload.Css
             if (document?.DocumentElement == null) return result;
 
             context ??= new StyleContext();
+
+            ComputedStyle.DefaultDirection = context.WebDefaults ? FlexDirection.Row : FlexDirection.Column;
+
             Dictionary<IElement, List<StyleRule>> matches = MatchRules(document, sheet, context.Orientation);
 
             // `@property` declares what a custom property means when nobody has set it. Tailwind v4 leans on that
