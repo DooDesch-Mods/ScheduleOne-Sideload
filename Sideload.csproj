@@ -43,8 +43,6 @@
 
     <WorkspaceLibPath Condition="'$(WorkspaceLibPath)' == ''">$(MSBuildThisFileDirectory)../Workspace/lib</WorkspaceLibPath>
     <!-- Local default is the _MPTest copy; the MCP build tool overrides this with the active test slot. -->
-    <ModsDirectory Condition="'$(ModsDirectory)' == ''">$(MSBuildThisFileDirectory)../_MPTest/Schedule I/Mods</ModsDirectory>
-    <UserLibsDirectory Condition="'$(UserLibsDirectory)' == ''">$(MSBuildThisFileDirectory)../_MPTest/Schedule I/UserLibs</UserLibsDirectory>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(TargetFramework)' == 'net6.0'">
@@ -69,6 +67,10 @@
        released version and cannot drift out of it. MUST come after the Workspace Remove so CI keeps the file. -->
   <Import Project="$(MSBuildThisFileDirectory)../Workspace/build/ModVersion.props" Condition="Exists('$(MSBuildThisFileDirectory)../Workspace/build/ModVersion.props')" />
   <Import Project="$(MSBuildThisFileDirectory)Workspace/build/ModVersion.props" Condition="Exists('$(MSBuildThisFileDirectory)Workspace/build/ModVersion.props')" />
+  <!-- Where a build is allowed to install: the test copy by default, and never a real game installation
+       without saying so out loud. See Workspace/build/Deploy.props. -->
+  <Import Project="$(MSBuildThisFileDirectory)../Workspace/build/Deploy.props" Condition="Exists('$(MSBuildThisFileDirectory)../Workspace/build/Deploy.props')" />
+  <Import Project="$(MSBuildThisFileDirectory)Workspace/build/Deploy.props" Condition="Exists('$(MSBuildThisFileDirectory)Workspace/build/Deploy.props')" />
 
   <!-- Mod loader references -->
   <ItemGroup>
