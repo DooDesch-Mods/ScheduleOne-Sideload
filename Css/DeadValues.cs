@@ -33,16 +33,16 @@ namespace Sideload.Css
             {
                 case "display":
                     // Everything the engine has no box model for. It keeps whatever display it already had,
-                    // which is a column flex container - so `grid` quietly becomes a vertical stack.
-                    if (IsAny(value, "grid", "inline-grid", "inline", "inline-flex", "contents",
+                    // which is a column flex container - so `table` quietly becomes a vertical stack.
+                    if (IsAny(value, "inline", "inline-flex", "contents",
                                      "table", "table-row", "table-cell", "table-row-group", "list-item", "flow-root"))
                         Report(property, value);
                     break;
 
                 case "position":
-                    // `relative` is mapped to static, so it neither offsets nor becomes a containing block -
-                    // which breaks the relative/absolute pair, the standard way to anchor anything.
-                    if (IsAny(value, "relative", "sticky")) Report(property, value);
+                    // `sticky` keeps whatever position it already had - so a header written to stay put scrolls
+                    // away with the rest of the list and nothing anywhere says so.
+                    if (IsAny(value, "sticky")) Report(property, value);
                     break;
 
                 case "align-items":
@@ -87,16 +87,6 @@ namespace Sideload.Css
                     ReportProperty(property);
                     break;
 
-                case "margin":
-                case "margin-top":
-                case "margin-right":
-                case "margin-bottom":
-                case "margin-left":
-                    // Auto margins resolve to zero, so `margin: 0 auto` does not centre - one of the most common
-                    // pieces of layout CSS there is.
-                    if (Contains(value, "auto")) Report(property, value);
-                    break;
-
                 case "box-shadow":
                     // An `inset` keyword drops the entire declaration; a fourth length (spread) is eaten; a
                     // comma list is merged into one shadow. All three are how focus rings and elevation are
@@ -117,6 +107,44 @@ namespace Sideload.Css
                 case "font-family":
                     // Only the first family is kept; the rest of the stack is never tried.
                     if (Contains(value, ",")) Report(property, value + "  (only the first family counts)");
+                    break;
+
+                // --- grid: the parts of it that are their own feature ----------------------------------
+                //
+                // Grid itself is implemented. These four are not, and each one is a second placement or sizing
+                // model rather than a variation on the one that is: named areas come with a name table and a
+                // string syntax, subgrid inherits a parent's tracks, dense packing is a different placement
+                // algorithm, and masonry is not a grid at all. None appears in a Tailwind utility.
+
+                case "grid-template-areas":
+                    // The case in the switch is `break;` - the property is read and nothing is placed by it.
+                    ReportProperty(property);
+                    break;
+
+                case "grid-auto-flow":
+                    // Row-major is the only flow there is here. `column` transposes the placement pass and
+                    // `dense` backfills holes; both come out as plain row flow instead.
+                    if (ContainsAny(value, "column", "dense")) Report(property, value);
+                    break;
+
+                case "grid-template-columns":
+                case "grid-template-rows":
+                case "grid-template":
+                    if (ContainsAny(value, "subgrid", "masonry")) Report(property, value);
+                    else if (Contains(value, "\"") || Contains(value, "'"))
+                        Report(property, value + "  (named areas are not placed by)");
+                    else if (GridParser.NamesLines(value)) Report(property, value + "  (the line names do nothing)");
+                    break;
+
+                case "grid-column":
+                case "grid-row":
+                case "grid-column-start":
+                case "grid-column-end":
+                case "grid-row-start":
+                case "grid-row-end":
+                case "grid-area":
+                    // A named line or area. Numbers and `span` place fine; a name has nothing to resolve against.
+                    if (GridParser.NamesAnArea(value)) Report(property, value);
                     break;
             }
         }

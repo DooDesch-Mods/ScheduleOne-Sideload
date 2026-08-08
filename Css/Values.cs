@@ -135,18 +135,38 @@ namespace Sideload.Css
         internal bool IsZero => TopLeft == 0f && TopRight == 0f && BottomRight == 0f && BottomLeft == 0f;
     }
 
-    internal enum DisplayKind { Flex, None }
+    /// <summary>
+    /// Which box a rule is about: the element itself, or one of the two boxes CSS generates around its content.
+    ///
+    /// Only <c>::before</c> and <c>::after</c>. <c>::marker</c>, <c>::first-line</c>, <c>::first-letter</c>,
+    /// <c>::selection</c> and <c>::backdrop</c> are each a feature of their own - a list bullet, a line box, a
+    /// single glyph, a paint-time overlay - and not one of them is a box that can be built from a style and
+    /// dropped into the tree, which is all this enum buys.
+    /// </summary>
+    internal enum PseudoElement { None, Before, After }
+
+    /// <summary>
+    /// Which layout algorithm a box runs on its children.
+    ///
+    /// <c>Grid</c> covers `grid` and `inline-grid` alike: the inline/block distinction is a block-layout idea and
+    /// this engine has no block layout, so the two differ in nothing it can observe.
+    /// </summary>
+    internal enum DisplayKind { Flex, None, Grid }
     internal enum FlexDirection { Row, RowReverse, Column, ColumnReverse }
     internal enum FlexWrap { NoWrap, Wrap, WrapReverse }
     internal enum Justify { FlexStart, FlexEnd, Center, SpaceBetween, SpaceAround, SpaceEvenly }
     internal enum AlignKind { Auto, FlexStart, FlexEnd, Center, Stretch, Baseline }
     /// <summary>
+    /// <c>Relative</c> stays IN the flow: it takes its normal room, siblings are placed as if it had not moved, and
+    /// only the painted rectangle is shifted by the insets. Being in the flow is the whole difference from
+    /// <c>Absolute</c>, and it is why a badge nudged two pixels up does not drag the row it sits in with it.
+    ///
     /// <c>Fixed</c> is the TOP LAYER: taken out of the flow like <c>Absolute</c>, but positioned against the viewport
     /// instead of the parent, painted after everything else, and clipped by nothing. That last part is the reason it
     /// is a separate kind rather than a flag - an overlay written next to the thing it belongs to sits inside some
     /// scrolling pane, and as an absolute box it would be cropped to that pane and scroll away with it.
     /// </summary>
-    internal enum PositionKind { Static, Absolute, Fixed }
+    internal enum PositionKind { Static, Relative, Absolute, Fixed }
     internal enum OverflowKind { Visible, Hidden, Scroll, Auto }
 
     /// <summary>The easing curves worth having. `linear` for a value that must read as constant, the ease family for

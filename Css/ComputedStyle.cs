@@ -35,6 +35,30 @@ namespace Sideload.Css
         internal Len RowGap = Len.Zero;
         internal Len ColumnGap = Len.Zero;
 
+        // --- grid ---------------------------------------------------------------------------------------------
+        // Only read when Display is Grid. They sit next to the flex properties rather than in a side object
+        // because ComputedStyle is copied per element per render, and a second allocation per box for fields
+        // that are null on almost every one of them costs more than the eight slots do.
+
+        /// <summary>`grid-template-columns`. Null means `none`: no explicit columns, so every column is implicit.</summary>
+        internal GridTemplate GridTemplateColumns;
+
+        /// <summary>`grid-template-rows`. Null means `none`.</summary>
+        internal GridTemplate GridTemplateRows;
+
+        /// <summary>How a row past the end of the explicit grid is sized. `auto` by default, as in CSS.</summary>
+        internal GridTrack GridAutoRows = GridTrack.Auto;
+
+        internal GridTrack GridAutoColumns = GridTrack.Auto;
+
+        internal GridPlacement GridColumn;
+        internal GridPlacement GridRow;
+
+        /// <summary>The inline-axis counterpart of <see cref="AlignItems"/> for a grid container.</summary>
+        internal AlignKind JustifyItems = AlignKind.Stretch;
+
+        internal AlignKind JustifySelf = AlignKind.Auto;
+
         internal Edges Padding = Edges.Zero;
         internal Edges Margin = Edges.Zero;
 
@@ -47,6 +71,18 @@ namespace Sideload.Css
 
         internal PositionKind Position = PositionKind.Static;
         internal Edges Inset = new Edges { Top = Len.Auto, Right = Len.Auto, Bottom = Len.Auto, Left = Len.Auto };
+
+        /// <summary>
+        /// The stack level this box paints on among its siblings. Null is `auto` - the default, and document order.
+        ///
+        /// Only meaningful on a POSITIONED box: CSS gives a static box no stack level, and
+        /// <see cref="Layout.StackingOrder"/> follows that and says so rather than ignoring the declaration quietly.
+        ///
+        /// Not inherited, and deliberately absent from <see cref="CreateFrom"/>. A z-index that cascaded would put a
+        /// whole subtree on the level its container asked for, and the children of a lifted panel could no longer be
+        /// ordered against each other at all.
+        /// </summary>
+        internal int? ZIndex;
 
         internal OverflowKind OverflowX = OverflowKind.Visible;
         internal OverflowKind OverflowY = OverflowKind.Visible;
@@ -108,6 +144,21 @@ namespace Sideload.Css
         /// <summary>False for `-s1-scroll: instant`. A wheel notch is eased by default; a box that follows the
         /// pointer - a map, a canvas - wants the jump, because there smoothing is lag.</summary>
         internal bool SmoothScroll = true;
+
+        // --- generated content ---
+
+        /// <summary>
+        /// What a generated box carries: the text `content` resolved to, or null when it was never set or set to
+        /// `none`.
+        ///
+        /// Null against empty is the whole distinction CSS rests a pseudo-element on. Without `content` there is no
+        /// box at all; with `content: ""` there is a box carrying nothing, which is the badge dot, the divider and
+        /// the overlay - so the empty string is a value here and not the absence of one.
+        ///
+        /// Stored on every style and read only for `::before` and `::after`. On an ordinary element `content` does
+        /// nothing, which is also what it does in a browser.
+        /// </summary>
+        internal string Content;
 
         internal TextAlignKind TextAlign = TextAlignKind.Left;
         internal WhiteSpaceKind WhiteSpace = WhiteSpaceKind.Normal;

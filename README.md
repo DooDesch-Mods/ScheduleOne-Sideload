@@ -327,7 +327,9 @@ Honest limits, because a browser sets different expectations:
   screen, drawn over everything else, and it takes the pointer - which is how an app gets a modal), the
   box and paint properties, text properties, custom
   properties with `var()`, `transform` and `transition`, `overflow` (`hidden` clips, `auto` and `scroll`
-  clip and scroll), and `@media (orientation: ...)`. Units are `px` and `%` only. No Grid, no `float`, no `z-index`, no `em`/`rem`/`vh`/`vw`, no `calc()`, no `hsl()`. Anything
+  clip and scroll), `z-index` on a positioned box (it orders siblings inside one parent; there are no
+  stacking contexts, so it cannot lift a box out of the subtree it was written in), and
+  `@media (orientation: ...)`. Units are `px` and `%` only. No Grid, no `float`, no `em`/`rem`/`vh`/`vw`, no `calc()`, no `hsl()`. Anything
   unsupported is named in the log, once per app, so a rule that never took effect is findable instead
   of a mystery.
 - **Text that has to line up.** `font-family: monospace` draws in a real monospaced face - the game ships none,
@@ -341,6 +343,11 @@ Honest limits, because a browser sets different expectations:
   `-s1-ghost-color`; nothing has to be measured and no monospaced font is needed.
 - **Selectors:** everything AngleSharp's `querySelectorAll` accepts, plus the state pseudo-classes `:hover`,
   `:active`, `:focus`, `:disabled` on the last compound. State rules repaint, they do not re-lay-out.
+- **`::before` and `::after`.** A rule that sets `content` grows a real box as the element's first or last
+  child - `content: ""` with a size and a background is the badge dot, the divider, the overlay; a string or
+  `attr(data-x)` is text. Without `content` there is no box. Write two colons: `:before` generates nothing.
+  The box is a flex item of its element rather than inline, so it stacks the way that element stacks. No
+  counters, no images, and no other pseudo-element.
 - **JavaScript:** ES2015 through ES2024 on Jint, including `#private` fields, optional chaining and
   generators. Globals are `document`, `s1`, `console`, `fetch`, `Promise` and the four timer functions.
   There is no `window` and no `localStorage`; `s1.storage` replaces the latter.

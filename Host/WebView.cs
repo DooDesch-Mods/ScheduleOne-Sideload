@@ -584,10 +584,11 @@ namespace Sideload.Host
             Transitions.Clear();
             _styleWas.Clear();
 
-            Dictionary<IElement, ComputedStyle> styles = StyleResolver.Resolve(_document, _sheet, _context);
+            Dictionary<IElement, ComputedStyle> styles =
+                StyleResolver.Resolve(_document, _sheet, _context, out PseudoStyles generated);
 
             IElement body = _document.Body ?? _document.DocumentElement;
-            LayoutNode tree = DomBuilder.Build(body, styles);
+            LayoutNode tree = DomBuilder.Build(body, styles, generated);
             if (tree == null) { ShowError("the document has no renderable content"); return; }
 
             var measure = new TmpMeasure(_root);

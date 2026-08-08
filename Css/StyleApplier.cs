@@ -64,6 +64,7 @@ namespace Sideload.Css
                 // ---------------------------------------------------------------- layout --
                 case "display":
                     if (Is(value, "none")) s.Display = DisplayKind.None;
+                    else if (Is(value, "grid") || Is(value, "inline-grid")) s.Display = DisplayKind.Grid;
                     else if (Is(value, "flex") || Is(value, "block") || Is(value, "inline-block")) s.Display = DisplayKind.Flex;
                     break;
 
@@ -98,6 +99,64 @@ namespace Sideload.Css
                 case "row-gap": if (Length(value, out Len rgap)) s.RowGap = rgap; break;
                 case "column-gap": if (Length(value, out Len cgap)) s.ColumnGap = cgap; break;
 
+                // ------------------------------------------------------------------ grid --
+                //
+                // `gap` above is shared with flexbox rather than duplicated - it is one property in CSS and one
+                // pair of fields here, and which algorithm reads them is the only difference.
+
+                case "grid-template-columns": if (Template(value, out GridTemplate tc)) s.GridTemplateColumns = tc; break;
+                case "grid-template-rows": if (Template(value, out GridTemplate tr)) s.GridTemplateRows = tr; break;
+
+                case "grid-template": ApplyGridTemplate(s, value); break;
+
+                case "grid-auto-columns": if (Track(value, out GridTrack ac)) s.GridAutoColumns = ac; break;
+                case "grid-auto-rows": if (Track(value, out GridTrack ar)) s.GridAutoRows = ar; break;
+
+                // Only the default `row` flow is implemented. `column` and `dense` are separate placement
+                // algorithms rather than variations on this one, and DeadValues names them.
+                case "grid-auto-flow": break;
+
+                // Named areas are the other placement model entirely, built on names this engine does not carry.
+                // The case exists so the property is RECOGNISED and can be reported as ignored, the same way
+                // `border-style` is - without it the name alone would look unimplemented and the value would
+                // never be mentioned.
+                case "grid-template-areas": break;
+
+                case "grid-column": if (Placement(value, out GridPlacement gc)) s.GridColumn = gc; break;
+                case "grid-row": if (Placement(value, out GridPlacement gr)) s.GridRow = gr; break;
+
+                case "grid-column-start": if (Line(value, out GridLine cs2)) s.GridColumn = new GridPlacement(cs2, s.GridColumn.End); break;
+                case "grid-column-end": if (Line(value, out GridLine ce)) s.GridColumn = new GridPlacement(s.GridColumn.Start, ce); break;
+                case "grid-row-start": if (Line(value, out GridLine rs)) s.GridRow = new GridPlacement(rs, s.GridRow.End); break;
+                case "grid-row-end": if (Line(value, out GridLine re)) s.GridRow = new GridPlacement(s.GridRow.Start, re); break;
+
+                case "grid-area": ApplyGridArea(s, value); break;
+
+                case "justify-items": s.JustifyItems = ParseAlign(value, s.JustifyItems); break;
+                case "justify-self": s.JustifySelf = ParseAlign(value, s.JustifySelf); break;
+
+                // `place-items: center` and `place-self: end` are one word for both axes; two words set the
+                // block axis first, as CSS orders them.
+                case "place-items":
+                case "place-self":
+                {
+                    string[] p = ValueParser.SplitTopLevel(value);
+                    if (p.Length == 0 || p.Length > 2) { Diagnostics.Report(DiagnosticKind.ValueRejected, property, value); break; }
+
+                    AlignKind block = ParseAlign(p[0], AlignKind.Auto);
+                    AlignKind inline = ParseAlign(p.Length == 2 ? p[1] : p[0], AlignKind.Auto);
+                    if (block == AlignKind.Auto || inline == AlignKind.Auto)
+                    {
+                        // Half a shorthand applied is worse than none of it: the half that landed is invisible.
+                        Diagnostics.Report(DiagnosticKind.ValueRejected, property, value);
+                        break;
+                    }
+
+                    if (property == "place-items") { s.AlignItems = block; s.JustifyItems = inline; }
+                    else { s.AlignSelf = block; s.JustifySelf = inline; }
+                    break;
+                }
+
                 case "padding": if (Edges_(value, out Edges pad)) s.Padding = pad; break;
                 case "padding-top": if (Length(value, out Len pt)) s.Padding.Top = pt; break;
                 case "padding-right": if (Length(value, out Len pr)) s.Padding.Right = pr; break;
@@ -120,7 +179,8 @@ namespace Sideload.Css
                 case "position":
                     if (Is(value, "fixed")) s.Position = PositionKind.Fixed;
                     else if (Is(value, "absolute")) s.Position = PositionKind.Absolute;
-                    else if (Is(value, "static") || Is(value, "relative")) s.Position = PositionKind.Static;
+                    else if (Is(value, "relative")) s.Position = PositionKind.Relative;
+                    else if (Is(value, "static")) s.Position = PositionKind.Static;
                     break;
 
                 case "inset": if (Edges_(value, out Edges inset)) s.Inset = inset; break;
@@ -128,6 +188,15 @@ namespace Sideload.Css
                 case "right": if (Length(value, out Len ir)) s.Inset.Right = ir; break;
                 case "bottom": if (Length(value, out Len ib)) s.Inset.Bottom = ib; break;
                 case "left": if (Length(value, out Len il)) s.Inset.Left = il; break;
+
+                // An integer only, as in CSS: `z-index: 1.5` is invalid there and is dropped here with a word about
+                // it. Whether the box may use the level is not decided until the whole rule has been applied - a
+                // sheet is free to write `z-index` before `position` - so that question belongs to the paint order
+                // and is answered in Layout/StackingOrder, which also reports the declarations it has to ignore.
+                case "z-index":
+                    if (Is(value, "auto")) s.ZIndex = null;
+                    else if (Integer(value, out int z)) s.ZIndex = z;
+                    break;
 
                 case "overflow": s.OverflowX = s.OverflowY = ParseOverflow(value, s.OverflowX); break;
                 case "overflow-x": s.OverflowX = ParseOverflow(value, s.OverflowX); break;
@@ -219,6 +288,23 @@ namespace Sideload.Css
                     break;
                 case "text-overflow": s.TextOverflowEllipsis = Is(value, "ellipsis"); break;
 
+                // ----------------------------------------------------- generated content --
+                //
+                // Only `::before` and `::after` read this: DomBuilder turns a style whose Content is not null into
+                // a box, and nothing looks at it on an ordinary element.
+                //
+                // Read: a quoted string, several of them concatenated, `attr()` (resolved by the cascade, which is
+                // the only place that knows the element), and `none`. Deliberately NOT read: counter() and
+                // counters(), the quote keywords, url() and the gradient functions, and the `/ "alt text"` suffix.
+                // Each of those is its own feature - a counter needs a numbering pass over the document, an image
+                // needs the paint layer - and none is reachable from a Tailwind utility. Such a value is refused
+                // whole, so it lands in the log as a rejected value rather than as an empty box nobody ordered.
+                case "content":
+                    if (Is(value, "none") || Is(value, "normal")) { s.Content = null; break; }
+                    if (TryContent(value, out string generated)) s.Content = generated;
+                    else Diagnostics.Report(DiagnosticKind.ValueRejected, property, value);
+                    break;
+
                 default: return false;
             }
 
@@ -266,6 +352,17 @@ namespace Sideload.Css
             return false;
         }
 
+        /// <summary>A whole number. Separate from <see cref="Number"/> because the properties that want one refuse a
+        /// fraction rather than rounding it - a rounded `z-index: 1.5` would be a level the author never wrote.</summary>
+        private static bool Integer(string value, out int number)
+        {
+            if (int.TryParse(value, System.Globalization.NumberStyles.Integer,
+                             System.Globalization.CultureInfo.InvariantCulture, out number)) return true;
+
+            Diagnostics.Report(DiagnosticKind.ValueRejected, _applying, value);
+            return false;
+        }
+
         private static bool Number(string value, out float number)
         {
             if (ValueParser.TryNumber(value, out number)) return true;
@@ -277,6 +374,42 @@ namespace Sideload.Css
         {
             if (TryEdges(value, out edges)) return true;
             Diagnostics.Report(DiagnosticKind.ValueRejected, _applying, value);
+            return false;
+        }
+
+        /// <summary>A track list. `none` parses to a null template, which is what "no explicit tracks" is.</summary>
+        private static bool Template(string value, out GridTemplate template)
+        {
+            if (GridParser.TryTrackList(value, Context, out template)) return true;
+            Diagnostics.Report(DiagnosticKind.ValueRejected, _applying, value);
+            return false;
+        }
+
+        private static bool Track(string value, out GridTrack track)
+        {
+            if (GridParser.TryTrack(value, Context, out track)) return true;
+            Diagnostics.Report(DiagnosticKind.ValueRejected, _applying, value);
+            return false;
+        }
+
+        /// <summary>
+        /// A `grid-column` / `grid-row` value.
+        ///
+        /// A NAMED line is not reported here even though it fails to parse: it is a missing feature rather than a
+        /// bad value, <see cref="DeadValues"/> already says so in those words, and two reports about one
+        /// declaration is how a report gets skipped.
+        /// </summary>
+        private static bool Placement(string value, out GridPlacement placement)
+        {
+            if (GridParser.TryPlacement(value, out placement)) return true;
+            if (!GridParser.NamesAnArea(value)) Diagnostics.Report(DiagnosticKind.ValueRejected, _applying, value);
+            return false;
+        }
+
+        private static bool Line(string value, out GridLine line)
+        {
+            if (GridParser.TryLine(value, out line)) return true;
+            if (!GridParser.NamesAnArea(value)) Diagnostics.Report(DiagnosticKind.ValueRejected, _applying, value);
             return false;
         }
 
@@ -350,6 +483,47 @@ namespace Sideload.Css
             s.FlexGrow = grow;
             s.FlexShrink = shrink;
             s.FlexBasis = basis;
+        }
+
+        /// <summary>
+        /// `grid-template: &lt;rows&gt; / &lt;columns&gt;` - the two-track-list form only.
+        ///
+        /// The third form of this shorthand takes `grid-template-areas` strings, and that is the named-area model
+        /// this engine does not place by. A value carrying a string is left alone here and named by
+        /// <see cref="DeadValues"/>, rather than half-applied: taking the track lists out of it and dropping the
+        /// areas would lay the tracks out correctly and put every item in the wrong one.
+        /// </summary>
+        private static void ApplyGridTemplate(ComputedStyle s, string value)
+        {
+            if (Is(value, "none")) { s.GridTemplateRows = null; s.GridTemplateColumns = null; return; }
+            if (value.IndexOf('"') >= 0 || value.IndexOf('\'') >= 0) return;
+
+            if (!GridParser.TrySplitSlash(value, out string rows, out string columns)
+                || !GridParser.TryTrackList(rows, Context, out GridTemplate rowTracks)
+                || !GridParser.TryTrackList(columns, Context, out GridTemplate columnTracks))
+            {
+                Diagnostics.Report(DiagnosticKind.ValueRejected, _applying, value);
+                return;
+            }
+
+            s.GridTemplateRows = rowTracks;
+            s.GridTemplateColumns = columnTracks;
+        }
+
+        /// <summary>`grid-area: 1 / 2 / 3 / 4` - row-start, column-start, row-end, column-end, as CSS orders them.</summary>
+        private static void ApplyGridArea(ComputedStyle s, string value)
+        {
+            if (GridParser.TryArea(value, out GridPlacement rows, out GridPlacement columns))
+            {
+                s.GridRow = rows;
+                s.GridColumn = columns;
+                return;
+            }
+
+            // A named area is a missing feature, not a bad value, and DeadValues has already said which.
+            if (GridParser.NamesAnArea(value)) return;
+
+            Diagnostics.Report(DiagnosticKind.ValueRejected, _applying, value);
         }
 
         private static void ApplyBackground(ComputedStyle s, string value)
@@ -649,6 +823,138 @@ namespace Sideload.Css
             if (ValueParser.TryNumber(value, out float n)) s.LineHeight = Len.Percent(n * 100f);
         }
 
+        // ----------------------------------------------------------- generated content --
+
+        /// <summary>
+        /// The text `content` produces, or false when the value says something this engine cannot make text out of.
+        ///
+        /// A value is a LIST whose parts concatenate, which is what makes <c>content: "(" attr(id) ")"</c> one
+        /// string rather than three.
+        ///
+        /// An `attr()` still standing here was never resolved, because only the cascade knows which element it
+        /// reads - see <see cref="StyleResolver"/>. It contributes nothing instead of failing the value, so the
+        /// sheet audit, which reads a stylesheet with no document behind it at all, does not report every icon
+        /// utility in a build as unreadable.
+        /// </summary>
+        private static bool TryContent(string value, out string text)
+        {
+            text = null;
+            var sb = new System.Text.StringBuilder();
+
+            foreach (string part in SplitOutsideStrings(value))
+            {
+                if (part.Length >= 2 && (part[0] == '"' || part[0] == '\'') && part[part.Length - 1] == part[0])
+                {
+                    Unescape(part.Substring(1, part.Length - 2), sb);
+                    continue;
+                }
+
+                if (part.StartsWith("attr(", StringComparison.OrdinalIgnoreCase)
+                    && part.EndsWith(")", StringComparison.Ordinal)) continue;
+
+                return false;
+            }
+
+            text = sb.ToString();
+            return true;
+        }
+
+        /// <summary>
+        /// The space-separated parts of a value, with a quoted string kept whole.
+        ///
+        /// <see cref="ValueParser.SplitTopLevel"/> cannot be used for this: it cuts at every space, and the space
+        /// in <c>content: "a b"</c> is text rather than a separator.
+        /// </summary>
+        private static List<string> SplitOutsideStrings(string value)
+        {
+            var parts = new List<string>();
+            var current = new System.Text.StringBuilder();
+            int depth = 0;
+
+            for (int i = 0; i < value.Length; i++)
+            {
+                char c = value[i];
+
+                if (c == '"' || c == '\'')
+                {
+                    int end = StringEnd(value, i);
+                    current.Append(value, i, end - i + 1);
+                    i = end;
+                    continue;
+                }
+
+                if (c == '(') depth++;
+                else if (c == ')') depth--;
+
+                if (depth == 0 && char.IsWhiteSpace(c))
+                {
+                    if (current.Length > 0) { parts.Add(current.ToString()); current.Clear(); }
+                    continue;
+                }
+
+                current.Append(c);
+            }
+
+            if (current.Length > 0) parts.Add(current.ToString());
+            return parts;
+        }
+
+        /// <summary>Index of the closing quote of the string opening at <paramref name="quote"/>, or the last
+        /// character when it is never closed.</summary>
+        private static int StringEnd(string s, int quote)
+        {
+            char delimiter = s[quote];
+            for (int i = quote + 1; i < s.Length; i++)
+            {
+                if (s[i] == '\\') { i++; continue; }
+                if (s[i] == delimiter) return i;
+            }
+            return s.Length - 1;
+        }
+
+        /// <summary>
+        /// CSS string escapes. A backslash before a character means that character; a backslash before up to six
+        /// hex digits means that code point, and one space after the digits belongs to the escape rather than to
+        /// the text.
+        ///
+        /// The hex form is not decoration: an icon font is addressed by code point and nothing else -
+        /// <c>content: "\f00c"</c> - and it is how Tailwind spells anything unusual in <c>content-['\2014']</c>.
+        /// </summary>
+        private static void Unescape(string raw, System.Text.StringBuilder sb)
+        {
+            for (int i = 0; i < raw.Length; i++)
+            {
+                if (raw[i] != '\\') { sb.Append(raw[i]); continue; }
+                if (i + 1 >= raw.Length) return;                 // a trailing backslash escapes nothing
+
+                int digits = 0;
+                int code = 0;
+                while (digits < 6 && i + 1 + digits < raw.Length && Hex(raw[i + 1 + digits], out int nibble))
+                {
+                    code = code * 16 + nibble;
+                    digits++;
+                }
+
+                if (digits == 0) { sb.Append(raw[i + 1]); i++; continue; }
+
+                i += digits;
+                if (i + 1 < raw.Length && raw[i + 1] == ' ') i++;
+
+                // Beyond the last code point, or in the surrogate range where there is no character to make.
+                if (code == 0 || code > 0x10FFFF || (code >= 0xD800 && code <= 0xDFFF)) sb.Append('�');
+                else sb.Append(char.ConvertFromUtf32(code));
+            }
+        }
+
+        private static bool Hex(char c, out int value)
+        {
+            if (c >= '0' && c <= '9') { value = c - '0'; return true; }
+            if (c >= 'a' && c <= 'f') { value = c - 'a' + 10; return true; }
+            if (c >= 'A' && c <= 'F') { value = c - 'A' + 10; return true; }
+            value = 0;
+            return false;
+        }
+
         // --------------------------------------------------------------------- helpers --
 
         private static bool TryEdges(string value, out Edges edges)
@@ -726,12 +1032,19 @@ namespace Sideload.Css
             Is(v, "space-around") ? Justify.SpaceAround :
             Is(v, "space-evenly") ? Justify.SpaceEvenly : fallback;
 
+        /// <summary>
+        /// One alignment keyword, for all four of `align-items`, `align-self`, `justify-items` and `justify-self`.
+        ///
+        /// `normal` is the initial value of every one of them and behaves as `stretch` in both flexbox and grid,
+        /// which is why it maps there rather than being refused - a grid that says it explicitly must not fall
+        /// back to whatever the previous declaration left behind.
+        /// </summary>
         private static AlignKind ParseAlign(string v, AlignKind fallback) =>
             Is(v, "auto") ? AlignKind.Auto :
-            Is(v, "flex-start") || Is(v, "start") ? AlignKind.FlexStart :
-            Is(v, "flex-end") || Is(v, "end") ? AlignKind.FlexEnd :
+            Is(v, "flex-start") || Is(v, "start") || Is(v, "self-start") ? AlignKind.FlexStart :
+            Is(v, "flex-end") || Is(v, "end") || Is(v, "self-end") ? AlignKind.FlexEnd :
             Is(v, "center") ? AlignKind.Center :
-            Is(v, "stretch") ? AlignKind.Stretch :
+            Is(v, "stretch") || Is(v, "normal") ? AlignKind.Stretch :
             Is(v, "baseline") ? AlignKind.Baseline : fallback;
 
         private static OverflowKind ParseOverflow(string v, OverflowKind fallback) =>

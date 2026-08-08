@@ -3,6 +3,22 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.15.0] - 2026-08-08
+
+### Added
+
+- CSS Grid. `display: grid`, tracks in `fr`, `repeat()`, `minmax()` and `auto-fit`, `gap`, `span` and line numbers.
+- `::before` and `::after` draw. `content` takes a string, `attr()` or `none`, and no `content` still means no box.
+- `z-index` decides what covers what. A positioned box with a level paints above its siblings whatever the markup says.
+- `margin: 0 auto` centres and `margin-left: auto` pushes to the end, on both axes. They take the free space before
+  `justify-content` gets it, the way flexbox says.
+- `position: relative` moves a box and leaves its space behind, so the relative-plus-absolute pattern works.
+
+### Changed
+
+- A Tailwind v4 build lands 93% of its declarations, up from 88%. Add `sideload-preview.css` and the Vite plugin's
+  lowering pass to get there.
+
 ## [1.14.5] - 2026-08-08
 
 ### Fixed
