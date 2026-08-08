@@ -284,8 +284,8 @@ namespace Sideload.Host
             if (_watcher != null && _watcher.ShouldReload(deltaSeconds)) { Reload(); return; }
 #endif
 
-            Transitions.Tick(deltaSeconds);
-            _script?.Tick(deltaSeconds);
+            using (Profiling.Phase.Of("sideload.transitions")) Transitions.Tick(deltaSeconds);
+            using (Profiling.Phase.Of("sideload.script")) _script?.Tick(deltaSeconds);
 
             // Nothing is laid out while the app is off screen, and the pending flags are deliberately LEFT SET so it
             // happens the moment it is shown again.
@@ -313,21 +313,24 @@ namespace Sideload.Host
             // Before the rebuild, not after: a key that changes the DOM should show up in THIS frame's render rather
             // than waiting a frame, which is the difference between a list that walks with the arrows and one that
             // lags one press behind.
-            TickKeyboard();
-            HoldTyping();
+            using (Profiling.Phase.Of("sideload.keyboard"))
+            {
+                TickKeyboard();
+                HoldTyping();
+            }
 
             // A resize lays the page out too, so it subsumes whatever rebuild was pending.
             if (_resizeQueued)
             {
                 _resizeQueued = false;
                 _rebuildQueued = false;
-                Resize();
+                using (Profiling.Phase.Of("sideload.resize")) Resize();
                 return;
             }
 
             if (!_rebuildQueued) return;
             _rebuildQueued = false;
-            Rebuild();
+            using (Profiling.Phase.Of("sideload.rebuild")) Rebuild();
         }
 
         /// <summary>

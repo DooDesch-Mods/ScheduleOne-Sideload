@@ -114,24 +114,27 @@ namespace Sideload
         /// changes adds up to.</summary>
         public override void OnUpdate()
         {
-            Host.WebView.TickAll(UnityEngine.Time.deltaTime);
+            // Every phase below is named for the profiler. Without Snitch compiled in these are empty structs the JIT
+            // removes; with it, the overlay names the phase that costs the frame instead of charging all of it to
+            // OnUpdate and leaving the reader to guess.
+            using (Profiling.Phase.Of("sideload.views")) Host.WebView.TickAll(UnityEngine.Time.deltaTime);
 
             // The rotate keys, and the "Rotate Phone" line in the game's key strip that explains them.
-            Phone.TurnInput.Tick();
+            using (Profiling.Phase.Of("sideload.turninput")) Phone.TurnInput.Tick();
 
             // Keys that reach an app with the phone still in the player's pocket. Returns on the first line when no
             // app claimed one, which is every frame unless something asked.
-            Input.GlobalKeys.Tick();
+            using (Profiling.Phase.Of("sideload.globalkeys")) Input.GlobalKeys.Tick();
 
             // Escape and right-click while one of our fields holds the keyboard - the game refuses to raise the exit
             // action at all in that state, and an app that keeps the caret would otherwise have no way out.
-            Phone.TypingExit.Tick();
+            using (Profiling.Phase.Of("sideload.typingexit")) Phone.TypingExit.Tick();
 
             // The first-open fade. Does nothing on a frame with no fade running.
-            Phone.AppFade.Tick(UnityEngine.Time.unscaledDeltaTime);
+            using (Profiling.Phase.Of("sideload.appfade")) Phone.AppFade.Tick(UnityEngine.Time.unscaledDeltaTime);
 
             // Where the devtools protocol crosses onto the main thread. Returns immediately when the server is off.
-            Devtools.Cdp.CdpServer.Pump();
+            using (Profiling.Phase.Of("sideload.cdp")) Devtools.Cdp.CdpServer.Pump();
 #if DEBUG
             Devtools.AutoOpen.Tick();
 #if !SNITCH
@@ -141,6 +144,13 @@ namespace Sideload
         }
 
         /// <summary>Quitting the game must not leave a stray DevTools window behind - it belongs to the session.</summary>
+        /// <summary>A new scene is the one event that can honestly change whether the input assets exist, so it is
+        /// where the rotate-action search is allowed to try again after it gave up.</summary>
+        public override void OnSceneWasLoaded(int buildIndex, string sceneName)
+        {
+            Phone.TurnPrompt.RearmActionSearch();
+        }
+
         public override void OnDeinitializeMelon()
         {
             Devtools.Cdp.CdpServer.Stop();

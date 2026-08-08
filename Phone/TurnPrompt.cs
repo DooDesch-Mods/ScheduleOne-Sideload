@@ -59,6 +59,11 @@ namespace Sideload.Phone
         private static float _moduleCacheAt = float.NegativeInfinity;
         private const float ModuleRescanInterval = 0.25f;   // four scene scans a second, only while an app is open
 
+        /// <summary>How many empty sweeps before the hint gives up. Reset by a scene change, same as the actions.</summary>
+        private const int MaxModuleMisses = 8;
+
+        private static int _moduleMisses;
+
         /// <summary>The row container the game is currently drawing into - i.e. the parent of whatever prompt rows are
         /// live. Derived from the rows themselves because the panel objects are pooled and their containers private.
         ///
@@ -68,6 +73,16 @@ namespace Sideload.Phone
         private static RectTransform CurrentModule()
         {
             if (_moduleCache != null && _moduleCache.gameObject.activeInHierarchy) return _moduleCache;
+
+            // The same give-up as the rotate actions, and for the same measured reason. A prompt strip that has no
+            // line to derive the container from - because the player's context has none on screen, or because this
+            // build draws them differently - would otherwise be re-derived four times a second for as long as a
+            // turnable app is open. That is a FindObjectsOfType sweep of the whole scene, and it was the single
+            // largest cost in the frame: 22 ms on average with spikes past 125 ms, which is a stutter the player
+            // feels and, worse, a window in which a click's press and release land on different objects and uGUI
+            // drops it. Without the hint the phone still turns; with the sweep, nothing else works properly.
+            if (_moduleMisses >= MaxModuleMisses) return null;
+
             if (Time.unscaledTime - _moduleCacheAt < ModuleRescanInterval) return null;
             _moduleCacheAt = Time.unscaledTime;
 
@@ -83,7 +98,16 @@ namespace Sideload.Phone
                 }
             }
             catch { }
-            return _moduleCache;
+
+            if (_moduleCache != null) { _moduleMisses = 0; return _moduleCache; }
+
+            if (++_moduleMisses >= MaxModuleMisses)
+            {
+                Core.Log?.Warning("[Sideload] no input prompt strip to hang the turn hint on - the hint stays off. "
+                    + "Searching further would cost a scene sweep four times a second.");
+            }
+
+            return null;
         }
 
         private static void Remove()
@@ -198,21 +222,61 @@ namespace Sideload.Phone
         private static float _actionsResolvedAt = float.NegativeInfinity;
         private const float ActionRetryInterval = 2f;
 
+        /// <summary>How many times the search may come back empty before it stops asking. See below.</summary>
+        private const int MaxActionAttempts = 5;
+
+        private static int _actionAttempts;
+
         /// <summary>The rotate-left / rotate-right action asset. Shared with <see cref="TurnInput"/> so the naming
         /// knowledge lives in one place.
         ///
         /// Resolved ONCE and kept: <see cref="FindAction"/> walks every loaded object, which is far too expensive for
         /// the per-frame caller. Until the assets turn up (the scene may not have loaded them yet) the search is
-        /// retried, but only every couple of seconds.</summary>
+        /// retried, but only every couple of seconds.
+        ///
+        /// <para>And only a handful of times. A build where these assets are named differently, or absent, would
+        /// otherwise retry for the whole session: two full <c>Resources.FindObjectsOfTypeAll</c> sweeps every two
+        /// seconds, for as long as a turnable app is on screen. Measured at 137 ms per sweep pair on a real save -
+        /// a hitch every two seconds, and a click whose press and release straddle one is dropped by uGUI. Giving up
+        /// costs the key hint and the rotate keys; the player can still turn the phone from the app, and an app that
+        /// asks can still call setOrientation. A missing convenience beats a stutter nobody can explain.</para>
+        /// </summary>
         internal static InputActionReference RotateAction(bool left)
         {
-            if (_leftAction == null && _rightAction == null && Time.unscaledTime - _actionsResolvedAt >= ActionRetryInterval)
+            if (_leftAction == null && _rightAction == null
+                && _actionAttempts < MaxActionAttempts
+                && Time.unscaledTime - _actionsResolvedAt >= ActionRetryInterval)
             {
                 _actionsResolvedAt = Time.unscaledTime;
+                _actionAttempts++;
+
                 _leftAction = FindAction("RotateLeft");
                 _rightAction = FindAction("RotateRight");
+
+                if (_leftAction == null && _rightAction == null && _actionAttempts >= MaxActionAttempts)
+                {
+                    Core.Log?.Warning("[Sideload] the rotate actions (RotateLeft/RotateRight) are not in this build - "
+                        + "the phone can still be turned from an app, but the rotate keys and their key hint stay off. "
+                        + "Searching further would cost a scene sweep every two seconds.");
+                }
             }
+
             return left ? _leftAction : _rightAction;
+        }
+
+        /// <summary>
+        /// Let the search run again, for a scene that may only now have loaded the input assets.
+        ///
+        /// Called on a scene change rather than on a timer: the give-up above is permanent by design, and a new scene
+        /// is the one event that can honestly change the answer.
+        /// </summary>
+        internal static void RearmActionSearch()
+        {
+            _moduleMisses = 0;
+
+            if (_leftAction != null || _rightAction != null) return;
+            _actionAttempts = 0;
+            _actionsResolvedAt = float.NegativeInfinity;
         }
 
         private static InputActionReference FindAction(string actionName)

@@ -3,6 +3,18 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.14.2] - 2026-08-08
+
+### Fixed
+
+- Apps no longer stutter while open. The turn hint swept the whole scene four times a second looking for
+  a prompt strip this build does not have, and cost 22 ms of every frame.
+
+### Changed
+
+- The rotate keys and their hint switch off after a few empty searches, with one line in the log saying so.
+  An app can still turn the phone itself.
+
 ## [1.14.1] - 2026-08-08
 
 ### Fixed
