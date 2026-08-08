@@ -63,7 +63,7 @@ namespace Sideload.Bundle
             if (File.Exists(file))
             {
                 try { return File.ReadAllBytes(file); }
-                catch (Exception e) { Core.Log?.Warning($"[Sideload] override unreadable ({file}): {e.Message}"); }
+                catch (Exception e) { Core.Log?.Warning($"override unreadable ({file}): {e.Message}"); }
             }
 
             using Stream s = OpenEmbedded(path);
@@ -82,7 +82,7 @@ namespace Sideload.Bundle
             }
             catch (Exception e)
             {
-                Core.Log?.Warning($"[Sideload] embedded resource unreadable ({ResourceNameOf(path)}): {e.Message}");
+                Core.Log?.Warning($"embedded resource unreadable ({ResourceNameOf(path)}): {e.Message}");
                 return null;
             }
         }

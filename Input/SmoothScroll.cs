@@ -79,7 +79,7 @@ namespace Sideload.Input
                     var pointer = data.TryCast<PointerEventData>();
                     if (pointer != null) Wheel(scroll, pointer);
                 }
-                catch (Exception e) { Core.Log?.Warning("[Sideload] smooth scroll failed: " + e.Message); }
+                catch (Exception e) { Core.Log?.Warning("smooth scroll failed: " + e.Message); }
             }));
 
             trigger.triggers.Add(entry);

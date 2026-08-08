@@ -182,7 +182,7 @@ namespace Sideload.Host
         {
             if (host == null)
             {
-                Core.Log?.Error("[Sideload] mount target is null - nothing will render.");
+                Core.Log?.Error("mount target is null - nothing will render.");
                 return null;
             }
 
@@ -235,7 +235,7 @@ namespace Sideload.Host
                 }
 
                 try { view.Tick(deltaSeconds); }
-                catch (Exception e) { Core.Log?.Error("[Sideload] view tick failed: " + e); }
+                catch (Exception e) { Core.Log?.Error("view tick failed: " + e); }
             }
         }
 
@@ -255,7 +255,7 @@ namespace Sideload.Host
             // so this only bites when something else asks for a build early.
             if (_root == null || !_root.gameObject.activeInHierarchy)
             {
-                Core.Log?.Warning($"[Sideload] {_appId}: asked to build while off screen - deferred until it is shown.");
+                Core.Log?.Warning($"{_appId}: asked to build while off screen - deferred until it is shown.");
                 return;
             }
 
@@ -269,11 +269,11 @@ namespace Sideload.Host
             try { Build(); }
             catch (Exception e)
             {
-                Core.Log?.Error("[Sideload] building the page failed: " + e);
+                Core.Log?.Error("building the page failed: " + e);
                 ShowError(e.Message);
             }
 
-            Core.Log?.Msg($"[Sideload] {_appId}: first build took {watch.ElapsedMilliseconds} ms.");
+            Core.Log?.Msg($"{_appId}: first build took {watch.ElapsedMilliseconds} ms.");
         }
 
         private void Tick(float deltaSeconds)
@@ -341,7 +341,7 @@ namespace Sideload.Host
         /// </summary>
         internal void Reload()
         {
-            Core.Log?.Msg("[Sideload] reloading the page from disk.");
+            Core.Log?.Msg("reloading the page from disk.");
 
             // Images are cached for the session, so without this an edited PNG keeps drawing the old one.
             Paint.ImageCache.Forget(_appId);
@@ -417,7 +417,7 @@ namespace Sideload.Host
             _context.Orientation = cssW >= cssH ? Orientation.Landscape : Orientation.Portrait;
 
             Rebuild();
-            Core.Log?.Msg($"[Sideload] {_appId}: viewport is now {cssW:0.#}x{cssH:0.#} css px ({_context.Orientation}).");
+            Core.Log?.Msg($"{_appId}: viewport is now {cssW:0.#}x{cssH:0.#} css px ({_context.Orientation}).");
 
             // After the layout, not before: a handler that changes the document then gets one more rebuild on the
             // next tick rather than being rendered away by this one.
@@ -437,7 +437,7 @@ namespace Sideload.Host
             float hostW = hostRect.width, hostH = hostRect.height;
             if (hostW < 1f || hostH < 1f)
             {
-                Core.Log?.Warning($"[Sideload] host rect is {hostW}x{hostH} - the page cannot be sized yet.");
+                Core.Log?.Warning($"host rect is {hostW}x{hostH} - the page cannot be sized yet.");
                 return;
             }
 
@@ -521,13 +521,13 @@ namespace Sideload.Host
             // second, and these two lines plus the wiring and scroll-area lines then fill the log of every player
             // running that app. Config.Preferences.LogPageBuilds turns them all on together.
             if (Config.Preferences.LogPageBuilds)
-                Core.Log?.Msg($"[Sideload] {_appId}: read {tRead} ms, html {tParse - tRead} ms, css {tCss - tParse} ms, "
+                Core.Log?.Msg($"{_appId}: read {tRead} ms, html {tParse - tRead} ms, css {tCss - tParse} ms, "
                               + $"script {tScript - tCss} ms, render {phase.ElapsedMilliseconds - tScript} ms "
                               + $"= {phase.ElapsedMilliseconds} ms.");
             _rebuildQueued = false;   // the render above already covers whatever the script just changed
 
             if (Config.Preferences.LogPageBuilds)
-                Core.Log?.Msg($"[Sideload] page built: viewport {cssW:0.#}x{cssH:0.#} css px at {scale:0.###}x, " +
+                Core.Log?.Msg($"page built: viewport {cssW:0.#}x{cssH:0.#} css px at {scale:0.###}x, " +
                               $"{_sheet.Rules.Count} rule(s).");
         }
 
@@ -655,7 +655,7 @@ namespace Sideload.Host
             }
             catch (Exception e)
             {
-                Core.Log?.Error("[Sideload] rebuilding the page failed: " + e);
+                Core.Log?.Error("rebuilding the page failed: " + e);
             }
         }
 
@@ -821,7 +821,7 @@ namespace Sideload.Host
                 Model.KeyDeclarationSet keys = Model.KeyDeclarationSet.Parse(pair.Key.GetAttribute("data-keys"));
 
                 foreach (string refusal in keys.Refused)
-                    Core.Log?.Warning($"[Sideload] {_appId}: data-keys ignored {refusal}");
+                    Core.Log?.Warning($"{_appId}: data-keys ignored {refusal}");
 
                 if (keys.Count == 0) continue;
 
@@ -1137,7 +1137,7 @@ namespace Sideload.Host
                 wired++;
             }
 
-            if (Config.Preferences.LogPageBuilds) Core.Log?.Msg($"[Sideload] interaction wired on {wired} element(s).");
+            if (Config.Preferences.LogPageBuilds) Core.Log?.Msg($"interaction wired on {wired} element(s).");
         }
 
         /// <summary>
@@ -1176,7 +1176,7 @@ namespace Sideload.Host
             }
             catch (Exception e)
             {
-                Core.Log?.Warning("[Sideload] restyle failed: " + e.Message);
+                Core.Log?.Warning("restyle failed: " + e.Message);
             }
         }
 
@@ -1283,7 +1283,7 @@ namespace Sideload.Host
                 }
 
                 string code = _bundle?.ReadText(src.TrimStart('/'));
-                if (code == null) { Core.Log?.Warning($"[Sideload] script not found: {src}"); continue; }
+                if (code == null) { Core.Log?.Warning($"script not found: {src}"); continue; }
 
                 _script.Run(code, src);
                 any = true;
@@ -1508,7 +1508,7 @@ namespace Sideload.Host
                 string path = href.TrimStart('/');
                 string css = _bundle?.ReadText(path) ?? Framework(path);
 
-                if (css == null) { Core.Log?.Warning($"[Sideload] stylesheet not found: {href}"); continue; }
+                if (css == null) { Core.Log?.Warning($"stylesheet not found: {href}"); continue; }
                 sb.AppendLine(css);
             }
 
@@ -1552,7 +1552,7 @@ namespace Sideload.Host
         /// <summary>Fail-soft: a broken page shows what went wrong instead of a black screen.</summary>
         private void ShowError(string message)
         {
-            Core.Log?.Warning("[Sideload] " + message);
+            Core.Log?.Warning("" + message);
 
             for (int i = _root.childCount - 1; i >= 0; i--) Object.Destroy(_root.GetChild(i).gameObject);
 

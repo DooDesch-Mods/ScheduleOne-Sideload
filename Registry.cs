@@ -100,13 +100,13 @@ namespace Sideload
                 if (string.Equals(_apps[i].Id, reg.Id, StringComparison.OrdinalIgnoreCase))
                 {
                     _apps[i] = reg;
-                    Core.Log?.Warning($"[Sideload] app '{reg.Id}' registered twice; the later registration wins.");
+                    Core.Log?.Warning($"app '{reg.Id}' registered twice; the later registration wins.");
                     return;
                 }
             }
 
             _apps.Add(reg);
-            Core.Log?.Msg($"[Sideload] app registered: {reg.Id} ('{reg.Title}') from {host.GetName().Name}");
+            Core.Log?.Msg($"app registered: {reg.Id} ('{reg.Title}') from {host.GetName().Name}");
         }
 
         /// <summary>
@@ -120,12 +120,12 @@ namespace Sideload
         internal static void DeclareOrientations(string appId, string orientations)
         {
             AppRegistration reg = Find(appId);
-            if (reg == null) { Core.Log?.Warning($"[Sideload] orientation: no app '{appId}'."); return; }
+            if (reg == null) { Core.Log?.Warning($"orientation: no app '{appId}'."); return; }
 
             Model.OrientationSet set = Model.OrientationSet.Parse(orientations);
 
             foreach (string bad in set.Ignored)
-                Core.Log?.Warning($"[Sideload] '{appId}' declared orientation '{bad}', which is neither 'portrait' " +
+                Core.Log?.Warning($"'{appId}' declared orientation '{bad}', which is neither 'portrait' " +
                                   "nor 'landscape' - ignored.");
 
             if (!set.Declared) return;
@@ -143,14 +143,14 @@ namespace Sideload
         internal static void SetOrientation(string appId, string orientation)
         {
             AppRegistration reg = Find(appId);
-            if (reg == null) { Core.Log?.Warning($"[Sideload] setOrientation: no app '{appId}'."); return; }
+            if (reg == null) { Core.Log?.Warning($"setOrientation: no app '{appId}'."); return; }
 
             bool portrait = string.Equals((orientation ?? "").Trim(), "portrait", StringComparison.OrdinalIgnoreCase);
             if (reg.Portrait == portrait) return;
 
             if (!reg.Supports(portrait))
             {
-                Core.Log?.Warning($"[Sideload] '{reg.Id}' was asked for {(portrait ? "portrait" : "landscape")} but " +
+                Core.Log?.Warning($"'{reg.Id}' was asked for {(portrait ? "portrait" : "landscape")} but " +
                                   "only declared the other one - ignored. Declare both to allow turning: " +
                                   "Apps.Register(...).Orientation(\"landscape\", \"portrait\").");
                 return;
@@ -167,7 +167,7 @@ namespace Sideload
         internal static void SetBadge(string appId, int count)
         {
             AppRegistration reg = Find(appId);
-            if (reg == null) { Core.Log?.Warning($"[Sideload] badge: no app '{appId}'."); return; }
+            if (reg == null) { Core.Log?.Warning($"badge: no app '{appId}'."); return; }
 
             reg.Badge = Math.Max(0, count);
             BadgeTap?.Invoke(reg.Id, reg.Badge);
@@ -251,7 +251,7 @@ namespace Sideload
         internal static void SetIconHidden(string appId, bool hidden)
         {
             AppRegistration reg = Find(appId);
-            if (reg == null) { Core.Log?.Warning($"[Sideload] icon: no app '{appId}'."); return; }
+            if (reg == null) { Core.Log?.Warning($"icon: no app '{appId}'."); return; }
 
             reg.Iconless = hidden;
             LiveHost(appId)?.SetIconVisible(!hidden);
@@ -267,7 +267,7 @@ namespace Sideload
         internal static void SetAppOpen(string appId, bool open)
         {
             Phone.PhoneAppHost host = LiveHost(appId);
-            if (host == null) { Core.Log?.Warning($"[Sideload] open: '{appId}' is not on a phone."); return; }
+            if (host == null) { Core.Log?.Warning($"open: '{appId}' is not on a phone."); return; }
 
             if (open) host.Open(); else host.Close();
         }

@@ -47,7 +47,7 @@ namespace Sideload.Host
 
             if (hostRect is not RectTransform rect || rect == null)
             {
-                Core.Log?.Error($"[Sideload] surface '{id}': the mount target is not a live RectTransform.");
+                Core.Log?.Error($"surface '{id}': the mount target is not a live RectTransform.");
                 return false;
             }
 
@@ -61,7 +61,7 @@ namespace Sideload.Host
 
             view.AutoBuild = true;
             _mounted.Add(new Mounted { Id = id, View = view });
-            Core.Log?.Msg($"[Sideload] surface mounted: {id} from {host.GetName().Name}"
+            Core.Log?.Msg($"surface mounted: {id} from {host.GetName().Name}"
                           + (referenceShortSide > 0f ? $" (short side {referenceShortSide:0.#} css px)" : " (device pixels)"));
             return true;
         }
@@ -73,7 +73,7 @@ namespace Sideload.Host
             {
                 if (!string.Equals(_mounted[i].Id, id, StringComparison.OrdinalIgnoreCase)) continue;
                 try { _mounted[i].View?.Dispose(); }
-                catch (Exception e) { Core.Log?.Warning($"[Sideload] surface '{id}' teardown: {e.Message}"); }
+                catch (Exception e) { Core.Log?.Warning($"surface '{id}' teardown: {e.Message}"); }
                 _mounted.RemoveAt(i);
             }
         }

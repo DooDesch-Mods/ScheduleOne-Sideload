@@ -26,7 +26,7 @@ namespace Sideload.Bundle
         {
             if (string.IsNullOrEmpty(folder) || !Directory.Exists(folder))
             {
-                Core.Log?.Msg($"[Sideload] no override folder for '{appId}' - create {folder} to edit the app live.");
+                Core.Log?.Msg($"no override folder for '{appId}' - create {folder} to edit the app live.");
                 return null;
             }
 
@@ -45,12 +45,12 @@ namespace Sideload.Bundle
                 watcher.Renamed += (_, __) => reload._touched = true;
                 watcher.EnableRaisingEvents = true;
 
-                Core.Log?.Msg($"[Sideload] hot reload watching {folder}");
+                Core.Log?.Msg($"hot reload watching {folder}");
                 return reload;
             }
             catch (Exception e)
             {
-                Core.Log?.Warning($"[Sideload] hot reload unavailable for '{appId}': {e.Message}");
+                Core.Log?.Warning($"hot reload unavailable for '{appId}': {e.Message}");
                 return null;
             }
         }

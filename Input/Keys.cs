@@ -91,7 +91,7 @@ namespace Sideload.Input
                 KeyDeclaration key = keys[i];
                 if (!KeyCodes.TryResolve(key.Name, out KeyCode code))
                 {
-                    Core.Log?.Error($"[Sideload] key '{key.Name}' parsed but has no keycode - it will never fire.");
+                    Core.Log?.Error($"key '{key.Name}' parsed but has no keycode - it will never fire.");
                     continue;
                 }
 
@@ -266,7 +266,7 @@ namespace Sideload.Input
             // startup rather than costing an evening.
             foreach (string name in GlobalKey.Vocabulary)
                 if (!map.ContainsKey(name))
-                    Core.Log?.Error($"[Sideload] key '{name}' is declarable but has no keycode - it will never fire.");
+                    Core.Log?.Error($"key '{name}' is declarable but has no keycode - it will never fire.");
 
             return map;
         }
