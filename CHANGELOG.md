@@ -3,6 +3,13 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.14.3] - 2026-08-08
+
+### Fixed
+
+- The rotate keys turn the phone again. `Q` and `E` have never worked in any release: Sideload looked the
+  action up by a name the game does not use, and silently found nothing.
+
 ## [1.14.2] - 2026-08-08
 
 ### Fixed
