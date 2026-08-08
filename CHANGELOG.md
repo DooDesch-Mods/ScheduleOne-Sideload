@@ -3,6 +3,16 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.14.1] - 2026-08-08
+
+### Fixed
+
+- Closing a page you had typed in gives the keyboard back. It used to keep it, so the player could not move and Escape did nothing for the rest of the session.
+
+### Added
+
+- `element.blur()` hands the keyboard back from script, the counterpart to `element.focus()`.
+
 ## [1.14.0] - 2026-08-08
 
 ### Added
