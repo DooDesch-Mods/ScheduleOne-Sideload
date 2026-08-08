@@ -65,7 +65,7 @@ namespace Sideload.Phone
             }
             catch (Exception e)
             {
-                Core.Log?.Warning("[Sideload] raising the phone failed: " + e.Message);
+                Core.Log?.Warning("raising the phone failed: " + e.Message);
                 return false;
             }
         }
@@ -94,7 +94,7 @@ namespace Sideload.Phone
             }
             catch (Exception e)
             {
-                Core.Log?.Warning("[Sideload] lowering the phone failed: " + e.Message);
+                Core.Log?.Warning("lowering the phone failed: " + e.Message);
                 return false;
             }
         }

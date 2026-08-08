@@ -89,7 +89,7 @@ namespace Sideload.Paint
             if ((root.additionalShaderChannels & RequiredChannels) == RequiredChannels) return;
 
             root.additionalShaderChannels |= RequiredChannels;
-            Core.Log?.Msg($"[Sideload] enabled extra vertex channels on canvas '{root.name}'.");
+            Core.Log?.Msg($"enabled extra vertex channels on canvas '{root.name}'.");
         }
 
         /// <summary>

@@ -60,7 +60,7 @@ namespace Sideload.Phone
             {
                 // A corrupt file is not worth failing over: every app falls back to its declared default and the next
                 // turn rewrites the file.
-                Core.Log?.Warning($"[Sideload] remembered orientations unreadable ({Path}): {e.Message}");
+                Core.Log?.Warning($"remembered orientations unreadable ({Path}): {e.Message}");
             }
         }
 
@@ -78,7 +78,7 @@ namespace Sideload.Phone
             }
             catch (Exception e)
             {
-                Core.Log?.Warning($"[Sideload] could not write remembered orientations: {e.Message}");
+                Core.Log?.Warning($"could not write remembered orientations: {e.Message}");
             }
         }
     }

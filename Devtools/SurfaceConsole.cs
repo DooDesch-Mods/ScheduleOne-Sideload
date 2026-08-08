@@ -62,7 +62,7 @@ namespace Sideload.Devtools
                 if (parts.Length > 1 && parts[1].Equals("off", StringComparison.OrdinalIgnoreCase)) Down();
                 else Up(Size(parts));
             }
-            catch (Exception e) { Core.Log?.Warning($"[Sideload] sideloadsurface failed: {e.Message}"); }
+            catch (Exception e) { Core.Log?.Warning($"sideloadsurface failed: {e.Message}"); }
 
             return true;
         }
@@ -114,7 +114,7 @@ namespace Sideload.Devtools
                 $"{app} on a surface, {size.x:0}x{size.y:0}, frame {Time.frameCount}");
 
             if (Host.Surfaces.Mount(rect, Id, "Sideload.Assets.selftest", typeof(SurfaceConsole).Assembly, 400f))
-                Core.Log?.Msg($"[Sideload] sideloadsurface: '{Id}' is up at {size.x:0}x{size.y:0}. "
+                Core.Log?.Msg($"sideloadsurface: '{Id}' is up at {size.x:0}x{size.y:0}. "
                               + "Take it down with 'sideloadsurface off'.");
             else
                 Down();
@@ -125,7 +125,7 @@ namespace Sideload.Devtools
             if (Host.Surfaces.IsMounted(Id))
             {
                 Host.Surfaces.Unmount(Id);
-                Core.Log?.Msg($"[Sideload] sideloadsurface: '{Id}' is down.");
+                Core.Log?.Msg($"sideloadsurface: '{Id}' is down.");
             }
 
             if (_panel == null) return;

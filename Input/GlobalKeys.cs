@@ -51,18 +51,18 @@ namespace Sideload.Input
             IReadOnlyList<KeyDeclaration> keys = GlobalKey.Parse(declaration, out IReadOnlyList<string> refused);
 
             foreach (string why in refused)
-                Core.Log?.Warning($"[Sideload] '{appId}' asked for the key {why} - ignored.");
+                Core.Log?.Warning($"'{appId}' asked for the key {why} - ignored.");
 
             foreach (KeyDeclaration key in keys)
             {
                 if (!KeyCodes.TryResolve(key.Name, out KeyCode _))
                 {
-                    Core.Log?.Error($"[Sideload] key '{key.Name}' parsed but has no keycode - it will never fire.");
+                    Core.Log?.Error($"key '{key.Name}' parsed but has no keycode - it will never fire.");
                     continue;
                 }
 
                 Claims.Claim(appId, key, handler);
-                Core.Log?.Msg($"[Sideload] '{appId}' claimed the key {key}.");
+                Core.Log?.Msg($"'{appId}' claimed the key {key}.");
             }
         }
 
@@ -90,9 +90,9 @@ namespace Sideload.Input
                 // The hit is worth a line - it is the first thing to look for when an app opens and nobody knows why.
                 // The miss is not: an app that declines its key does so on every press, and a player who taps Enter
                 // out of habit would fill the log with it.
-                if (took != null) Core.Log?.Msg($"[Sideload] {keys[i]} went to '{took}'.");
+                if (took != null) Core.Log?.Msg($"{keys[i]} went to '{took}'.");
 #if DEBUG
-                else Core.Log?.Msg($"[Sideload] {keys[i]} is claimed but nobody took it.");
+                else Core.Log?.Msg($"{keys[i]} is claimed but nobody took it.");
 #endif
 
                 // At most one key a frame, which is what a keyboard produces and what stops a chord from opening two
@@ -117,7 +117,7 @@ namespace Sideload.Input
             return Claims.Dispatch(
                 key,
                 showing == null ? null : id => string.Equals(showing.Id, id, StringComparison.OrdinalIgnoreCase),
-                (appId, e) => Core.Log?.Error($"[Sideload] the '{key}' handler of '{appId}' threw: {e.Message}"));
+                (appId, e) => Core.Log?.Error($"the '{key}' handler of '{appId}' threw: {e.Message}"));
         }
 
 #if DEBUG
@@ -205,7 +205,7 @@ namespace Sideload.Input
             {
                 // A key that cannot decide whether it is allowed is a key that does not fire. Warn once per frame at
                 // worst, and only while something is claimed at all.
-                Core.Log?.Warning("[Sideload] could not read the game's input state: " + e.Message);
+                Core.Log?.Warning("could not read the game's input state: " + e.Message);
                 return false;
             }
         }

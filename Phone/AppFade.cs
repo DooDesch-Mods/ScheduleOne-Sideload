@@ -34,7 +34,7 @@ namespace Sideload.Phone
             }
             catch (Exception e)
             {
-                Core.Log?.Warning("[Sideload] could not prepare the fade: " + e.Message);
+                Core.Log?.Warning("could not prepare the fade: " + e.Message);
                 return null;
             }
         }

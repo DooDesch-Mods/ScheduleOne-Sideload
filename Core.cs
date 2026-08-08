@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using MelonLoader;
 using MelonLoader.Utils;
 
@@ -50,11 +50,11 @@ namespace Sideload
             try
             {
                 HarmonyInstance.PatchAll();
-                Log.Msg("[Sideload] patches applied.");
+                Log.Msg("patches applied.");
             }
             catch (Exception e)
             {
-                Log.Error("[Sideload] PatchAll failed - no app will reach the phone: " + e);
+                Log.Error("PatchAll failed - no app will reach the phone: " + e);
             }
 
             // Separate from PatchAll on purpose. These targets are TextMeshPro's, not the game's, and their protected
@@ -100,13 +100,13 @@ namespace Sideload
                 var engine = new Jint.Engine();   // defaults are fine: this script cannot loop and is thrown away
                 engine.Execute("var a=[1,2,3].map(function(v){return v*2;}).join(',');");
 
-                Log.Msg($"[Sideload] warmed the parsers in {watch.ElapsedMilliseconds} ms"
+                Log.Msg($"warmed the parsers in {watch.ElapsedMilliseconds} ms"
                         + $" (document has {document.All.Length} node(s), script returned {engine.Evaluate("a")}).");
             }
             catch (Exception e)
             {
                 // A warm-up that fails costs nothing but the warmth: the real page builds its own parser anyway.
-                Log.Warning("[Sideload] warming the parsers failed, the first page will pay for it: " + e.Message);
+                Log.Warning("warming the parsers failed, the first page will pay for it: " + e.Message);
             }
         }
 
@@ -199,7 +199,7 @@ namespace Sideload
             Assembly loaded = LoadEmbeddedAssembly(simple + ".dll");
             if (loaded == null) return null;
             _resolved[simple] = loaded;
-            Log.Msg($"[Sideload] resolved {simple} from the embedded copy (requested by {args.RequestingAssembly?.GetName().Name ?? "the runtime"})");
+            Log.Msg($"resolved {simple} from the embedded copy (requested by {args.RequestingAssembly?.GetName().Name ?? "the runtime"})");
             return loaded;
         }
 
@@ -220,17 +220,17 @@ namespace Sideload
                 Assembly loaded = path != null ? Assembly.LoadFrom(path) : LoadEmbeddedAssembly(fileName);
                 if (loaded == null)
                 {
-                    Log.Error($"[Sideload] runtime dependency {fileName} is neither on disk nor embedded - no app will render.");
+                    Log.Error($"runtime dependency {fileName} is neither on disk nor embedded - no app will render.");
                     return;
                 }
 
                 AssemblyName name = loaded.GetName();
                 _resolved[name.Name] = loaded;   // the hook hands out this one, never a second copy
-                Log.Msg($"[Sideload] preloaded {name.Name} {name.Version} {(path != null ? "from disk (" + path + ")" : "(embedded)")}");
+                Log.Msg($"preloaded {name.Name} {name.Version} {(path != null ? "from disk (" + path + ")" : "(embedded)")}");
             }
             catch (Exception e)
             {
-                Log.Warning($"[Sideload] preloading {fileName} failed: {e.Message}");
+                Log.Warning($"preloading {fileName} failed: {e.Message}");
             }
         }
 
@@ -245,7 +245,7 @@ namespace Sideload
             using Stream stream = typeof(Core).Assembly.GetManifestResourceStream(resource);
             if (stream == null)
             {
-                Log.Warning($"[Sideload] embedded dependency '{resource}' is missing from this build.");
+                Log.Warning($"embedded dependency '{resource}' is missing from this build.");
                 return null;
             }
 
@@ -259,7 +259,7 @@ namespace Sideload
             }
             if (read != image.Length)
             {
-                Log.Warning($"[Sideload] embedded dependency '{resource}' is truncated ({read} of {image.Length} bytes).");
+                Log.Warning($"embedded dependency '{resource}' is truncated ({read} of {image.Length} bytes).");
                 return null;
             }
             return Assembly.Load(image);

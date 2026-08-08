@@ -125,16 +125,16 @@ namespace Sideload.Paint
                     asset.name = file;
 
                     _system = asset;
-                    Core.Log?.Msg("[Sideload] monospace: built from '" + path + "'.");
+                    Core.Log?.Msg("monospace: built from '" + path + "'.");
                     return _system;
                 }
 
-                Core.Log?.Warning("[Sideload] monospace: none of " + string.Join(", ", candidates) + " is in "
+                Core.Log?.Warning("monospace: none of " + string.Join(", ", candidates) + " is in "
                                   + fonts + " - falling back to the game's pixel face.");
             }
             catch (Exception e)
             {
-                Core.Log?.Warning("[Sideload] monospace: the system font could not be built (" + e.Message
+                Core.Log?.Warning("monospace: the system font could not be built (" + e.Message
                                   + ") - falling back to the game's pixel face.");
             }
 
@@ -160,9 +160,9 @@ namespace Sideload.Paint
                 }
 
                 if (_fallback == null && fonts.Length > 0) _fallback = fonts[0];
-                Core.Log?.Msg($"[Sideload] font registry: {_byName.Count} asset(s), fallback '{_fallback?.name}'.");
+                Core.Log?.Msg($"font registry: {_byName.Count} asset(s), fallback '{_fallback?.name}'.");
             }
-            catch (Exception e) { Core.Log?.Warning("[Sideload] font scan failed: " + e.Message); }
+            catch (Exception e) { Core.Log?.Warning("font scan failed: " + e.Message); }
         }
     }
 
@@ -225,7 +225,7 @@ namespace Sideload.Paint
             }
             catch (Exception e)
             {
-                Core.Log?.Warning("[Sideload] text measure failed: " + e.Message);
+                Core.Log?.Warning("text measure failed: " + e.Message);
                 return new Size(0f, style.ResolvedLineHeight);
             }
         }

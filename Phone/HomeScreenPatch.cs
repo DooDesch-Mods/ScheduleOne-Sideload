@@ -48,7 +48,7 @@ namespace Sideload.Phone
             // while its panels are still alive.
             if (_hosts.Count > 0 && _hosts[0].IsAlive)
             {
-                Core.Log?.Msg("[Sideload] apps are already live on a phone - skipping this second HomeScreen.");
+                Core.Log?.Msg("apps are already live on a phone - skipping this second HomeScreen.");
                 return;
             }
 
@@ -63,7 +63,7 @@ namespace Sideload.Phone
 
             if (Registry.Apps.Count == 0)
             {
-                Core.Log?.Msg("[Sideload] no apps registered - nothing to put on the phone.");
+                Core.Log?.Msg("no apps registered - nothing to put on the phone.");
                 return;
             }
 
@@ -76,11 +76,11 @@ namespace Sideload.Phone
                 }
                 catch (Exception e)
                 {
-                    Core.Log?.Error($"[Sideload] spawning '{reg.Id}' failed: {e}");
+                    Core.Log?.Error($"spawning '{reg.Id}' failed: {e}");
                 }
             }
 
-            Core.Log?.Msg($"[Sideload] {_hosts.Count}/{Registry.Apps.Count} app(s) live on the phone.");
+            Core.Log?.Msg($"{_hosts.Count}/{Registry.Apps.Count} app(s) live on the phone.");
 
 #if DEBUG
             if (_hosts.Count > 0) Devtools.AutoOpen.Arm();

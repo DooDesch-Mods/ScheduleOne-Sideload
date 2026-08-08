@@ -50,7 +50,7 @@ namespace Sideload.Phone
             try { Build(module); }
             catch (Exception e)
             {
-                Core.Log?.Warning("[Sideload] could not add the turn hint to the input prompts: " + e.Message);
+                Core.Log?.Warning("could not add the turn hint to the input prompts: " + e.Message);
                 Remove();
             }
         }
@@ -103,7 +103,7 @@ namespace Sideload.Phone
 
             if (++_moduleMisses >= MaxModuleMisses)
             {
-                Core.Log?.Warning("[Sideload] no input prompt strip to hang the turn hint on - the hint stays off. "
+                Core.Log?.Warning("no input prompt strip to hang the turn hint on - the hint stays off. "
                     + "Searching further would cost a scene sweep four times a second.");
             }
 
@@ -255,7 +255,7 @@ namespace Sideload.Phone
 
                 if (_leftAction == null && _rightAction == null && _actionAttempts >= MaxActionAttempts)
                 {
-                    Core.Log?.Warning("[Sideload] the rotate actions (RotateLeft/RotateRight) are not in this build - "
+                    Core.Log?.Warning("the rotate actions (RotateLeft/RotateRight) are not in this build - "
                         + "the phone can still be turned from an app, but the rotate keys and their key hint stay off. "
                         + "Searching further would cost a scene sweep every two seconds.");
                 }
@@ -300,7 +300,7 @@ namespace Sideload.Phone
         {
             if (_warned) return;
             _warned = true;
-            Core.Log?.Warning($"[Sideload] no turn hint in the key strip - {reason}. Turning still works.");
+            Core.Log?.Warning($"no turn hint in the key strip - {reason}. Turning still works.");
         }
     }
 }

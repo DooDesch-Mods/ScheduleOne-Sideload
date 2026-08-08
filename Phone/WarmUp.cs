@@ -53,12 +53,12 @@ namespace Sideload.Phone
                                                                  typeof(Core).Assembly), "sideload-warmup");
                 view?.EnsureBuilt();
 
-                Core.Log?.Msg($"[Sideload] warmed the page pipeline in {watch.ElapsedMilliseconds} ms.");
+                Core.Log?.Msg($"warmed the page pipeline in {watch.ElapsedMilliseconds} ms.");
             }
             catch (Exception e)
             {
                 // A warm-up that fails costs nothing but the warmth. The first real page still builds itself.
-                Core.Log?.Warning("[Sideload] warming the page pipeline failed: " + e.Message);
+                Core.Log?.Warning("warming the page pipeline failed: " + e.Message);
             }
             finally
             {

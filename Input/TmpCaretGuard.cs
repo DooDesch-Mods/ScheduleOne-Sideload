@@ -52,7 +52,7 @@ namespace Sideload.Input
                 MethodInfo target = AccessTools.Method(typeof(TMP_InputField), name, parameters);
                 if (target == null)
                 {
-                    Core.Log?.Warning($"[Sideload] caret guard: TMP_InputField.{name}"
+                    Core.Log?.Warning($"caret guard: TMP_InputField.{name}"
                                       + $"({parameters.Length} arg) not found - that key will move the caret.");
                     return;
                 }
@@ -61,7 +61,7 @@ namespace Sideload.Input
             }
             catch (Exception e)
             {
-                Core.Log?.Warning($"[Sideload] caret guard: patching TMP_InputField.{name} failed: {e.Message}");
+                Core.Log?.Warning($"caret guard: patching TMP_InputField.{name} failed: {e.Message}");
             }
         }
 
