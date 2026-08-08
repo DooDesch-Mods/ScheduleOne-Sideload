@@ -141,12 +141,16 @@ namespace Sideload.Css
     internal enum Justify { FlexStart, FlexEnd, Center, SpaceBetween, SpaceAround, SpaceEvenly }
     internal enum AlignKind { Auto, FlexStart, FlexEnd, Center, Stretch, Baseline }
     /// <summary>
+    /// <c>Relative</c> stays IN the flow: it takes its normal room, siblings are placed as if it had not moved, and
+    /// only the painted rectangle is shifted by the insets. Being in the flow is the whole difference from
+    /// <c>Absolute</c>, and it is why a badge nudged two pixels up does not drag the row it sits in with it.
+    ///
     /// <c>Fixed</c> is the TOP LAYER: taken out of the flow like <c>Absolute</c>, but positioned against the viewport
     /// instead of the parent, painted after everything else, and clipped by nothing. That last part is the reason it
     /// is a separate kind rather than a flag - an overlay written next to the thing it belongs to sits inside some
     /// scrolling pane, and as an absolute box it would be cropped to that pane and scroll away with it.
     /// </summary>
-    internal enum PositionKind { Static, Absolute, Fixed }
+    internal enum PositionKind { Static, Relative, Absolute, Fixed }
     internal enum OverflowKind { Visible, Hidden, Scroll, Auto }
 
     /// <summary>The easing curves worth having. `linear` for a value that must read as constant, the ease family for

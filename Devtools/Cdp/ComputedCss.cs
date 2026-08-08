@@ -68,6 +68,7 @@ namespace Sideload.Devtools.Cdp
 
             Put("position", style.Position == PositionKind.Absolute ? "absolute"
                           : style.Position == PositionKind.Fixed ? "fixed"
+                          : style.Position == PositionKind.Relative ? "relative"
                           : "static");
             Put("top", style.Inset.Top.ToString());
             Put("right", style.Inset.Right.ToString());

@@ -40,9 +40,9 @@ namespace Sideload.Css
                     break;
 
                 case "position":
-                    // `relative` is mapped to static, so it neither offsets nor becomes a containing block -
-                    // which breaks the relative/absolute pair, the standard way to anchor anything.
-                    if (IsAny(value, "relative", "sticky")) Report(property, value);
+                    // `sticky` keeps whatever position it already had - so a header written to stay put scrolls
+                    // away with the rest of the list and nothing anywhere says so.
+                    if (IsAny(value, "sticky")) Report(property, value);
                     break;
 
                 case "align-items":
@@ -85,16 +85,6 @@ namespace Sideload.Css
                     // number that is changes nothing, which is why this reports the property rather than the value.
                     // A stylesheet with eight line heights was eight identical lines of log before that.
                     ReportProperty(property);
-                    break;
-
-                case "margin":
-                case "margin-top":
-                case "margin-right":
-                case "margin-bottom":
-                case "margin-left":
-                    // Auto margins resolve to zero, so `margin: 0 auto` does not centre - one of the most common
-                    // pieces of layout CSS there is.
-                    if (Contains(value, "auto")) Report(property, value);
                     break;
 
                 case "box-shadow":

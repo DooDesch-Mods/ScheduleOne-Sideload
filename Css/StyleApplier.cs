@@ -120,7 +120,8 @@ namespace Sideload.Css
                 case "position":
                     if (Is(value, "fixed")) s.Position = PositionKind.Fixed;
                     else if (Is(value, "absolute")) s.Position = PositionKind.Absolute;
-                    else if (Is(value, "static") || Is(value, "relative")) s.Position = PositionKind.Static;
+                    else if (Is(value, "relative")) s.Position = PositionKind.Relative;
+                    else if (Is(value, "static")) s.Position = PositionKind.Static;
                     break;
 
                 case "inset": if (Edges_(value, out Edges inset)) s.Inset = inset; break;
