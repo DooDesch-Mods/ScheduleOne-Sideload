@@ -26,6 +26,19 @@ namespace Sideload.Css
         private static string _applying;
 
         /// <summary>
+        /// The font size and viewport a relative length is measured against, published by the cascade before it
+        /// applies an element's declarations.
+        ///
+        /// Static for the same reason as <see cref="_applying"/>: one thread, no re-entry. It starts at the
+        /// engine's own defaults so a caller with no element in hand - <see cref="Supports"/>, a test, the sheet
+        /// audit - still gets sensible answers instead of dividing by an uninitialised zero.
+        /// </summary>
+        internal static LengthContext Context = LengthContext.Default;
+
+        /// <summary>The text colour `currentColor` resolves to, set per declaration from the style being built.</summary>
+        private static RgbaColor CurrentColor = new RgbaColor(0.925f, 0.929f, 0.945f, 1f);
+
+        /// <summary>
         /// Apply one declaration. Returns FALSE when this renderer has no case for that property - which is the
         /// only signal that exists, because an unsupported declaration is otherwise dropped without a trace.
         /// <see cref="Supports"/> is the same switch asked the same question, so the two can never drift.
@@ -39,6 +52,11 @@ namespace Sideload.Css
             if (value.Length == 0) return true;
 
             _applying = property;
+
+            // What `currentColor` means right here. Read off the style BEFORE this declaration lands, which is
+            // what makes `border-color: currentColor` take the inherited text colour rather than chase itself.
+            CurrentColor = s.Color;
+
             DeadValues.Check(property, value);
 
             switch (property)
@@ -72,8 +90,8 @@ namespace Sideload.Css
                 {
                     string[] p = ValueParser.SplitTopLevel(value);
                     bool tookGap = false;
-                    if (p.Length >= 1 && ValueParser.TryLength(p[0], out Len rg)) { s.RowGap = rg; s.ColumnGap = rg; tookGap = true; }
-                    if (p.Length >= 2 && ValueParser.TryLength(p[1], out Len cg)) { s.ColumnGap = cg; tookGap = true; }
+                    if (p.Length >= 1 && ValueParser.TryLength(p[0], Context, out Len rg)) { s.RowGap = rg; s.ColumnGap = rg; tookGap = true; }
+                    if (p.Length >= 2 && ValueParser.TryLength(p[1], Context, out Len cg)) { s.ColumnGap = cg; tookGap = true; }
                     if (!tookGap) Diagnostics.Report(DiagnosticKind.ValueRejected, property, value);
                     break;
                 }
@@ -236,14 +254,14 @@ namespace Sideload.Css
 
         private static bool Length(string value, out Len len)
         {
-            if (ValueParser.TryLength(value, out len)) return true;
+            if (ValueParser.TryLength(value, Context, out len)) return true;
             Diagnostics.Report(DiagnosticKind.ValueRejected, _applying, value);
             return false;
         }
 
         private static bool Colour(string value, out RgbaColor color)
         {
-            if (ValueParser.TryColor(value, out color)) return true;
+            if (ValueParser.TryColor(value, CurrentColor, out color)) return true;
             Diagnostics.Report(DiagnosticKind.ValueRejected, _applying, value);
             return false;
         }
@@ -316,7 +334,7 @@ namespace Sideload.Css
             if (at < p.Length)
             {
                 if (Is(p[at], "auto")) basis = Len.Auto;
-                else if (ValueParser.TryLength(p[at], out Len b)) basis = b;
+                else if (ValueParser.TryLength(p[at], Context, out Len b)) basis = b;
                 else return;                                    // not a basis either - the whole value is junk
 
                 haveBasis = true;
@@ -476,7 +494,7 @@ namespace Sideload.Css
         };
 
         private static float Px(string[] args, int index) =>
-            index < args.Length && ValueParser.TryLength(args[index].Trim(), out Len len) ? len.Resolve(0f) : 0f;
+            index < args.Length && ValueParser.TryLength(args[index].Trim(), Context, out Len len) ? len.Resolve(0f) : 0f;
 
         /// <summary>An angle. `deg` is the only unit worth supporting; `turn` and `rad` are converted because they
         /// cost two lines and a page that uses one would otherwise silently not rotate at all.</summary>
@@ -515,7 +533,7 @@ namespace Sideload.Css
                 // parser below and a stylesheet saying `1px dashed var(--ink-2)` ends up asking for the colour
                 // "dashed". Degrading a dash to a solid hairline is honest; silently losing the colour is not.
                 if (IsLineStyle(part)) continue;
-                if (ValueParser.TryLength(part, out Len w) && w.IsDefinite) { SetWidth(s, side, w); continue; }
+                if (ValueParser.TryLength(part, Context, out Len w) && w.IsDefinite) { SetWidth(s, side, w); continue; }
                 if (ValueParser.TryColor(part, out RgbaColor c)) s.BorderColor = c;
             }
         }
@@ -573,7 +591,7 @@ namespace Sideload.Css
             foreach (string part in p)
             {
                 if (Is(part, "inset")) return;   // inset shadows are not drawable with the outer-shadow pass
-                if (lengths < 3 && ValueParser.TryLength(part, out Len l) && l.Unit == LenUnit.Px)
+                if (lengths < 3 && ValueParser.TryLength(part, Context, out Len l) && l.Unit == LenUnit.Px)
                 {
                     if (lengths == 0) x = l.Value;
                     else if (lengths == 1) y = l.Value;
@@ -596,7 +614,7 @@ namespace Sideload.Css
         private static void ApplyLineHeight(ComputedStyle s, string value)
         {
             if (Is(value, "normal")) { s.LineHeight = Len.None; return; }
-            if (ValueParser.TryLength(value, out Len l) && l.IsDefinite) { s.LineHeight = l; return; }
+            if (ValueParser.TryLength(value, Context, out Len l) && l.IsDefinite) { s.LineHeight = l; return; }
 
             // A unitless line-height is a multiplier of the font size, which is exactly what a percentage resolves to
             // here - storing it that way keeps it correct when font-size changes later in the cascade.
@@ -612,7 +630,7 @@ namespace Sideload.Css
             var v = new Len[p.Length];
             for (int i = 0; i < p.Length; i++)
             {
-                if (!ValueParser.TryLength(p[i], out v[i])) return false;
+                if (!ValueParser.TryLength(p[i], Context, out v[i])) return false;
             }
 
             switch (v.Length)
@@ -628,7 +646,7 @@ namespace Sideload.Css
         private static bool TryPx(string value, out float px)
         {
             px = 0f;
-            if (!ValueParser.TryLength(value, out Len l)) return false;
+            if (!ValueParser.TryLength(value, Context, out Len l)) return false;
             if (l.Unit != LenUnit.Px) return false;
             px = l.Value;
             return true;

@@ -18,6 +18,73 @@ namespace Sideload.Css
             return float.TryParse(s.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out value);
         }
 
+        /// <summary>
+        /// A length in any unit the engine understands, resolved to px where it has to be.
+        ///
+        /// This is the overload the cascade uses. Relative units need a font size and a viewport, and the only
+        /// place that knows both is the cascade - see <see cref="LengthContext"/> for why they are not carried
+        /// into layout instead.
+        /// </summary>
+        internal static bool TryLength(string s, in LengthContext ctx, out Len len)
+        {
+            len = Len.None;
+            if (string.IsNullOrEmpty(s)) return false;
+            s = s.Trim();
+
+            // A math function can contain any of the units below, so it has to be tried before them.
+            if (s.IndexOf('(') >= 0 && CalcExpression.TryEvaluate(s, ctx, out len)) return true;
+
+            foreach (var unit in Relative)
+            {
+                if (!s.EndsWith(unit.Suffix, StringComparison.OrdinalIgnoreCase)) continue;
+
+                // `2vmin` ends in "in" as well. Longest suffix first in the table below keeps that honest, but a
+                // number check is what actually decides it.
+                if (!TryNumber(s.Substring(0, s.Length - unit.Suffix.Length), out float n)) continue;
+
+                len = Len.Px(n * unit.Basis(ctx));
+                return true;
+            }
+
+            return TryLength(s, out len);
+        }
+
+        /// <summary>
+        /// The relative units, longest suffix first so `vmin` is not read as `in` and `rem` is not read as `em`.
+        /// </summary>
+        private static readonly (string Suffix, Func<LengthContext, float> Basis)[] Relative =
+        {
+            ("vmin", c => Math.Min(c.ViewportWidth, c.ViewportHeight) * 0.01f),
+            ("vmax", c => Math.Max(c.ViewportWidth, c.ViewportHeight) * 0.01f),
+            ("rem",  c => c.RootFontSize),
+            ("em",   c => c.FontSize),
+            // svh/lvh/dvh differ in a browser only because mobile chrome slides in and out. Nothing here does,
+            // so all three are vh and a page written for a phone browser lands correctly rather than not at all.
+            ("svh",  c => c.ViewportHeight * 0.01f),
+            ("lvh",  c => c.ViewportHeight * 0.01f),
+            ("dvh",  c => c.ViewportHeight * 0.01f),
+            ("svw",  c => c.ViewportWidth * 0.01f),
+            ("lvw",  c => c.ViewportWidth * 0.01f),
+            ("dvw",  c => c.ViewportWidth * 0.01f),
+
+            ("vh",   c => c.ViewportHeight * 0.01f),
+            ("vw",   c => c.ViewportWidth * 0.01f),
+
+            // Physical units, at the CSS reference of 96 dpi. Rare in a mod, but they cost four lines and the
+            // alternative is a stylesheet pasted from the web losing every size it names.
+            ("pt",   _ => 96f / 72f),
+            ("pc",   _ => 16f),
+            ("cm",   _ => 96f / 2.54f),
+            ("mm",   _ => 9.6f / 2.54f),
+            ("in",   _ => 96f),
+            ("q",    _ => 2.4f / 2.54f),
+
+            // No glyph metrics at this layer, so `ch` is half an em. That is the usual width of a digit in a
+            // proportional face and close enough that a column sized in ch lands in the right place; it is not
+            // the advance of a zero, and a terminal that needs the exact number should use -s1-mono-advance.
+            ("ch",   c => c.FontSize * 0.5f),
+        };
+
         /// <summary>A length: `12px`, `50%`, `auto`, `none`, or a bare `0`.</summary>
         internal static bool TryLength(string s, out Len len)
         {
@@ -48,7 +115,37 @@ namespace Sideload.Css
             return false;
         }
 
-        internal static bool TryColor(string s, out RgbaColor color)
+        /// <summary>
+        /// A colour, with `currentColor` resolved against the text colour in force.
+        ///
+        /// The two-argument overload below passes the engine's default text colour, which is right for a caller
+        /// with no element in hand and wrong inside the cascade - so the cascade uses this one.
+        /// </summary>
+        internal static bool TryColor(string s, in RgbaColor currentColor, out RgbaColor color)
+        {
+            color = RgbaColor.Transparent;
+            if (string.IsNullOrEmpty(s)) return false;
+            s = s.Trim();
+
+            if (s.StartsWith("#", StringComparison.Ordinal)) return TryHex(s.Substring(1), out color);
+
+            // rgb()/rgba() stay here because they are the old path and the cheap one; everything modern -
+            // oklch, oklab, lab, lch, hsl, hwb, color-mix, currentColor and the full 148 named colours - lives
+            // in ColorParser. It runs BEFORE the 17-entry list below, which it supersedes.
+            if (!s.StartsWith("rgb", StringComparison.OrdinalIgnoreCase)
+                && ColorParser.TryParse(s, currentColor, out color)) return true;
+
+            return TryColorLegacy(s, out color);
+        }
+
+        internal static bool TryColor(string s, out RgbaColor color) =>
+            TryColor(s, DefaultTextColor, out color);
+
+        /// <summary>The text colour a caller outside the cascade gets for `currentColor`. Matches
+        /// <see cref="ComputedStyle"/>'s initial value, so the two cannot disagree.</summary>
+        private static readonly RgbaColor DefaultTextColor = new RgbaColor(0.925f, 0.929f, 0.945f, 1f);
+
+        private static bool TryColorLegacy(string s, out RgbaColor color)
         {
             color = RgbaColor.Transparent;
             if (string.IsNullOrEmpty(s)) return false;

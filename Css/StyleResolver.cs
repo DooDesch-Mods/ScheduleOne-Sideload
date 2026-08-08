@@ -11,6 +11,21 @@ namespace Sideload.Css
         /// <summary>Interaction state per element. Sideload tracks hover/active/focus itself, so the cascade asks
         /// rather than inspecting the DOM. Null means "no element has any state".</summary>
         internal Func<IElement, StateFlags> StateOf;
+
+        /// <summary>The CSS viewport, for `vh`, `vw`, `vmin` and `vmax`. Defaults to the phone in landscape so a
+        /// caller that forgets to set it is wrong by a rotation rather than by a division by zero.</summary>
+        internal float ViewportWidth = 733.44f;
+
+        internal float ViewportHeight = 400f;
+
+        /// <summary>
+        /// The root's font size in px, which is what `rem` means.
+        ///
+        /// Not 16. The engine's own default is 15 (`ComputedStyle.FontSize`), and every Tailwind size is written
+        /// in rem - so this one number decides whether a page built for the web comes out 7 percent too large.
+        /// A page that wants the browser's scale sets `html { font-size: 16px }` and gets it.
+        /// </summary>
+        internal float RootFontSize = 15f;
     }
 
     /// <summary>
@@ -146,10 +161,47 @@ namespace Sideload.Css
                     style.SetVariable(entry.Declaration.Property.Trim(), entry.Declaration.Value);
             }
 
+            // The context every relative length is measured against. Set before the first declaration lands,
+            // because the first thing applied below is font-size and `em` on everything after it reads FontSize
+            // back off the style.
+            StyleApplier.Context = new LengthContext
+            {
+                FontSize = style.FontSize,
+                RootFontSize = context?.RootFontSize ?? 15f,
+                ViewportWidth = context?.ViewportWidth ?? 733.44f,
+                ViewportHeight = context?.ViewportHeight ?? 400f,
+                PercentBasis = float.NaN,
+            };
+
+            // font-size before anything else, and it is not a preference: `padding: 2em` means twice THIS
+            // element's font size, so applying padding first would measure it against the inherited one. CSS
+            // says the same, it just gets to say it as a computed-value dependency rather than an ordering.
+            //
+            // font-size's own `em` still refers to the parent's, which falls out for free: the context is built
+            // from the inherited FontSize above, and only updated once font-size itself has landed.
+            foreach (Entry entry in winners)
+            {
+                if (!IsFontSize(entry.Declaration.Property)) continue;
+
+                string sized = Substituted(entry.Declaration.Value, style);
+                if (sized == null) continue;
+                StyleApplier.Apply(style, entry.Declaration.Property, sized);
+            }
+
+            StyleApplier.Context = new LengthContext
+            {
+                FontSize = style.FontSize,
+                RootFontSize = context?.RootFontSize ?? 15f,
+                ViewportWidth = context?.ViewportWidth ?? 733.44f,
+                ViewportHeight = context?.ViewportHeight ?? 400f,
+                PercentBasis = float.NaN,
+            };
+
             foreach (Entry entry in winners)
             {
                 Declaration declaration = entry.Declaration;
                 if (IsCustomProperty(declaration.Property)) continue;
+                if (IsFontSize(declaration.Property)) continue;   // already applied, above
 
                 string value = declaration.Value;
                 if (value.IndexOf("var(", StringComparison.OrdinalIgnoreCase) >= 0)
@@ -166,6 +218,17 @@ namespace Sideload.Css
 
         private static bool IsCustomProperty(string property) =>
             property != null && property.TrimStart().StartsWith("--", StringComparison.Ordinal);
+
+        private static bool IsFontSize(string property) =>
+            property != null && property.Trim().Equals("font-size", StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>A declaration value with its `var()` references resolved, or null when one cannot be.</summary>
+        private static string Substituted(string value, ComputedStyle style)
+        {
+            if (value == null) return null;
+            if (value.IndexOf("var(", StringComparison.OrdinalIgnoreCase) < 0) return value;
+            return SubstituteVariables(value, style.Variables, 0);
+        }
 
         /// <summary>
         /// Replaces every `var(--name, fallback)` with its value. Returns null when a reference cannot be resolved and

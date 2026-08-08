@@ -16,6 +16,41 @@ namespace Sideload.Css
         Auto,
     }
 
+    /// <summary>
+    /// What a relative length needs to become an absolute one.
+    ///
+    /// `1rem`, `2em` and `50vh` are not lengths until you know a font size and a viewport, and the layout is the
+    /// wrong place to learn them: it would mean carrying the context through every box and every measurement pass.
+    /// The cascade already knows both, so relative units are resolved to px THERE and <see cref="Len"/> keeps its
+    /// four cases. That is why this struct exists and why it is only ever seen by the applier.
+    /// </summary>
+    internal struct LengthContext
+    {
+        /// <summary>This element's font size in px - the basis for `em`.</summary>
+        internal float FontSize;
+
+        /// <summary>The root's font size in px - the basis for `rem`. A browser's default is 16; this engine's is
+        /// 15, and Tailwind's whole spacing scale is written in rem, so the difference is visible everywhere.</summary>
+        internal float RootFontSize;
+
+        internal float ViewportWidth;
+        internal float ViewportHeight;
+
+        /// <summary>What a percentage resolves against, or NaN when the caller does not know yet. NaN rather than
+        /// zero: a percentage against an unknown basis is unresolvable, and zero would be a silent wrong answer.</summary>
+        internal float PercentBasis;
+
+        /// <summary>The values the engine starts from, for a caller that has no element in hand.</summary>
+        internal static LengthContext Default => new LengthContext
+        {
+            FontSize = 15f,
+            RootFontSize = 15f,
+            ViewportWidth = 733.44f,
+            ViewportHeight = 400f,
+            PercentBasis = float.NaN,
+        };
+    }
+
     /// <summary>A CSS length: a number plus how to read it. Percentages resolve against a base during layout.</summary>
     internal readonly struct Len
     {

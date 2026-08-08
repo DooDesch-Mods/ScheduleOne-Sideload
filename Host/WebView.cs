@@ -478,6 +478,12 @@ namespace Sideload.Host
                 {
                     Orientation = cssW >= cssH ? Orientation.Landscape : Orientation.Portrait,
                     StateOf = _interaction.StateOf,
+
+                    // What `vh`, `vw` and friends measure against. The same numbers the page is designed for, so
+                    // `height: 100vh` and `height: 100%` on a sized body agree - a stylesheet that uses both must
+                    // not get two different answers.
+                    ViewportWidth = cssW,
+                    ViewportHeight = cssH,
                 };
 
                 // The script runs BEFORE the first render, not after: it may build half the page and it registers
