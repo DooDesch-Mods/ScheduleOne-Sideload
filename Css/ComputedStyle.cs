@@ -48,6 +48,33 @@ namespace Sideload.Css
         internal PositionKind Position = PositionKind.Static;
         internal Edges Inset = new Edges { Top = Len.Auto, Right = Len.Auto, Bottom = Len.Auto, Left = Len.Auto };
 
+        /// <summary>
+        /// Whether `position` named anything other than `static`.
+        ///
+        /// A second field next to <see cref="Position"/> for one reason: `relative` is folded into
+        /// <see cref="PositionKind.Static"/> here, because it neither offsets nor becomes a containing block
+        /// (gaps register LAYOUT-018) - and stacking is the one place where that alias does damage.
+        /// `position: relative` plus a z-index is how overlays are written on the web, Tailwind's `relative z-10`
+        /// included, and reading it as static would leave the single most common ordering in existence doing
+        /// nothing. Layout reads <see cref="Position"/> and is untouched by this; only the paint order reads it.
+        ///
+        /// The day `relative` becomes a <see cref="PositionKind"/> of its own, this is exactly
+        /// <c>Position != PositionKind.Static</c> and should go.
+        /// </summary>
+        internal bool IsPositioned;
+
+        /// <summary>
+        /// The stack level this box paints on among its siblings. Null is `auto` - the default, and document order.
+        ///
+        /// Only meaningful together with <see cref="IsPositioned"/>: CSS gives a static box no stack level, and
+        /// <see cref="Layout.StackingOrder"/> follows that and says so rather than ignoring the declaration quietly.
+        ///
+        /// Not inherited, and deliberately absent from <see cref="CreateFrom"/>. A z-index that cascaded would put a
+        /// whole subtree on the level its container asked for, and the children of a lifted panel could no longer be
+        /// ordered against each other at all.
+        /// </summary>
+        internal int? ZIndex;
+
         internal OverflowKind OverflowX = OverflowKind.Visible;
         internal OverflowKind OverflowY = OverflowKind.Visible;
 

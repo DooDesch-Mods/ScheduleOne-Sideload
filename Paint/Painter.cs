@@ -100,8 +100,9 @@ namespace Sideload.Paint
                 // instead. Three things follow from doing it at this point, and all three are the reason overlays
                 // work at all:
                 //
-                //   * AFTER the page, so it draws on top. Paint order in this engine is document order and there is
-                //     no z-index, so "last" is the only way to be above something.
+                //   * AFTER the page, so it draws on top. `z-index` orders siblings WITHIN one parent (see
+                //     Layout/StackingOrder) and cannot lift a box out of the subtree it was written in, so for
+                //     something that has to be above the whole page "last" is still the only way.
                 //   * UNDER THE VIEW ROOT, so no ancestor's `overflow` crops it and no scroll area carries it off
                 //     screen - and, because uGUI raycasts front-most first, so a backdrop over the page actually
                 //     swallows the clicks meant for what is behind it.
@@ -109,6 +110,12 @@ namespace Sideload.Paint
                 //
                 // The list grows while it is being walked: a fixed box nested inside another one appends to it and is
                 // picked up by the same loop, which is why this is an index loop and not a foreach.
+                //
+                // And why the top layer itself is NOT sorted by z-index: growing is exactly what a sort cannot cope
+                // with, so it would order the overlays present at the start and append the nested ones after them
+                // whatever they asked for. Half of an ordering is worse than none. Two fixed boxes therefore paint in
+                // the order they were collected - which follows each parent's stacking order, because that is the
+                // order the walk above visited them in.
                 BoxRenderer.ActiveClip = null;
                 for (int i = 0; i < topLayer.Count; i++)
                     PaintNode(topLayer[i], host, 0, painted, 0f, 0f, hoisted: true);
@@ -196,9 +203,12 @@ namespace Sideload.Paint
                 // rest of the screen.
                 Rect? own = NeedsClipping(node) ? ClipRectOf(rt, absX, absY, node.Width, node.Height) : null;
 
+                // In stacking order rather than document order, which is the whole of z-index: later is on top, so
+                // the order the children are handed to this loop IS their paint order. StackingOrder hands the very
+                // same list back when nothing asked to move, so the ordinary box pays nothing for it.
                 if (!own.HasValue)
                 {
-                    foreach (LayoutNode child in node.Children)
+                    foreach (LayoutNode child in StackingOrder.Of(node.Children))
                         PaintNode(child, rt, depth + 1, painted, absX, absY);
                     return;
                 }
@@ -207,7 +217,7 @@ namespace Sideload.Paint
                 BoxRenderer.ActiveClip = Narrow(own, outerClip);
                 try
                 {
-                    foreach (LayoutNode child in node.Children)
+                    foreach (LayoutNode child in StackingOrder.Of(node.Children))
                         PaintNode(child, rt, depth + 1, painted, absX, absY);
                 }
                 finally { BoxRenderer.ActiveClip = outerClip; }
@@ -223,7 +233,7 @@ namespace Sideload.Paint
             BoxRenderer.ActiveClip = clip ?? previous;
             try
             {
-                foreach (LayoutNode child in node.Children)
+                foreach (LayoutNode child in StackingOrder.Of(node.Children))
                     PaintNode(child, content, depth + 1, painted, absX, absY);
             }
             finally { BoxRenderer.ActiveClip = previous; }
