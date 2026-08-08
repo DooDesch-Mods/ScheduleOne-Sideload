@@ -341,6 +341,11 @@ Honest limits, because a browser sets different expectations:
   `-s1-ghost-color`; nothing has to be measured and no monospaced font is needed.
 - **Selectors:** everything AngleSharp's `querySelectorAll` accepts, plus the state pseudo-classes `:hover`,
   `:active`, `:focus`, `:disabled` on the last compound. State rules repaint, they do not re-lay-out.
+- **`::before` and `::after`.** A rule that sets `content` grows a real box as the element's first or last
+  child - `content: ""` with a size and a background is the badge dot, the divider, the overlay; a string or
+  `attr(data-x)` is text. Without `content` there is no box. Write two colons: `:before` generates nothing.
+  The box is a flex item of its element rather than inline, so it stacks the way that element stacks. No
+  counters, no images, and no other pseudo-element.
 - **JavaScript:** ES2015 through ES2024 on Jint, including `#private` fields, optional chaining and
   generators. Globals are `document`, `s1`, `console`, `fetch`, `Promise` and the four timer functions.
   There is no `window` and no `localStorage`; `s1.storage` replaces the latter.

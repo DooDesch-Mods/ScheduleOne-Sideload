@@ -109,6 +109,21 @@ namespace Sideload.Css
         /// pointer - a map, a canvas - wants the jump, because there smoothing is lag.</summary>
         internal bool SmoothScroll = true;
 
+        // --- generated content ---
+
+        /// <summary>
+        /// What a generated box carries: the text `content` resolved to, or null when it was never set or set to
+        /// `none`.
+        ///
+        /// Null against empty is the whole distinction CSS rests a pseudo-element on. Without `content` there is no
+        /// box at all; with `content: ""` there is a box carrying nothing, which is the badge dot, the divider and
+        /// the overlay - so the empty string is a value here and not the absence of one.
+        ///
+        /// Stored on every style and read only for `::before` and `::after`. On an ordinary element `content` does
+        /// nothing, which is also what it does in a browser.
+        /// </summary>
+        internal string Content;
+
         internal TextAlignKind TextAlign = TextAlignKind.Left;
         internal WhiteSpaceKind WhiteSpace = WhiteSpaceKind.Normal;
         internal RgbaColor Color = new RgbaColor(0.925f, 0.929f, 0.945f, 1f);   // --text

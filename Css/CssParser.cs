@@ -160,6 +160,14 @@ namespace Sideload.Css
         internal string Selector;
         internal string BaseSelector;
         internal StateFlags RequiredStates;
+
+        /// <summary>
+        /// Which generated box this rule is about, or <see cref="PseudoElement.None"/> for the element itself.
+        ///
+        /// Split off the selector for the same reason the states are: what is left has to be something the DOM
+        /// library can match, and no DOM library can hand back a box that is not in the document.
+        /// </summary>
+        internal PseudoElement Pseudo;
         internal int SpecificityA, SpecificityB, SpecificityC;
         internal int Order;
 
@@ -361,8 +369,12 @@ namespace Sideload.Css
                     Order = state.Order++,
                     Declarations = declarations,
                 };
-                SplitStates(selector, out rule.BaseSelector, out rule.RequiredStates);
-                Specificity(rule.BaseSelector, rule.RequiredStates,
+                SplitStates(selector, out string stateless, out rule.RequiredStates);
+                SplitPseudoElement(stateless, out rule.BaseSelector, out rule.Pseudo);
+
+                // Measured on the selector BEFORE the pseudo-element comes off it, because `::before` counts as a
+                // type and stripping it first would let `.a` and `.a::before` tie.
+                Specificity(stateless, rule.RequiredStates,
                             out rule.SpecificityA, out rule.SpecificityB, out rule.SpecificityC);
                 state.Sheet.Rules.Add(rule);
             }
@@ -697,6 +709,50 @@ namespace Sideload.Css
             string keptSubject = kept.ToString();
             if (keptSubject.Trim().Length == 0) keptSubject = "*";
             baseSelector = (prefix + keptSubject).Trim();
+            if (baseSelector.Length == 0) baseSelector = "*";
+        }
+
+        /// <summary>
+        /// Splits a trailing <c>::before</c> or <c>::after</c> off the selector, leaving something the DOM library
+        /// can match and naming the generated box separately.
+        ///
+        /// It has to come off. AngleSharp accepts either spelling and then matches NOTHING with it - a pseudo-
+        /// element is not a node in the document - so a rule handed over intact applies to nobody and says nothing
+        /// about it. That is the whole of CSS-034: the rules were parsed, matched against zero elements, and
+        /// disappeared.
+        ///
+        /// Only the two-colon spelling. The one-colon <c>:before</c> is the legacy form that a browser still reads
+        /// as a pseudo-element, and this engine does not - a deliberate line, not an oversight. A single colon is
+        /// a pseudo-CLASS everywhere else in this parser; telling `:before` from a pseudo-class the engine has not
+        /// heard of would take a list of every name CSS will ever have. Left alone it reaches AngleSharp, matches
+        /// nothing, and generates nothing, which is where it already stood.
+        ///
+        /// Only when it is the SUBJECT, i.e. at the very end. <c>.a::before .b</c> matches nothing in a browser
+        /// either, and stripping the pseudo out of the middle would turn it into a selector that does.
+        ///
+        /// The other pseudo-elements go to the DOM library untouched: <c>::marker</c>, <c>::selection</c> and
+        /// <c>::backdrop</c> are refused by it and reported, <c>::first-line</c> and <c>::first-letter</c> are
+        /// matched AS the element and so style the whole of it, which is a gap of its own.
+        /// </summary>
+        internal static void SplitPseudoElement(string selector, out string baseSelector, out PseudoElement pseudo)
+        {
+            baseSelector = selector;
+            pseudo = PseudoElement.None;
+            if (string.IsNullOrEmpty(selector)) return;
+
+            int at = selector.LastIndexOf("::", StringComparison.Ordinal);
+            if (at < 0) return;
+
+            switch (selector.Substring(at + 2).Trim().ToLowerInvariant())
+            {
+                case "before": pseudo = PseudoElement.Before; break;
+                case "after": pseudo = PseudoElement.After; break;
+                default: return;
+            }
+
+            baseSelector = selector.Substring(0, at).Trim();
+
+            // `::before { }` on its own belongs to every element, the same way a bare `:hover` does.
             if (baseSelector.Length == 0) baseSelector = "*";
         }
 

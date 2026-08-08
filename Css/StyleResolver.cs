@@ -38,6 +38,41 @@ namespace Sideload.Css
     }
 
     /// <summary>
+    /// The finished styles of the boxes CSS generates, kept apart from the elements' own.
+    ///
+    /// Apart, because one element can carry three styles - its own, its <c>::before</c> and its <c>::after</c> -
+    /// and a dictionary keyed by element holds one.
+    ///
+    /// Only boxes that EXIST are in here. A pseudo-element without <c>content</c> is not a box at all, so it is
+    /// never stored, and that one rule is what stops every element a utility sheet touches from growing two empty
+    /// children.
+    /// </summary>
+    internal sealed class PseudoStyles
+    {
+        private readonly Dictionary<IElement, ComputedStyle> _before = new Dictionary<IElement, ComputedStyle>();
+        private readonly Dictionary<IElement, ComputedStyle> _after = new Dictionary<IElement, ComputedStyle>();
+
+        /// <summary>How many generated boxes this page has, across both kinds.</summary>
+        internal int Count => _before.Count + _after.Count;
+
+        internal void Set(IElement element, PseudoElement which, ComputedStyle style)
+        {
+            Dictionary<IElement, ComputedStyle> table = Table(which);
+            if (element != null && style != null && table != null) table[element] = style;
+        }
+
+        internal ComputedStyle Get(IElement element, PseudoElement which)
+        {
+            Dictionary<IElement, ComputedStyle> table = Table(which);
+            return element != null && table != null && table.TryGetValue(element, out ComputedStyle style)
+                ? style : null;
+        }
+
+        private Dictionary<IElement, ComputedStyle> Table(PseudoElement which) =>
+            which == PseudoElement.Before ? _before : which == PseudoElement.After ? _after : null;
+    }
+
+    /// <summary>
     /// Runs the cascade: which declarations win on which element, and what the resulting computed style is.
     ///
     /// Selector matching is delegated to the DOM library's own <c>QuerySelectorAll</c>, once per rule. That buys
@@ -48,9 +83,16 @@ namespace Sideload.Css
     {
         private const int MaxVarDepth = 8;
 
-        internal static Dictionary<IElement, ComputedStyle> Resolve(IDocument document, Stylesheet sheet, StyleContext context)
+        /// <summary>The cascade for a caller that has no use for generated boxes - the inspector, a test.</summary>
+        internal static Dictionary<IElement, ComputedStyle> Resolve(IDocument document, Stylesheet sheet,
+                                                                    StyleContext context) =>
+            Resolve(document, sheet, context, out _);
+
+        internal static Dictionary<IElement, ComputedStyle> Resolve(IDocument document, Stylesheet sheet,
+                                                                    StyleContext context, out PseudoStyles generated)
         {
             var result = new Dictionary<IElement, ComputedStyle>();
+            generated = new PseudoStyles();
             if (document?.DocumentElement == null) return result;
 
             context ??= new StyleContext();
@@ -71,7 +113,7 @@ namespace Sideload.Css
                 foreach (var initial in sheet.InitialVariables)
                     root.SetVariable(initial.Key, initial.Value);
 
-            Walk(document.DocumentElement, root, matches, context, result);
+            Walk(document.DocumentElement, root, matches, context, result, generated);
             return result;
         }
 
@@ -138,17 +180,47 @@ namespace Sideload.Css
 
         private static void Walk(IElement element, ComputedStyle parentStyle,
                                  Dictionary<IElement, List<StyleRule>> matches, StyleContext context,
-                                 Dictionary<IElement, ComputedStyle> result)
+                                 Dictionary<IElement, ComputedStyle> result, PseudoStyles generated)
         {
-            ComputedStyle style = ComputeFor(element, parentStyle, matches, context);
+            ComputedStyle style = ComputeFor(element, parentStyle, matches, context, PseudoElement.None);
             result[element] = style;
 
+            generated?.Set(element, PseudoElement.Before,
+                           Generated(element, style, PseudoElement.Before, matches, context));
+            generated?.Set(element, PseudoElement.After,
+                           Generated(element, style, PseudoElement.After, matches, context));
+
             foreach (IElement child in element.Children)
-                Walk(child, style, matches, context, result);
+                Walk(child, style, matches, context, result, generated);
+        }
+
+        /// <summary>
+        /// The style of one generated box, or null when this sheet generates none.
+        ///
+        /// The originating element's FINISHED style is the parent here, because that is what a pseudo-element
+        /// inherits from - its own rules then win over what came down, like any other child.
+        ///
+        /// Without `content` there is no box. That is what CSS says, and it is the line that keeps a stray
+        /// `.card::before { position: absolute }` in some utility sheet from hanging an empty child off every card
+        /// on the page.
+        /// </summary>
+        private static ComputedStyle Generated(IElement element, ComputedStyle style, PseudoElement which,
+                                               Dictionary<IElement, List<StyleRule>> matches, StyleContext context)
+        {
+            if (!matches.TryGetValue(element, out List<StyleRule> rules)) return null;
+
+            bool targeted = false;
+            foreach (StyleRule rule in rules)
+                if (rule.Pseudo == which) { targeted = true; break; }
+            if (!targeted) return null;
+
+            ComputedStyle box = ComputeFor(element, style, matches, context, which);
+            return box.Content == null ? null : box;
         }
 
         private static ComputedStyle ComputeFor(IElement element, ComputedStyle parentStyle,
-                                                Dictionary<IElement, List<StyleRule>> matches, StyleContext context)
+                                                Dictionary<IElement, List<StyleRule>> matches, StyleContext context,
+                                                PseudoElement pseudo)
         {
             var style = ComputedStyle.CreateFrom(parentStyle);
 
@@ -159,6 +231,10 @@ namespace Sideload.Css
             {
                 foreach (StyleRule rule in rules)
                 {
+                    // `.a::before` matched the element, but it is not ABOUT the element. Without this line its
+                    // declarations would land on `.a` itself and colour the card the badge was meant to sit on.
+                    if (rule.Pseudo != pseudo) continue;
+
                     // A rule requiring :hover only applies while the element actually hovers; requiring several
                     // states means all of them, which is how a compound like `button:focus:hover` reads.
                     if ((rule.RequiredStates & state) != rule.RequiredStates) continue;
@@ -169,7 +245,9 @@ namespace Sideload.Css
                 }
             }
 
-            string inline = element.GetAttribute("style");
+            // The `style` attribute belongs to the element and to nothing it generates - there is no way to write
+            // an inline style for a box that is not in the document.
+            string inline = pseudo == PseudoElement.None ? element.GetAttribute("style") : null;
             if (!string.IsNullOrWhiteSpace(inline))
             {
                 foreach (Declaration declaration in CssParser.ParseDeclarations(inline))
@@ -235,6 +313,8 @@ namespace Sideload.Css
                     if (value == null) continue;   // unresolvable var() makes the declaration invalid, as in CSS
                 }
 
+                if (IsContent(declaration.Property)) value = SubstituteAttributes(value, element);
+
                 StyleApplier.Apply(style, declaration.Property, value);
             }
 
@@ -246,6 +326,77 @@ namespace Sideload.Css
 
         private static bool IsFontSize(string property) =>
             property != null && property.Trim().Equals("font-size", StringComparison.OrdinalIgnoreCase);
+
+        private static bool IsContent(string property) =>
+            property != null && property.Trim().Equals("content", StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Replaces every `attr(name)` in a value with that attribute of the element, as a quoted string.
+        ///
+        /// Here rather than in the applier because the applier has no element: it is handed a property and a value
+        /// and nothing else, and `attr()` is the one piece of a value only the cascade can answer. A generated box
+        /// reads the attributes of the element it belongs to, which is what `attr()` means on a pseudo-element.
+        ///
+        /// A missing attribute becomes the fallback, or the empty string when there is none - as in CSS, and it is
+        /// what keeps `content: attr(data-label)` from dropping the declaration on the one row without a label.
+        /// </summary>
+        private static string SubstituteAttributes(string value, IElement element)
+        {
+            if (string.IsNullOrEmpty(value)) return value;
+            if (value.IndexOf("attr(", StringComparison.OrdinalIgnoreCase) < 0) return value;
+
+            var sb = new StringBuilder(value.Length);
+            for (int i = 0; i < value.Length; i++)
+            {
+                char c = value[i];
+
+                // Inside quotes it is text: `content: "attr(x)"` prints those letters, it does not read an
+                // attribute.
+                if (c == '"' || c == '\'')
+                {
+                    int end = QuoteEnd(value, i);
+                    sb.Append(value, i, end - i + 1);
+                    i = end;
+                    continue;
+                }
+
+                if (c != 'a' && c != 'A') { sb.Append(c); continue; }
+                if (string.Compare(value, i, "attr(", 0, 5, StringComparison.OrdinalIgnoreCase) != 0)
+                {
+                    sb.Append(c);
+                    continue;
+                }
+
+                int close = MatchingParen(value, i + 4);
+                if (close < 0) { sb.Append(c); continue; }
+
+                string args = value.Substring(i + 5, close - i - 5);
+                int comma = TopLevelComma(args);
+                string name = (comma < 0 ? args : args.Substring(0, comma)).Trim();
+                string fallback = comma < 0 ? null : args.Substring(comma + 1).Trim().Trim('"', '\'');
+
+                string read = element?.GetAttribute(name);
+                sb.Append(Quote(read ?? fallback ?? ""));
+                i = close;
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>An attribute's text as a CSS string, so whatever is in the document cannot end the string
+        /// early or start an escape of its own.</summary>
+        private static string Quote(string text) =>
+            "\"" + text.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
+
+        private static int QuoteEnd(string s, int quote)
+        {
+            char delimiter = s[quote];
+            for (int i = quote + 1; i < s.Length; i++)
+            {
+                if (s[i] == '\\') { i++; continue; }
+                if (s[i] == delimiter) return i;
+            }
+            return s.Length - 1;
+        }
 
         /// <summary>A declaration value with its `var()` references resolved, or null when one cannot be.</summary>
         private static string Substituted(string value, ComputedStyle style)

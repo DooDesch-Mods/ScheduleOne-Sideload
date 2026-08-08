@@ -219,6 +219,23 @@ namespace Sideload.Css
                     break;
                 case "text-overflow": s.TextOverflowEllipsis = Is(value, "ellipsis"); break;
 
+                // ----------------------------------------------------- generated content --
+                //
+                // Only `::before` and `::after` read this: DomBuilder turns a style whose Content is not null into
+                // a box, and nothing looks at it on an ordinary element.
+                //
+                // Read: a quoted string, several of them concatenated, `attr()` (resolved by the cascade, which is
+                // the only place that knows the element), and `none`. Deliberately NOT read: counter() and
+                // counters(), the quote keywords, url() and the gradient functions, and the `/ "alt text"` suffix.
+                // Each of those is its own feature - a counter needs a numbering pass over the document, an image
+                // needs the paint layer - and none is reachable from a Tailwind utility. Such a value is refused
+                // whole, so it lands in the log as a rejected value rather than as an empty box nobody ordered.
+                case "content":
+                    if (Is(value, "none") || Is(value, "normal")) { s.Content = null; break; }
+                    if (TryContent(value, out string generated)) s.Content = generated;
+                    else Diagnostics.Report(DiagnosticKind.ValueRejected, property, value);
+                    break;
+
                 default: return false;
             }
 
@@ -647,6 +664,138 @@ namespace Sideload.Css
             // A unitless line-height is a multiplier of the font size, which is exactly what a percentage resolves to
             // here - storing it that way keeps it correct when font-size changes later in the cascade.
             if (ValueParser.TryNumber(value, out float n)) s.LineHeight = Len.Percent(n * 100f);
+        }
+
+        // ----------------------------------------------------------- generated content --
+
+        /// <summary>
+        /// The text `content` produces, or false when the value says something this engine cannot make text out of.
+        ///
+        /// A value is a LIST whose parts concatenate, which is what makes <c>content: "(" attr(id) ")"</c> one
+        /// string rather than three.
+        ///
+        /// An `attr()` still standing here was never resolved, because only the cascade knows which element it
+        /// reads - see <see cref="StyleResolver"/>. It contributes nothing instead of failing the value, so the
+        /// sheet audit, which reads a stylesheet with no document behind it at all, does not report every icon
+        /// utility in a build as unreadable.
+        /// </summary>
+        private static bool TryContent(string value, out string text)
+        {
+            text = null;
+            var sb = new System.Text.StringBuilder();
+
+            foreach (string part in SplitOutsideStrings(value))
+            {
+                if (part.Length >= 2 && (part[0] == '"' || part[0] == '\'') && part[part.Length - 1] == part[0])
+                {
+                    Unescape(part.Substring(1, part.Length - 2), sb);
+                    continue;
+                }
+
+                if (part.StartsWith("attr(", StringComparison.OrdinalIgnoreCase)
+                    && part.EndsWith(")", StringComparison.Ordinal)) continue;
+
+                return false;
+            }
+
+            text = sb.ToString();
+            return true;
+        }
+
+        /// <summary>
+        /// The space-separated parts of a value, with a quoted string kept whole.
+        ///
+        /// <see cref="ValueParser.SplitTopLevel"/> cannot be used for this: it cuts at every space, and the space
+        /// in <c>content: "a b"</c> is text rather than a separator.
+        /// </summary>
+        private static List<string> SplitOutsideStrings(string value)
+        {
+            var parts = new List<string>();
+            var current = new System.Text.StringBuilder();
+            int depth = 0;
+
+            for (int i = 0; i < value.Length; i++)
+            {
+                char c = value[i];
+
+                if (c == '"' || c == '\'')
+                {
+                    int end = StringEnd(value, i);
+                    current.Append(value, i, end - i + 1);
+                    i = end;
+                    continue;
+                }
+
+                if (c == '(') depth++;
+                else if (c == ')') depth--;
+
+                if (depth == 0 && char.IsWhiteSpace(c))
+                {
+                    if (current.Length > 0) { parts.Add(current.ToString()); current.Clear(); }
+                    continue;
+                }
+
+                current.Append(c);
+            }
+
+            if (current.Length > 0) parts.Add(current.ToString());
+            return parts;
+        }
+
+        /// <summary>Index of the closing quote of the string opening at <paramref name="quote"/>, or the last
+        /// character when it is never closed.</summary>
+        private static int StringEnd(string s, int quote)
+        {
+            char delimiter = s[quote];
+            for (int i = quote + 1; i < s.Length; i++)
+            {
+                if (s[i] == '\\') { i++; continue; }
+                if (s[i] == delimiter) return i;
+            }
+            return s.Length - 1;
+        }
+
+        /// <summary>
+        /// CSS string escapes. A backslash before a character means that character; a backslash before up to six
+        /// hex digits means that code point, and one space after the digits belongs to the escape rather than to
+        /// the text.
+        ///
+        /// The hex form is not decoration: an icon font is addressed by code point and nothing else -
+        /// <c>content: "\f00c"</c> - and it is how Tailwind spells anything unusual in <c>content-['\2014']</c>.
+        /// </summary>
+        private static void Unescape(string raw, System.Text.StringBuilder sb)
+        {
+            for (int i = 0; i < raw.Length; i++)
+            {
+                if (raw[i] != '\\') { sb.Append(raw[i]); continue; }
+                if (i + 1 >= raw.Length) return;                 // a trailing backslash escapes nothing
+
+                int digits = 0;
+                int code = 0;
+                while (digits < 6 && i + 1 + digits < raw.Length && Hex(raw[i + 1 + digits], out int nibble))
+                {
+                    code = code * 16 + nibble;
+                    digits++;
+                }
+
+                if (digits == 0) { sb.Append(raw[i + 1]); i++; continue; }
+
+                i += digits;
+                if (i + 1 < raw.Length && raw[i + 1] == ' ') i++;
+
+                // Beyond the last code point, or in the surrogate range where there is no character to make.
+                if (code == 0 || code > 0x10FFFF || (code >= 0xD800 && code <= 0xDFFF)) sb.Append('�');
+                else sb.Append(char.ConvertFromUtf32(code));
+            }
+        }
+
+        private static bool Hex(char c, out int value)
+        {
+            if (c >= '0' && c <= '9') { value = c - '0'; return true; }
+            if (c >= 'a' && c <= 'f') { value = c - 'a' + 10; return true; }
+            if (c >= 'A' && c <= 'F') { value = c - 'A' + 10; return true; }
+            value = 0;
+            return false;
         }
 
         // --------------------------------------------------------------------- helpers --
