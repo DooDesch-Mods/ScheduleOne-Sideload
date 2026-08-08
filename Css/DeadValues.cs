@@ -101,22 +101,22 @@ namespace Sideload.Css
                     // An `inset` keyword drops the entire declaration; a fourth length (spread) is eaten; a
                     // comma list is merged into one shadow. All three are how focus rings and elevation are
                     // normally written.
-                    if (Contains(value, "inset")) Report(property, value + "  (inset verwirft die ganze Deklaration)");
+                    if (Contains(value, "inset")) Report(property, value + "  (inset drops the whole declaration)");
                     else if (ValueParser.SplitTopLevel(value, commaSeparated: true).Length > 1)
-                        Report(property, value + "  (nur der erste Schatten wird gezeichnet)");
+                        Report(property, value + "  (only the first shadow is drawn)");
                     break;
 
                 case "transform":
                     if (ContainsAny(value, "skew", "matrix", "perspective", "rotate3d", "rotatex", "rotatey",
                                            "rotatez", "translate3d", "translatez", "scale3d", "scalez"))
-                        Report(property, value + "  (diese Funktion kennt die Engine nicht)");
+                        Report(property, value + "  (this engine does not know that function)");
                     else if (Contains(value, "translate") && Contains(value, "%"))
-                        Report(property, value + "  (Prozent loest gegen null auf, translate(-50%) wird zu 0)");
+                        Report(property, value + "  (a percentage resolves against zero, so translate(-50%) becomes 0)");
                     break;
 
                 case "font-family":
                     // Only the first family is kept; the rest of the stack is never tried.
-                    if (Contains(value, ",")) Report(property, value + "  (nur die erste Familie zaehlt)");
+                    if (Contains(value, ",")) Report(property, value + "  (only the first family counts)");
                     break;
             }
         }
