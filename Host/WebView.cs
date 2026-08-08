@@ -1466,9 +1466,9 @@ namespace Sideload.Host
             // first few dozen the list stops being something anyone acts on.
             const int Cap = 40;
             var sb = new StringBuilder();
-            sb.Append($"[Sideload] {_appId}: {fresh.Count} Deklaration(en) wirkungslos - der Browser befolgt sie, diese Engine nicht:");
+            sb.Append($"[Sideload] {_appId}: {fresh.Count} thing(s) in this page do nothing here - a browser obeys them, this engine does not:");
             foreach (string line in fresh.Take(Cap)) sb.Append("\n    ").Append(line);
-            if (fresh.Count > Cap) sb.Append($"\n    ... und {fresh.Count - Cap} weitere.");
+            if (fresh.Count > Cap) sb.Append($"\n    ... and {fresh.Count - Cap} more.");
 
             Core.Log?.Warning(sb.ToString());
         }

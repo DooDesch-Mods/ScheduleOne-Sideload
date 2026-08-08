@@ -3,6 +3,13 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.14.4] - 2026-08-08
+
+### Fixed
+
+- The report about unusable CSS is in English. It was written in German, which is no use to anyone reading
+  the log of a mod written in English.
+
 ## [1.14.3] - 2026-08-08
 
 ### Fixed
