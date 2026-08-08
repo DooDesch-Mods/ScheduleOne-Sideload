@@ -66,6 +66,11 @@ namespace Sideload.Model
                 $"CSS-Property '{Subject}' ist nicht implementiert, jede Regel damit wird ignoriert.",
             DiagnosticKind.ValueRejected =>
                 $"'{Subject}: {Detail}' - der Wert ist fuer diese Engine unlesbar, die Deklaration faellt weg.",
+            // Ohne Detail ist die Property fuer JEDEN Wert tot, und den Wert zu nennen wuerde denselben Satz
+            // einmal pro Schreibweise wiederholen. Mit Detail ist der Wert die Information - `align-items` ist
+            // in Ordnung und `align-items: baseline` nicht.
+            DiagnosticKind.ValueIgnored when Detail == null =>
+                $"'{Subject}' wird gelesen und dann ignoriert - es passiert nichts, welchen Wert es auch bekommt.",
             DiagnosticKind.ValueIgnored =>
                 $"'{Subject}: {Detail}' wird gelesen und dann ignoriert - es passiert nichts.",
             DiagnosticKind.SelectorRejected =>

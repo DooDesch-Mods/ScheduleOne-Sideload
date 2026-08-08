@@ -54,13 +54,13 @@ namespace Sideload.Css
                 case "border-style":
                     // The case in the switch is `break;` - the whole property is a no-op. Even `none` does not
                     // remove a border, and dashed and dotted are drawn solid.
-                    Report(property, value);
+                    ReportProperty(property);
                     break;
 
                 case "transition-property":
                     // Read and discarded: there is one duration for the whole box and every animatable value
                     // rides along, so naming a property changes nothing.
-                    Report(property, value);
+                    ReportProperty(property);
                     break;
 
                 case "overflow-x":
@@ -81,8 +81,10 @@ namespace Sideload.Css
 
                 case "line-height":
                     // Parsed, inherited, and used only to measure an empty box. Normal text keeps TMP's own
-                    // spacing, so the number an author writes here is not the number on the screen.
-                    Report(property, value);
+                    // spacing, so the number an author writes here is not the number on the screen - and which
+                    // number that is changes nothing, which is why this reports the property rather than the value.
+                    // A stylesheet with eight line heights was eight identical lines of log before that.
+                    ReportProperty(property);
                     break;
 
                 case "margin":
@@ -119,8 +121,18 @@ namespace Sideload.Css
             }
         }
 
+        /// <summary>This VALUE is ignored, and naming it is the point - the property itself is fine.</summary>
         private static void Report(string property, string value) =>
             Diagnostics.Report(DiagnosticKind.ValueIgnored, property, value);
+
+        /// <summary>
+        /// The whole property is ignored, whatever it is set to.
+        ///
+        /// No value, so the receiver deduplicates all of them into one line. Without this a stylesheet that sets
+        /// eight different line heights reported eight times, and the report is only read while it is short.
+        /// </summary>
+        private static void ReportProperty(string property) =>
+            Diagnostics.Report(DiagnosticKind.ValueIgnored, property);
 
         private static bool IsAny(string value, params string[] candidates)
         {

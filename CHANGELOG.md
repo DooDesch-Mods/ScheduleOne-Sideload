@@ -3,6 +3,15 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.13.1] - 2026-08-08
+
+### Fixed
+
+- The report about unusable rules stops repeating itself. A property that does nothing whatever you set it to -
+  `line-height`, `border-style`, `transition-property` - is named once instead of once per value, so a stylesheet
+  with eight line heights no longer costs eight identical lines. One app's report went from ten lines to four,
+  and the four that are left each say something different.
+
 ## [1.13.0] - 2026-08-08
 
 ### Added
