@@ -9,8 +9,6 @@ namespace Sideload.Layout
     ///
     ///   * <b>Border-box sizing throughout.</b> `width` includes padding and border, which is what every app
     ///     stylesheet sets anyway and removes a whole class of "why is my box 24px too wide".
-    ///   * <b>Auto margins count as zero.</b> Centring is `justify-content` / `align-items`; `margin: 0 auto` does
-    ///     not centre. Same trade React Native makes.
     ///   * <b>Multi-line packing starts at the cross start.</b> `align-content` is not implemented; wrapped lines
     ///     stack tightly with the cross gap between them.
     ///   * <b>Height never feeds back into width.</b> Widths resolve first, text is measured against a known width,
@@ -191,6 +189,12 @@ namespace Sideload.Layout
                     AlignKind align = item.Node.Style.AlignSelf != AlignKind.Auto ? item.Node.Style.AlignSelf : s.AlignItems;
                     if (align != AlignKind.Stretch) continue;
 
+                    // An auto margin on the cross axis absorbs the line's spare room itself, so the item keeps the
+                    // size its own content asked for and gets centred or pushed instead of stretched. Flexbox 9.6
+                    // stretches only when NEITHER cross margin is auto, which is what makes `margin: 0 auto` centre
+                    // a box in a column rather than widening it to the full line and centring nothing.
+                    if (item.CrossMarginStartAuto || item.CrossMarginEndAuto) continue;
+
                     Len crossSizeProperty = row ? item.Node.Style.Height : item.Node.Style.Width;
                     if (crossSizeProperty.IsDefinite) continue;
 
@@ -249,6 +253,7 @@ namespace Sideload.Layout
             {
                 child.X += borderLeft + padLeft;
                 child.Y += borderTop + padTop;
+                if (child.Style.Position == PositionKind.Relative) OffsetRelative(child, contentW, contentH);
             }
 
             float paddingBoxW = contentW + padLeft + s.Padding.Right.Resolve(percentBasis);
@@ -277,6 +282,13 @@ namespace Sideload.Layout
             internal float CrossSize;
             internal float MainMarginStart, MainMarginEnd;
             internal float CrossMarginStart, CrossMarginEnd;
+
+            // An auto margin resolves to zero everywhere a length is wanted - sizing, line breaking, the flex pass -
+            // and only becomes a number once the line knows how much room is left over. Remembering WHICH margins
+            // were written `auto` is the only way to tell that apart from a genuine zero afterwards.
+            internal bool MainMarginStartAuto, MainMarginEndAuto;
+            internal bool CrossMarginStartAuto, CrossMarginEndAuto;
+
             internal float MinMain, MaxMain;
         }
 
@@ -285,13 +297,22 @@ namespace Sideload.Layout
         {
             ComputedStyle cs = child.Style;
 
+            Len mainMarginStart = row ? cs.Margin.Left : cs.Margin.Top;
+            Len mainMarginEnd = row ? cs.Margin.Right : cs.Margin.Bottom;
+            Len crossMarginStart = row ? cs.Margin.Top : cs.Margin.Left;
+            Len crossMarginEnd = row ? cs.Margin.Bottom : cs.Margin.Right;
+
             var item = new Item
             {
                 Node = child,
-                MainMarginStart = (row ? cs.Margin.Left : cs.Margin.Top).Resolve(percentBasis),
-                MainMarginEnd = (row ? cs.Margin.Right : cs.Margin.Bottom).Resolve(percentBasis),
-                CrossMarginStart = (row ? cs.Margin.Top : cs.Margin.Left).Resolve(percentBasis),
-                CrossMarginEnd = (row ? cs.Margin.Bottom : cs.Margin.Right).Resolve(percentBasis),
+                MainMarginStart = mainMarginStart.Resolve(percentBasis),
+                MainMarginEnd = mainMarginEnd.Resolve(percentBasis),
+                CrossMarginStart = crossMarginStart.Resolve(percentBasis),
+                CrossMarginEnd = crossMarginEnd.Resolve(percentBasis),
+                MainMarginStartAuto = mainMarginStart.IsAuto,
+                MainMarginEndAuto = mainMarginEnd.IsAuto,
+                CrossMarginStartAuto = crossMarginStart.IsAuto,
+                CrossMarginEndAuto = crossMarginEnd.IsAuto,
             };
 
             Len mainSizeProperty = row ? cs.Width : cs.Height;
@@ -299,7 +320,8 @@ namespace Sideload.Layout
             Len maxProperty = row ? cs.MaxWidth : cs.MaxHeight;
 
             AlignKind selfAlign = cs.AlignSelf != AlignKind.Auto ? cs.AlignSelf : parentAlign;
-            bool stretchedCross = !row && selfAlign == AlignKind.Stretch && !cs.Width.IsDefinite && !float.IsNaN(crossAvail);
+            bool stretchedCross = !row && selfAlign == AlignKind.Stretch && !cs.Width.IsDefinite && !float.IsNaN(crossAvail)
+                                  && !item.CrossMarginStartAuto && !item.CrossMarginEndAuto;
 
             float basis = ResolveOrNaN(cs.FlexBasis, mainAvail);
 
@@ -496,6 +518,17 @@ namespace Sideload.Layout
         private static float Weight(Item item, bool growing) =>
             growing ? item.Node.Style.FlexGrow : item.Node.Style.FlexShrink * item.BaseSize;
 
+        /// <summary>
+        /// Put one finished line where it belongs: free space along the main axis, alignment across it.
+        ///
+        /// Auto margins are resolved HERE, and before <c>justify-content</c> - that order is the whole of CSS
+        /// Flexbox 8.1 and the one thing easy to get wrong, because the wrong order looks almost right. An item with
+        /// `margin-left: auto` inside a `justify-content: center` container belongs at the END of the line; run
+        /// justify first and it lands half way there, which is plausible enough to survive a glance at the screen.
+        ///
+        /// Only POSITIVE free space is shared out. A line that overflows has none to give, and the spec's answer is
+        /// that every auto margin is then simply zero rather than negative - which falls out of the clamp below.
+        /// </summary>
         private static void PlaceLine(List<Item> line, ComputedStyle parent, bool row, bool reverse,
                                       float mainAvail, float mainGap, float crossOffset, float lineCross)
         {
@@ -505,6 +538,18 @@ namespace Sideload.Layout
 
             float free = float.IsNaN(mainAvail) ? 0f : Math.Max(mainAvail - content, 0f);
             int count = line.Count;
+
+            int autoMains = 0;
+            foreach (Item item in line)
+            {
+                if (item.MainMarginStartAuto) autoMains++;
+                if (item.MainMarginEndAuto) autoMains++;
+            }
+
+            // Every auto margin on the line takes an equal share, and justify-content is then handed a line with
+            // nothing left to distribute - so it has no effect, exactly as the spec requires.
+            float autoMain = 0f;
+            if (autoMains > 0 && free > 0f) { autoMain = free / autoMains; free = 0f; }
 
             float cursor = 0f;
             float between = mainGap;
@@ -527,29 +572,68 @@ namespace Sideload.Layout
 
             foreach (Item item in ordered)
             {
-                cursor += item.MainMarginStart;
+                cursor += item.MainMarginStart + (item.MainMarginStartAuto ? autoMain : 0f);
 
                 AlignKind align = item.Node.Style.AlignSelf != AlignKind.Auto ? item.Node.Style.AlignSelf : parent.AlignItems;
                 float crossFree = Math.Max(lineCross - item.CrossSize - item.CrossMarginStart - item.CrossMarginEnd, 0f);
                 float crossPos = crossOffset + item.CrossMarginStart;
 
-                switch (align)
+                // A cross-axis auto margin replaces align-self rather than adding to it: two of them centre the item
+                // in the line, one pushes it away from its own edge. Falling through to the switch as well would
+                // apply both and land the item somewhere neither rule asked for.
+                if (item.CrossMarginStartAuto && item.CrossMarginEndAuto) crossPos += crossFree * 0.5f;
+                else if (item.CrossMarginStartAuto) crossPos += crossFree;
+                else if (!item.CrossMarginEndAuto)
                 {
-                    case AlignKind.FlexEnd: crossPos += crossFree; break;
-                    case AlignKind.Center: crossPos += crossFree * 0.5f; break;
+                    switch (align)
+                    {
+                        case AlignKind.FlexEnd: crossPos += crossFree; break;
+                        case AlignKind.Center: crossPos += crossFree * 0.5f; break;
+                    }
                 }
 
                 if (row) { item.Node.X = cursor; item.Node.Y = crossPos; }
                 else { item.Node.Y = cursor; item.Node.X = crossPos; }
 
-                cursor += item.MainSize + item.MainMarginEnd + between;
+                cursor += item.MainSize + item.MainMarginEnd + (item.MainMarginEndAuto ? autoMain : 0f) + between;
             }
+        }
+
+        /// <summary>
+        /// Shift a <c>position: relative</c> box by its insets, after everything else on the page has been placed.
+        ///
+        /// The point of relative is that the box keeps the room it took in the flow: siblings do not close the gap
+        /// behind it and the parent does not shrink around it. That is why this runs at the very end of
+        /// <see cref="LayoutChildren"/> - the line extents and the parent's used height were already read off the
+        /// UNSHIFTED rectangles, and moving the box any earlier would feed the offset straight back into both.
+        ///
+        /// `left` wins over `right` and `top` over `bottom` when a box gives all four. CSS resolves that
+        /// over-constrained case in the writing direction, and this engine's is always left-to-right, top-to-bottom.
+        /// </summary>
+        private static void OffsetRelative(LayoutNode child, float contentW, float contentH)
+        {
+            Edges inset = child.Style.Inset;
+
+            float left = ResolveOrNaN(inset.Left, contentW);
+            float right = ResolveOrNaN(inset.Right, contentW);
+            if (!float.IsNaN(left)) child.X += left;
+            else if (!float.IsNaN(right)) child.X -= right;
+
+            // A percentage inset needs a definite containing size. Without one it resolves to NaN and is dropped -
+            // the same answer a browser gives, and the reason a px offset still works in an auto-height parent.
+            float top = ResolveOrNaN(inset.Top, contentH);
+            float bottom = ResolveOrNaN(inset.Bottom, contentH);
+            if (!float.IsNaN(top)) child.Y += top;
+            else if (!float.IsNaN(bottom)) child.Y -= bottom;
         }
 
         /// <summary>
         /// An absolutely positioned child is measured against, and placed inside, its parent's content box. Real CSS
         /// walks up to the nearest positioned ancestor; here every box is a containing block, which is both simpler
         /// and what an app author almost always means inside a component.
+        ///
+        /// Insets and size are read; margins are not, auto ones included. Out here `inset` says everything a margin
+        /// would, so the two ways of saying it would only be a second thing to keep in step.
         /// </summary>
         private static void LayoutAbsolute(LayoutNode child, float contentW, float contentH, IMeasureText measure)
         {
@@ -592,7 +676,10 @@ namespace Sideload.Layout
             foreach (LayoutNode child in node.Children)
             {
                 if (child.Style.Display == DisplayKind.None) continue;
-                if (child.Style.Position != PositionKind.Static) continue;
+
+                // Only the out-of-flow kinds are skipped. A relative child still occupies its normal room, so it
+                // sizes the box around it exactly like a static one - the offset moves the paint, not the space.
+                if (child.Style.Position == PositionKind.Absolute || child.Style.Position == PositionKind.Fixed) continue;
 
                 LayoutBox(child, availWidth, float.NaN, measure);
                 float outer = child.Width + Horizontal(child.Style.Margin, availWidth);
