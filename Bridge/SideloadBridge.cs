@@ -103,5 +103,26 @@ namespace Sideload.Bridge
         /// tap must queue and return.</summary>
         public static readonly Action<Action<string, string, string>, Action<string, int>, Action<string, string, string>>
             SetCompanionTaps = CompanionAccess.SetTaps;
+
+        // ------------------------------------------------------------ surfaces (added after ABI 1) --
+
+        /// <summary>
+        /// hostRect, id, bundlePrefix, hostAssembly, referenceShortSide -> mounted. Renders a bundle into a panel
+        /// that is not the phone.
+        ///
+        /// The rect crosses as <c>object</c> so the shim - which a mod may compile in as a single file - still needs
+        /// no UnityEngine reference. A caller that has Unity passes its RectTransform straight in; anything else is
+        /// refused with a log line. The last argument is what the panel's short side is worth in CSS pixels, or 0
+        /// for device pixels; see <see cref="Host.Surfaces.Mount"/> for why that cannot be one fixed number the way
+        /// the phone's 400 is.
+        /// </summary>
+        public static readonly Func<object, string, string, Assembly, float, bool> MountSurface = Host.Surfaces.Mount;
+
+        /// <summary>id. Takes a mounted surface down. A surface whose panel was destroyed goes on its own.</summary>
+        public static readonly Action<string> UnmountSurface = Host.Surfaces.Unmount;
+
+        /// <summary>id -> is a surface under this id on screen right now. False once its panel is gone, which is what
+        /// lets a caller remount after a scene reload without watching scenes itself.</summary>
+        public static readonly Func<string, bool> IsSurfaceMounted = Host.Surfaces.IsMounted;
     }
 }

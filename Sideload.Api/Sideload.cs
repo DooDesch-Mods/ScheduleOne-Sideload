@@ -46,6 +46,9 @@ namespace Sideload.Api
         private static Func<bool, bool> _setPhoneRaised;
         private static Func<bool> _isPhoneRaised;
         private static Action<string, string, Func<string, string, bool>> _claimKeys;
+        private static Func<object, string, string, Assembly, float, bool> _mountSurface;
+        private static Action<string> _unmountSurface;
+        private static Func<string, bool> _isSurfaceMounted;
 
         /// <summary>True only when the Sideload host is installed AND bound. You rarely need this - the API is a safe
         /// no-op when absent; use it to decide whether to build a fallback UI instead.</summary>
@@ -129,6 +132,17 @@ namespace Sideload.Api
         internal static void ClaimKeys(string appId, string keys, Func<string, string, bool> handler) =>
             _claimKeys?.Invoke(appId, keys, handler);
 
+        internal static bool MountSurface(object rect, string id, string prefix, Assembly host, float shortSide) =>
+            _mountSurface != null && _mountSurface(rect, id, prefix, host, shortSide);
+
+        internal static void UnmountSurface(string id) => _unmountSurface?.Invoke(id);
+
+        internal static bool SurfaceIsMounted(string id) => _isSurfaceMounted != null && _isSurfaceMounted(id);
+
+        /// <summary>Whether the installed host can render outside the phone. False before Sideload 1.13.0, where
+        /// <see cref="Surfaces.Mount"/> answers false and the caller keeps whatever UI it already had.</summary>
+        internal static bool HasSurfaces { get { EnsureBound(); return _mountSurface != null; } }
+
         /// <summary>Whether the installed host can hand an app a key at all. False against a Sideload older than
         /// 1.10.0, where <see cref="AppHandle.OnKey"/> is a silent no-op.</summary>
         internal static bool HasKeys { get { EnsureBound(); return _claimKeys != null; } }
@@ -176,6 +190,9 @@ namespace Sideload.Api
                 _setPhoneRaised = Get<Func<bool, bool>>(t, "SetPhoneRaised");
                 _isPhoneRaised = Get<Func<bool>>(t, "IsPhoneRaised");
                 _claimKeys = Get<Action<string, string, Func<string, string, bool>>>(t, "ClaimKeys");
+                _mountSurface = Get<Func<object, string, string, Assembly, float, bool>>(t, "MountSurface");
+                _unmountSurface = Get<Action<string>>(t, "UnmountSurface");
+                _isSurfaceMounted = Get<Func<string, bool>>(t, "IsSurfaceMounted");
 
                 _bound = true;
 
@@ -504,6 +521,102 @@ namespace Sideload.Api
             });
             return this;
         }
+    }
+
+    /// <summary>
+    /// HTML somewhere other than the phone: a column in the main menu, a panel on a machine, a board on a wall.
+    ///
+    /// The renderer never cared about the phone - it draws into any RectTransform - so a surface is the same engine,
+    /// the same CSS subset and the same <c>s1.call</c> / <c>s1.on</c> channel, only mounted somewhere else. What it
+    /// does not have is everything that belongs to the phone: no home-screen icon, no orientation the player can
+    /// turn, no badge, no notification.
+    ///
+    /// <code>
+    ///   Surfaces.Mount(myPanelRectTransform, "sidehustle-menu", "SideHustle.Assets.menu")
+    ///           .OnCall("menu.state", _ =&gt; StateJson());
+    /// </code>
+    ///
+    /// Needs Sideload 1.13.0. Against anything older <see cref="Mount"/> answers a handle whose calls are no-ops and
+    /// <see cref="Available"/> is false, so a mod ships this without a hard version pin and keeps its own UI as the
+    /// fallback.
+    /// </summary>
+    public static class Surfaces
+    {
+        /// <summary>Whether the installed Sideload can render outside the phone at all.</summary>
+        public static bool Available { get { return Apps.Available && Apps.HasSurfaces; } }
+
+        /// <summary>
+        /// Render a bundle into a panel of your own.
+        /// </summary>
+        /// <param name="hostRect">Your <c>UnityEngine.RectTransform</c>. Typed as object only so this file stays
+        /// compilable in a mod with no Unity reference; pass the RectTransform straight in.</param>
+        /// <param name="id">Stable id, unique across apps AND surfaces - they share one namespace, so a surface
+        /// cannot take an app's <c>s1.call</c> handlers. Also the folder under Mods/ that overrides the bundle.</param>
+        /// <param name="bundlePrefix">Embedded-resource prefix of the web files inside the calling assembly.</param>
+        /// <param name="designShortSide">What the panel's short side is worth in CSS pixels. 0 (the default) maps
+        /// one CSS pixel to one device unit, which is what a panel uGUI has already laid out wants. Give a number
+        /// instead to get the phone's contract: the page is written for that width and scales with the panel.</param>
+        /// <param name="hostAssembly">The assembly holding the bundle. Defaults to the caller's.</param>
+        public static SurfaceHandle Mount(object hostRect, string id, string bundlePrefix,
+                                          float designShortSide = 0f, Assembly hostAssembly = null)
+        {
+            var handle = new SurfaceHandle(id);
+            if (string.IsNullOrEmpty(id) || hostRect == null) return handle;
+
+            Assembly asm = hostAssembly ?? Assembly.GetCallingAssembly();
+            // Not queued when the host is absent, unlike Register: a rect is a live object, and replaying a mount
+            // later would aim at a panel that has since been destroyed.
+            Apps.MountSurface(hostRect, id, bundlePrefix, asm, designShortSide);
+            return handle;
+        }
+
+        /// <summary>Take a surface down. Safe for an id that was never mounted.</summary>
+        public static void Unmount(string id) { Apps.UnmountSurface(id); }
+
+        /// <summary>Whether a surface under this id is on screen. False once its panel is destroyed - a scene reload
+        /// does that - so this is the check to remount on.</summary>
+        public static bool IsMounted(string id) { return Apps.SurfaceIsMounted(id); }
+    }
+
+    /// <summary>Handle to a mounted surface: the same call and event channel an app has, minus everything that only
+    /// makes sense on a phone.</summary>
+    public sealed class SurfaceHandle
+    {
+        private readonly string _id;
+
+        internal SurfaceHandle(string id) { _id = id; }
+
+        /// <summary>The id this surface was mounted under.</summary>
+        public string Id { get { return _id; } }
+
+        /// <summary>Answer <c>s1.call(name, arg)</c> from this surface's page. Same rules as an app's handler: it
+        /// runs on the Unity main thread in the same frame, and returns a string.</summary>
+        public SurfaceHandle OnCall(string name, Func<string, string> handler)
+        {
+            string id = _id;
+            Apps.WhenBound(() => Apps.HandleCall(id, name, handler));
+            return this;
+        }
+
+        /// <summary>Push an event at this surface's page - <c>s1.on(name, fn)</c>. Nothing happens when the surface
+        /// is not mounted; the page picks the state up when it next builds.</summary>
+        public SurfaceHandle Emit(string name, string payload = "")
+        {
+            string id = _id;
+            Apps.WhenBound(() => Apps.EmitEvent(id, name, payload));
+            return this;
+        }
+
+        /// <summary>Let this surface's page reach one host with <c>fetch</c>. The allowlist starts empty.</summary>
+        public SurfaceHandle AllowHost(string host)
+        {
+            string id = _id;
+            Apps.WhenBound(() => Apps.AllowNetHost(id, host));
+            return this;
+        }
+
+        /// <summary>Take this surface down.</summary>
+        public void Unmount() { Apps.UnmountSurface(_id); }
     }
 
     /// <summary>The phone itself, as opposed to any one app on it. Everything here is a no-op without Sideload.</summary>

@@ -21,9 +21,21 @@ namespace Sideload.Host
     /// </summary>
     public sealed class WebView
     {
-        /// <summary>Short side of the CSS viewport. The host rect is scaled so that a stylesheet can always assume a
-        /// 400px-wide phone, whatever the real panel measures (see decision 5 in ARCHITECTURE.md).</summary>
-        private const float ReferenceShortSide = 400f;
+        /// <summary>Short side of the CSS viewport on the phone. The host rect is scaled so that a stylesheet can
+        /// always assume a 400px-wide phone, whatever the real panel measures (see decision 5 in
+        /// ARCHITECTURE.md).</summary>
+        internal const float PhoneShortSide = 400f;
+
+        /// <summary>
+        /// What this view's short side is worth in CSS pixels, or 0 for "one CSS pixel is one device unit".
+        ///
+        /// The phone is fixed at 400 because every app is written for the same panel. A surface mounted somewhere
+        /// else has no such agreement: a menu column is narrow and tall, a banner wide and flat, and the two cannot
+        /// share one number. So the caller either names the width it designed against - and gets the phone's
+        /// contract, a page that scales with the panel - or names nothing and gets device pixels, which is what a
+        /// panel already laid out by uGUI wants.
+        /// </summary>
+        private readonly float _referenceShortSide;
 
         /// <summary>Every live view, so the mod's update loop can drive their timers and pending rebuilds. A view
         /// whose root has been destroyed drops out on the next tick.</summary>
@@ -37,6 +49,14 @@ namespace Sideload.Host
         private bool _built;
         private bool _rebuildQueued;
         private bool _resizeQueued;
+
+        /// <summary>Build on the first frame the panel is up, and follow it when it changes shape. Set for a mounted
+        /// surface, never for a phone app - the phone builds on open and re-measures on turn, both on purpose.</summary>
+        internal bool AutoBuild;
+
+        /// <summary>The host rect as it was last measured, so <see cref="AutoBuild"/> can tell a real change of shape
+        /// from the same rect read again.</summary>
+        private Vector2 _hostWas;
 
 #if DEBUG
         private HotReload _watcher;
@@ -96,12 +116,37 @@ namespace Sideload.Host
         private float _lastRenderMs;
         private int _boxes;
 
-        private WebView(RectTransform host, RectTransform root, AppBundle bundle, string appId)
+        private WebView(RectTransform host, RectTransform root, AppBundle bundle, string appId, float referenceShortSide)
         {
             _host = host;
             _root = root;
             _bundle = bundle;
             _appId = appId;
+            _referenceShortSide = referenceShortSide;
+        }
+
+        /// <summary>Device units per CSS pixel for the rect as it stands now. One when the view maps 1:1.</summary>
+        private float ScaleFor(float hostW, float hostH) =>
+            _referenceShortSide > 0f ? Math.Min(hostW, hostH) / _referenceShortSide : 1f;
+
+        /// <summary>
+        /// Whether this view's colours have to be pre-converted to linear - see
+        /// <see cref="Paint.BoxRenderer.ConvertToLinear"/> for what that costs when it is wrong.
+        ///
+        /// Decided from the canvas rather than asked of the caller: a mod mounting a panel has no way to know which
+        /// answer its canvas needs, and getting it wrong is invisible until somebody looks at a dark surface.
+        /// A camera-drawn canvas (the phone's, and any world-space panel) is converted back downstream; an overlay
+        /// canvas is composited straight into the finished frame and is not.
+        /// </summary>
+        private bool WantsLinearColors()
+        {
+            try
+            {
+                Canvas canvas = _root != null ? _root.GetComponentInParent<Canvas>() : null;
+                if (canvas == null) return true;
+                return canvas.renderMode != RenderMode.ScreenSpaceOverlay;
+            }
+            catch { return true; }
         }
 
         /// <summary>The node everything of this view lives under. Destroying it disposes the view.</summary>
@@ -132,7 +177,8 @@ namespace Sideload.Host
             $"  renders {_renders} ({_lastRenderMs:0.0} ms)   reloads {_reloads}\n" +
             $"  script: {(_script == null ? "none" : _script.Failed ? "FAILED - " + _script.LastError : "ok")}";
 
-        internal static WebView Mount(RectTransform host, AppBundle bundle, string appId)
+        internal static WebView Mount(RectTransform host, AppBundle bundle, string appId,
+                                      float referenceShortSide = PhoneShortSide)
         {
             if (host == null)
             {
@@ -141,9 +187,22 @@ namespace Sideload.Host
             }
 
             RectTransform root = UiFactory.Rect("sideload-view", host);
-            var view = new WebView(host, root, bundle, appId);
+            var view = new WebView(host, root, bundle, appId, referenceShortSide);
             _live.Add(view);
             return view;
+        }
+
+        /// <summary>Take this view down now rather than waiting for its rect to be destroyed. A surface that
+        /// outlives its panel is the caller's to end; the phone never needs this because its panel dies with the
+        /// scene.</summary>
+        internal void Dispose()
+        {
+            _script?.Dispose();
+            _script = null;
+            foreach (int id in _publishedKeys) Input.Keys.Withdraw(id);
+            _publishedKeys.Clear();
+            _live.Remove(this);
+            if (_root != null) Object.Destroy(_root.gameObject);
         }
 
         /// <summary>Drive every live view one frame: script timers first, then any rebuild those timers asked for.</summary>
@@ -227,6 +286,20 @@ namespace Sideload.Host
             // hidden measures every line about ten times too short and comes back with one character per line. A
             // chat app hits this immediately, because messages arrive while the phone is in the player's pocket.
             if (!_root.gameObject.activeInHierarchy) return;
+
+            // A surface has no icon to press, so nothing else would ever build it, and nothing else watches its panel
+            // for a change of shape either. The phone opts out of both: it builds when the player opens the app, and
+            // it re-measures when the player turns it.
+            if (AutoBuild)
+            {
+                if (!_built) { EnsureBuilt(); return; }
+                Rect now = _host.rect;
+                if (!Mathf.Approximately(now.width, _hostWas.x) || !Mathf.Approximately(now.height, _hostWas.y))
+                {
+                    _hostWas = new Vector2(now.width, now.height);
+                    QueueResize();
+                }
+            }
 
             // Before the rebuild, not after: a key that changes the DOM should show up in THIS frame's render rather
             // than waiting a frame, which is the difference between a list that walks with the arrows and one that
@@ -319,7 +392,7 @@ namespace Sideload.Host
             float hostW = hostRect.width, hostH = hostRect.height;
             if (hostW < 1f || hostH < 1f) return;
 
-            float scale = Math.Min(hostW, hostH) / ReferenceShortSide;
+            float scale = ScaleFor(hostW, hostH);
             float cssW = hostW / scale, cssH = hostH / scale;
 
             if (Mathf.Approximately(cssW, _root.sizeDelta.x) && Mathf.Approximately(cssH, _root.sizeDelta.y)) return;
@@ -328,6 +401,7 @@ namespace Sideload.Host
 
             _root.sizeDelta = new Vector2(cssW, cssH);
             _root.localScale = new Vector3(scale, scale, 1f);
+            _hostWas = new Vector2(hostW, hostH);
             _context.Orientation = cssW >= cssH ? Orientation.Landscape : Orientation.Portrait;
 
             Rebuild();
@@ -355,8 +429,9 @@ namespace Sideload.Host
                 return;
             }
 
-            // One CSS pixel is `scale` device units, so every stylesheet works against the same 400px short side.
-            float scale = Math.Min(hostW, hostH) / ReferenceShortSide;
+            // One CSS pixel is `scale` device units, so every phone stylesheet works against the same 400px short
+            // side. A surface that named no reference gets scale 1 and therefore device pixels.
+            float scale = ScaleFor(hostW, hostH);
             float cssW = hostW / scale, cssH = hostH / scale;
 
             _root.anchorMin = _root.anchorMax = new Vector2(0.5f, 0.5f);
@@ -364,6 +439,7 @@ namespace Sideload.Host
             _root.anchoredPosition = Vector2.zero;
             _root.sizeDelta = new Vector2(cssW, cssH);
             _root.localScale = new Vector3(scale, scale, 1f);
+            _hostWas = new Vector2(hostW, hostH);
 
 #if DEBUG
             _watcher ??= HotReload.Start(_bundle?.OverrideRoot, _appId);
@@ -473,6 +549,7 @@ namespace Sideload.Host
             // Tell the painter what one css pixel is worth in device pixels, so a hairline border can be snapped to
             // a whole one instead of being smeared across two.
             Paint.Painter.CssToDevice = scale;
+            Paint.BoxRenderer.ConvertToLinear = WantsLinearColors();
             long started = System.Diagnostics.Stopwatch.GetTimestamp();
             _interaction.ResetForRender(_document);
             Transitions.Clear();

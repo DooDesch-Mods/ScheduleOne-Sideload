@@ -258,11 +258,24 @@ namespace Sideload.Paint
         /// </summary>
         private static Color ToVertex(Color c)
         {
-            if (QualitySettings.activeColorSpace != ColorSpace.Linear) return c;
+            if (!ConvertToLinear || QualitySettings.activeColorSpace != ColorSpace.Linear) return c;
             Color linear = c.linear;
             linear.a = c.a;   // alpha is never gamma-encoded
             return linear;
         }
+
+        /// <summary>
+        /// Whether the conversion above applies to the view being painted right now. Set per render by
+        /// <see cref="Host.WebView"/> from the canvas the view hangs under, and true for the phone.
+        ///
+        /// It is not a global truth, which is what made this so quiet: the phone's screen is drawn by a camera into
+        /// a render texture, and that path converts back on the way out, so pre-converting is exactly right there.
+        /// A screen-space-OVERLAY canvas is composited straight into the frame with no such step, so the same
+        /// pre-conversion is applied and never undone - a measured #808080 arrives as #383838 and every dark
+        /// surface collapses into the black behind it, while text (which TextMeshPro converts itself) stays right.
+        /// A page that looks correct on the phone and unlit anywhere else is the symptom.
+        /// </summary>
+        internal static bool ConvertToLinear = true;
 
         /// <summary>Reuse one mesh per node: repainting on every DOM mutation would otherwise leave a dead Unity mesh
         /// behind each time.</summary>

@@ -3,6 +3,22 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.13.0] - 2026-08-08
+
+### Added
+
+- A mod can put a page anywhere now, not only on the phone: `Surfaces.Mount(rect, id, bundlePrefix)` renders a
+  bundle into any panel it owns, with the same `s1.call` and `s1.on` channel an app has. Side Hustle's main-menu
+  column is the first one.
+  - The page can be written for a fixed width and scale with the panel, the way a phone app does, or work in the
+    panel's own pixels. That is the `designShortSide` argument.
+
+### Fixed
+
+- Colours outside the phone come out as the colours you wrote. A page mounted on a screen overlay had every
+  fill converted a second time, so `#808080` arrived as `#383838` and dark surfaces disappeared into whatever
+  was behind them while the text stayed correct. Phone apps were never affected.
+
 ## [1.12.0] - 2026-08-08
 
 ### Added
