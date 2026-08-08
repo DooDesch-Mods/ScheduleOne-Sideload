@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
+using Il2CppScheduleOne.Building;
 using Il2CppScheduleOne.DevUtilities;
 using Il2CppScheduleOne.UI;
 using Il2CppScheduleOne.UI.Input;
@@ -214,87 +215,42 @@ namespace Sideload.Phone
         }
 
         /// <summary>
-        /// The InputActionReference asset for one action, found by name. Unity names these "&lt;map&gt;/&lt;action&gt;"
-        /// - "Generic/RotateLeft" in this build - and they are loaded because the scene references them, so looking
-        /// through what is already loaded beats constructing one and getting the map wrong.
-        /// </summary>
-        private static InputActionReference _leftAction, _rightAction;
-        private static float _actionsResolvedAt = float.NegativeInfinity;
-        private const float ActionRetryInterval = 2f;
-
-        /// <summary>How many times the search may come back empty before it stops asking. See below.</summary>
-        private const int MaxActionAttempts = 5;
-
-        private static int _actionAttempts;
-
-        /// <summary>The rotate-left / rotate-right action asset. Shared with <see cref="TurnInput"/> so the naming
-        /// knowledge lives in one place.
+        /// The rotate-left / rotate-right action, read off the object that owns it. Shared with
+        /// <see cref="TurnInput"/> so the knowledge of where these live sits in one place.
         ///
-        /// Resolved ONCE and kept: <see cref="FindAction"/> walks every loaded object, which is far too expensive for
-        /// the per-frame caller. Until the assets turn up (the scene may not have loaded them yet) the search is
-        /// retried, but only every couple of seconds.
+        /// <para><see cref="BuildManager"/> holds both as public fields and is the only thing in the base game that
+        /// reads them - <c>BuildUpdate_Grid</c>, <c>BuildUpdate_ProceduralGrid</c> and <c>BuildUpdate_Surface</c> all
+        /// do <c>NetworkSingleton&lt;BuildManager&gt;.Instance.RotateLeftAction.action.WasPressedThisFrame()</c>. So
+        /// the phone asks the same object the build ghost asks, and a player who rebinds the key in the game's own
+        /// options moves both.</para>
         ///
-        /// <para>And only a handful of times. A build where these assets are named differently, or absent, would
-        /// otherwise retry for the whole session: two full <c>Resources.FindObjectsOfTypeAll</c> sweeps every two
-        /// seconds, for as long as a turnable app is on screen. Measured at 137 ms per sweep pair on a real save -
-        /// a hitch every two seconds, and a click whose press and release straddle one is dropped by uGUI. Giving up
-        /// costs the key hint and the rotate keys; the player can still turn the phone from the app, and an app that
-        /// asks can still call setOrientation. A missing convenience beats a stutter nobody can explain.</para>
+        /// <para>This used to search every loaded <see cref="InputActionReference"/> for an asset whose NAME ended in
+        /// "/RotateLeft". The field is called RotateLeftAction; the asset behind it is named whatever the designer
+        /// typed, and it is not that - so the search never matched, on any build, and the rotate keys have never
+        /// worked. It also cost a full <c>Resources.FindObjectsOfTypeAll</c> sweep to fail. Reading the field is one
+        /// property access and cannot be wrong about a name.</para>
         /// </summary>
         internal static InputActionReference RotateAction(bool left)
         {
-            if (_leftAction == null && _rightAction == null
-                && _actionAttempts < MaxActionAttempts
-                && Time.unscaledTime - _actionsResolvedAt >= ActionRetryInterval)
-            {
-                _actionsResolvedAt = Time.unscaledTime;
-                _actionAttempts++;
+            // Not cached. The singleton is one static lookup and the field access is a pointer offset, which is
+            // cheaper than the branch that would decide whether a cache is still valid - and a cache would have to
+            // be invalidated on every scene change, which is exactly how the old lookup got stuck.
+            if (!NetworkSingleton<BuildManager>.InstanceExists) return null;
 
-                _leftAction = FindAction("RotateLeft");
-                _rightAction = FindAction("RotateRight");
+            BuildManager manager = NetworkSingleton<BuildManager>.Instance;
+            if (manager == null) return null;
 
-                if (_leftAction == null && _rightAction == null && _actionAttempts >= MaxActionAttempts)
-                {
-                    Core.Log?.Warning("[Sideload] the rotate actions (RotateLeft/RotateRight) are not in this build - "
-                        + "the phone can still be turned from an app, but the rotate keys and their key hint stay off. "
-                        + "Searching further would cost a scene sweep every two seconds.");
-                }
-            }
-
-            return left ? _leftAction : _rightAction;
+            return left ? manager.RotateLeftAction : manager.RotateRightAction;
         }
 
         /// <summary>
-        /// Let the search run again, for a scene that may only now have loaded the input assets.
+        /// Let the prompt-strip search run again, for a scene that may only now have built its UI.
         ///
-        /// Called on a scene change rather than on a timer: the give-up above is permanent by design, and a new scene
-        /// is the one event that can honestly change the answer.
+        /// Called on a scene change rather than on a timer: the give-up there is permanent by design, and a new scene
+        /// is the one event that can honestly change the answer. The actions themselves need no rearming - they are
+        /// read fresh from the singleton every time.
         /// </summary>
-        internal static void RearmActionSearch()
-        {
-            _moduleMisses = 0;
-
-            if (_leftAction != null || _rightAction != null) return;
-            _actionAttempts = 0;
-            _actionsResolvedAt = float.NegativeInfinity;
-        }
-
-        private static InputActionReference FindAction(string actionName)
-        {
-            string suffix = "/" + actionName;
-
-            foreach (InputActionReference reference in Resources.FindObjectsOfTypeAll<InputActionReference>())
-            {
-                if (reference == null) continue;
-
-                string name = reference.name ?? "";
-                if (name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)
-                    || name.Equals(actionName, StringComparison.OrdinalIgnoreCase))
-                    return reference;
-            }
-
-            return null;
-        }
+        internal static void RearmActionSearch() => _moduleMisses = 0;
 
         private static void WarnOnce(string reason)
         {

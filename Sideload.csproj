@@ -109,6 +109,13 @@
       <HintPath>$(GameManagedPath)/Il2CppScheduleOne.Core.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <!-- Compile-time only, and for one line: BuildManager owns the rotate actions the phone reuses, and it is a
+         NetworkSingleton, so the compiler has to be able to walk its base chain through NetworkBehaviour. Nothing
+         here talks to FishNet itself. -->
+    <Reference Include="Il2CppFishNet.Runtime">
+      <HintPath>$(GameManagedPath)/Il2CppFishNet.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="UnityEngine.CoreModule">
       <HintPath>$(GameManagedPath)/UnityEngine.CoreModule.dll</HintPath>
       <Private>false</Private>

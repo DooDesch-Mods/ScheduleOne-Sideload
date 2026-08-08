@@ -81,10 +81,80 @@ namespace Sideload.Devtools
 
             if (keys.Count == 0) Core.Log?.Msg("[Sideload]   no app has claimed a key.");
 
+            // The rotate keys are not a claim - they are the game's own action, borrowed from BuildManager - so they
+            // do not appear above and there is otherwise no way to see whether they resolved. A player reporting
+            // "the phone will not turn" is answered by this line.
+            Core.Log?.Msg("[Sideload]   " + RotateReport());
+            Core.Log?.Msg("[Sideload]   " + PromptReport());
+
             // Where the keyboard is, because the gate above is only ever shut BECAUSE something holds it, and which
             // something decides whether data-typing is working or a search box is quietly eating every keystroke.
             foreach (Phone.PhoneAppHost host in Phone.HomeScreenPatch.Hosts)
                 if (host.IsAlive) Core.Log?.Msg($"[Sideload]   {host.TypingReport}");
+        }
+
+        /// <summary>What the phone's rotate keys are bound to, in the player's own words rather than an asset path.</summary>
+        private static string RotateReport()
+        {
+            var left = Phone.TurnPrompt.RotateAction(true)?.action;
+            var right = Phone.TurnPrompt.RotateAction(false)?.action;
+
+            if (left == null && right == null)
+                return "rotate: no action - BuildManager is not up, so the phone cannot be turned by key yet.";
+
+            // The bound CONTROL rather than the binding path: "Q" is what the player sees on the keyboard, and
+            // "<Keyboard>/q" is what they would have to translate. Both are read defensively - an action can be
+            // enabled with nothing bound to it, which looks identical to a working one from the outside.
+            static string Bound(UnityEngine.InputSystem.InputAction a)
+            {
+                if (a == null) return "none";
+                try
+                {
+                    if (a.controls.Count == 0) return a.name + " (bound to nothing)";
+                    return a.name + " = " + a.controls[0].displayName
+                         + (a.controls.Count > 1 ? $" (+{a.controls.Count - 1} more)" : "")
+                         + (a.enabled ? "" : ", DISABLED");
+                }
+                catch { return a.name + " (could not be read)"; }
+            }
+
+            return $"rotate: left {Bound(left)}, right {Bound(right)}";
+        }
+
+        /// <summary>
+        /// Which kind of key-hint row the game currently has on screen, and how many.
+        ///
+        /// There are two systems and they look identical to a player: `InputPrompt` is placed in a scene and carries
+        /// its own action list, `InputPromptsItemUI` is built at runtime by InputPromptsManager from a module. The
+        /// turn hint clones one of the second kind, so when none is on screen it has nothing to copy - and from the
+        /// outside that is indistinguishable from the hint being broken.
+        /// </summary>
+        private static string PromptReport()
+        {
+            try
+            {
+                int items = 0, itemsActive = 0, plain = 0, plainActive = 0;
+
+                foreach (Il2CppScheduleOne.UI.Input.InputPromptsItemUI row
+                         in UnityEngine.Object.FindObjectsOfType<Il2CppScheduleOne.UI.Input.InputPromptsItemUI>(true))
+                {
+                    if (row == null) continue;
+                    items++;
+                    if (row.gameObject.activeInHierarchy) itemsActive++;
+                }
+
+                foreach (Il2CppScheduleOne.UI.Input.InputPrompt row
+                         in UnityEngine.Object.FindObjectsOfType<Il2CppScheduleOne.UI.Input.InputPrompt>(true))
+                {
+                    if (row == null) continue;
+                    plain++;
+                    if (row.gameObject.activeInHierarchy) plainActive++;
+                }
+
+                return $"prompt rows: {itemsActive}/{items} InputPromptsItemUI on screen (what the turn hint clones), "
+                     + $"{plainActive}/{plain} InputPrompt on screen (the in-scene kind).";
+            }
+            catch (Exception e) { return "prompt rows: could not be counted - " + e.Message; }
         }
 
         private static void Press(string token)
