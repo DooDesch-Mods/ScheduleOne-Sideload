@@ -23,4 +23,23 @@
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
   </PropertyGroup>
 
+  <!--
+    Keep the shipped copy of the shim in step with this one.
+
+    Mods that live in their own repository have no sibling Sideload.Api/ folder; their CI checks the build-libs
+    repo out as ./Workspace and compiles Workspace/lib/sideload-api/Sideload.cs instead. That copy going stale is
+    not a soft failure - the dependent mod calls a method the copy has never heard of and the RELEASE build breaks,
+    on a machine nobody is looking at, after the tag has been pushed. Which is exactly what happened to
+    Orientation(...) once and to SurfaceHandle again.
+
+    Copying it here means the only way to leave it stale is to not build this project at all. Pushing it is still
+    manual, and still the step to remember.
+  -->
+  <Target Name="RefreshShippedShim" AfterTargets="Build"
+          Condition="Exists('$(MSBuildThisFileDirectory)../../Workspace/lib/sideload-api')">
+    <Copy SourceFiles="$(MSBuildThisFileDirectory)Sideload.cs"
+          DestinationFolder="$(MSBuildThisFileDirectory)../../Workspace/lib/sideload-api"
+          SkipUnchangedFiles="true" />
+  </Target>
+
 </Project>
