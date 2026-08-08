@@ -241,13 +241,13 @@ namespace Sideload.Script
                     Engine.Execute(source, fileName);
                 }
 
-                Core.Log?.Msg($"[Sideload] {fileName} executed ({source.Length} chars).");
+                Core.Log?.Msg($"{fileName} executed ({source.Length} chars).");
             }
             catch (Exception e)
             {
                 _failed = true;
                 LastError = Describe(e);
-                Core.Log?.Error($"[Sideload] {fileName} failed: {LastError}");
+                Core.Log?.Error($"{fileName} failed: {LastError}");
                 Diagnostics?.Invoke(_appId, "exception", null, $"{fileName}: {LastError}");
             }
         }
@@ -498,7 +498,7 @@ namespace Sideload.Script
             catch (Exception e)
             {
                 LastError = Describe(e);
-                Core.Log?.Error($"[Sideload] {what} failed: {LastError}");
+                Core.Log?.Error($"{what} failed: {LastError}");
                 Diagnostics?.Invoke(_appId, "exception", null, $"{what} failed: {LastError}");
             }
         }
@@ -513,7 +513,7 @@ namespace Sideload.Script
 
         private void Fault(string line)
         {
-            Core.Log?.Error($"[Sideload] [{_appId}] {line}");
+            Core.Log?.Error($"[{_appId}] {line}");
             Diagnostics?.Invoke(_appId, "error", null, $"[{_appId}] {line}");
         }
 

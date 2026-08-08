@@ -30,7 +30,7 @@ namespace Sideload.Paint
                 byte[] bytes = ReadEmbedded(ResourceName);
                 if (bytes == null)
                 {
-                    Core.Log?.Warning("[Sideload] UI shader bundle not embedded - boxes will be flat fills.");
+                    Core.Log?.Warning("UI shader bundle not embedded - boxes will be flat fills.");
                     return null;
                 }
 
@@ -39,7 +39,7 @@ namespace Sideload.Paint
                 Il2CppAssetBundle bundle = Il2CppAssetBundleManager.LoadFromMemory(bytes);
                 if (bundle == null)
                 {
-                    Core.Log?.Warning("[Sideload] UI shader bundle failed to load - boxes will be flat fills.");
+                    Core.Log?.Warning("UI shader bundle failed to load - boxes will be flat fills.");
                     return null;
                 }
 
@@ -54,22 +54,22 @@ namespace Sideload.Paint
 
                 if (shader == null)
                 {
-                    Core.Log?.Warning("[Sideload] UI shader not found in bundle - boxes will be flat fills.");
+                    Core.Log?.Warning("UI shader not found in bundle - boxes will be flat fills.");
                     return null;
                 }
 
                 if (!shader.isSupported)
                 {
-                    Core.Log?.Warning($"[Sideload] UI shader '{shader.name}' is not supported here - boxes will be flat fills.");
+                    Core.Log?.Warning($"UI shader '{shader.name}' is not supported here - boxes will be flat fills.");
                     return null;
                 }
 
                 _material = new Material(shader) { name = "SideloadBox" };
-                Core.Log?.Msg($"[Sideload] UI shader loaded: {shader.name}");
+                Core.Log?.Msg($"UI shader loaded: {shader.name}");
             }
             catch (Exception e)
             {
-                Core.Log?.Warning("[Sideload] UI shader load failed: " + e.Message);
+                Core.Log?.Warning("UI shader load failed: " + e.Message);
                 _material = null;
             }
 

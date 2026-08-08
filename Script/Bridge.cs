@@ -95,14 +95,14 @@ namespace Sideload.Script
             if (!_handlers.TryGetValue(Key(appId, name), out Func<string, string, string> handler)
                 && !_handlers.TryGetValue(Key(null, name), out handler))
             {
-                Core.Log?.Warning($"[Sideload] {appId}: s1.call('{name}') has no handler.");
+                Core.Log?.Warning($"{appId}: s1.call('{name}') has no handler.");
                 return "";
             }
 
             try { return handler(appId, argument ?? "") ?? ""; }
             catch (Exception e)
             {
-                Core.Log?.Error($"[Sideload] {appId}: s1.call('{name}') threw: {e.Message}");
+                Core.Log?.Error($"{appId}: s1.call('{name}') threw: {e.Message}");
                 return "";
             }
         }
@@ -182,7 +182,7 @@ namespace Sideload.Script
             foreach (JsValue handler in list.ToArray())
             {
                 try { _host.Engine.Invoke(handler, payload); }
-                catch (Exception e) { Core.Log?.Error($"[Sideload] {_appId}: s1.on('{name}') handler failed: {e.Message}"); }
+                catch (Exception e) { Core.Log?.Error($"{_appId}: s1.on('{name}') handler failed: {e.Message}"); }
             }
         }
 
@@ -242,7 +242,7 @@ namespace Sideload.Script
                     foreach (KeyValuePair<string, string> pair in MiniJson.ParseObject(File.ReadAllText(_path)))
                         _values[pair.Key] = pair.Value;
                 }
-                catch (Exception e) { Core.Log?.Warning("[Sideload] storage read failed: " + e.Message); }
+                catch (Exception e) { Core.Log?.Warning("storage read failed: " + e.Message); }
             }
 
             private void Save()
@@ -252,7 +252,7 @@ namespace Sideload.Script
                     Directory.CreateDirectory(Path.GetDirectoryName(_path));
                     File.WriteAllText(_path, MiniJson.WriteObject(_values));
                 }
-                catch (Exception e) { Core.Log?.Warning("[Sideload] storage write failed: " + e.Message); }
+                catch (Exception e) { Core.Log?.Warning("storage write failed: " + e.Message); }
             }
 
             private static string Sanitise(string id)

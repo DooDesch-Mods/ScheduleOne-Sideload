@@ -60,10 +60,10 @@ namespace Sideload.Devtools
             try
             {
                 if (command == "sideloadkeys") Report();
-                else if (parts.Length < 2) Core.Log?.Msg("[Sideload] usage: sideloadkey <key>, for example 'sideloadkey Enter'.");
+                else if (parts.Length < 2) Core.Log?.Msg("usage: sideloadkey <key>, for example 'sideloadkey Enter'.");
                 else Press(parts[1]);
             }
-            catch (Exception e) { Core.Log?.Warning($"[Sideload] {command} failed: {e.Message}"); }
+            catch (Exception e) { Core.Log?.Warning($"{command} failed: {e.Message}"); }
 
             return true;
         }
@@ -72,25 +72,25 @@ namespace Sideload.Devtools
         {
             IReadOnlyList<KeyDeclaration> keys = Input.GlobalKeys.ClaimedKeys;
 
-            Core.Log?.Msg($"[Sideload] app keys are {(Config.Preferences.AppKeys ? "ON" : "OFF (AppKeys)")}; "
+            Core.Log?.Msg($"app keys are {(Config.Preferences.AppKeys ? "ON" : "OFF (AppKeys)")}; "
                           + $"the gate is {(Input.GlobalKeys.GateOpen ? "open" : "shut")} right now.");
 
             foreach (KeyDeclaration key in keys)
-                Core.Log?.Msg($"[Sideload]   {key} -> {string.Join(", ", Input.GlobalKeys.Ranking(key))}"
+                Core.Log?.Msg($"  {key} -> {string.Join(", ", Input.GlobalKeys.Ranking(key))}"
                               + "   (best first; the winner is whoever notified last)");
 
-            if (keys.Count == 0) Core.Log?.Msg("[Sideload]   no app has claimed a key.");
+            if (keys.Count == 0) Core.Log?.Msg("  no app has claimed a key.");
 
             // The rotate keys are not a claim - they are the game's own action, borrowed from BuildManager - so they
             // do not appear above and there is otherwise no way to see whether they resolved. A player reporting
             // "the phone will not turn" is answered by this line.
-            Core.Log?.Msg("[Sideload]   " + RotateReport());
-            Core.Log?.Msg("[Sideload]   " + PromptReport());
+            Core.Log?.Msg("  " + RotateReport());
+            Core.Log?.Msg("  " + PromptReport());
 
             // Where the keyboard is, because the gate above is only ever shut BECAUSE something holds it, and which
             // something decides whether data-typing is working or a search box is quietly eating every keystroke.
             foreach (Phone.PhoneAppHost host in Phone.HomeScreenPatch.Hosts)
-                if (host.IsAlive) Core.Log?.Msg($"[Sideload]   {host.TypingReport}");
+                if (host.IsAlive) Core.Log?.Msg($"  {host.TypingReport}");
         }
 
         /// <summary>What the phone's rotate keys are bound to, in the player's own words rather than an asset path.</summary>
@@ -161,7 +161,7 @@ namespace Sideload.Devtools
         {
             if (!GlobalKey.TryParse(token, out KeyDeclaration key, out string why))
             {
-                Core.Log?.Msg($"[Sideload] '{token}' is not a key an app may claim - {why}.");
+                Core.Log?.Msg($"'{token}' is not a key an app may claim - {why}.");
                 return;
             }
 
@@ -169,7 +169,7 @@ namespace Sideload.Devtools
             // open console counts as a UI screen, so somebody typing this reads "shut" while a real press out in the
             // world would be let through. Submitted over the bridge - no console UI - it reads "open", which is the
             // gate being proved rather than described.
-            Core.Log?.Msg($"[Sideload] sideloadkey {key}: gate is "
+            Core.Log?.Msg($"sideloadkey {key}: gate is "
                           + (Input.GlobalKeys.GateOpen ? "open" : "shut right now (an open console is a UI screen)")
                           + $"; delivered to {Input.GlobalKeys.Send(key) ?? "nobody - no claimant took it"}");
         }

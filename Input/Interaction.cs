@@ -385,7 +385,7 @@ namespace Sideload.Input
             entry.callback.AddListener((UnityEngine.Events.UnityAction<BaseEventData>)(data =>
             {
                 try { run(data); }
-                catch (Exception e) { Core.Log?.Warning("[Sideload] pointer handler failed: " + e.Message); }
+                catch (Exception e) { Core.Log?.Warning("pointer handler failed: " + e.Message); }
             }));
             trigger.triggers.Add(entry);
         }

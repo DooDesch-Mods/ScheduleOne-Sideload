@@ -56,7 +56,7 @@ namespace Sideload.Phone
             }
             catch (Exception e)
             {
-                Core.Log?.Warning("[Sideload] the turn hint could not be changed: " + e.Message);
+                Core.Log?.Warning("the turn hint could not be changed: " + e.Message);
                 _up = false;
             }
         }
@@ -175,7 +175,7 @@ namespace Sideload.Phone
         {
             if (_warned) return;
             _warned = true;
-            Core.Log?.Warning($"[Sideload] no turn hint in the key strip - {reason}. Turning still works.");
+            Core.Log?.Warning($"no turn hint in the key strip - {reason}. Turning still works.");
         }
     }
 }

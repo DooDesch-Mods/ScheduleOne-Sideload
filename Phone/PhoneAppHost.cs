@@ -67,7 +67,7 @@ namespace Sideload.Phone
         private bool Build(HomeScreen home)
         {
             Transform appsCanvas = home.transform.parent != null ? home.transform.parent.Find("AppsCanvas") : null;
-            if (appsCanvas == null) { Core.Log?.Error($"[Sideload] AppsCanvas not found - '{_reg.Id}' not spawned."); return false; }
+            if (appsCanvas == null) { Core.Log?.Error($"AppsCanvas not found - '{_reg.Id}' not spawned."); return false; }
 
             string panelName = "Sideload_" + _reg.Id;
 
@@ -95,7 +95,7 @@ namespace Sideload.Phone
             RectTransform panelRect = _panel.AddComponent<RectTransform>();
             panelRect.SetParent(appsCanvas, false);
 
-            if (!ApplyOrientation()) { Core.Log?.Error($"[Sideload] no vanilla app panel to measure - '{_reg.Id}' not spawned."); return false; }
+            if (!ApplyOrientation()) { Core.Log?.Error($"no vanilla app panel to measure - '{_reg.Id}' not spawned."); return false; }
 
             // The container fills the panel outright, in both orientations. A vanilla app insets its container to
             // leave room for its own chrome; a Sideload app has no chrome but the page, so it gets the whole screen.
@@ -134,7 +134,7 @@ namespace Sideload.Phone
 
             SubscribeShellEvents();
 
-            Core.Log?.Msg($"[Sideload] '{_reg.Id}' spawned on the phone.");
+            Core.Log?.Msg($"'{_reg.Id}' spawned on the phone.");
             return true;
         }
 
@@ -203,7 +203,7 @@ namespace Sideload.Phone
                 Canvas.ForceUpdateCanvases();
                 _view?.QueueResize();
             }
-            catch (Exception e) { Core.Log?.Error($"[Sideload] turning '{_reg.Id}' failed: {e.Message}"); }
+            catch (Exception e) { Core.Log?.Error($"turning '{_reg.Id}' failed: {e.Message}"); }
         }
 
         /// <summary>
@@ -252,7 +252,7 @@ namespace Sideload.Phone
             }
             catch (Exception e)
             {
-                Core.Log?.Warning($"[Sideload] '{_reg.Id}' could not change its icon: {e.Message}");
+                Core.Log?.Warning($"'{_reg.Id}' could not change its icon: {e.Message}");
             }
         }
 
@@ -271,7 +271,7 @@ namespace Sideload.Phone
             GameObject prefab = home.appIconPrefab;
             if (icons == null || prefab == null)
             {
-                Core.Log?.Warning($"[Sideload] HomeScreen exposes no icon prefab or container - '{_reg.Id}' has no home-screen icon.");
+                Core.Log?.Warning($"HomeScreen exposes no icon prefab or container - '{_reg.Id}' has no home-screen icon.");
                 return;
             }
 
@@ -294,7 +294,7 @@ namespace Sideload.Phone
                 button.onClick.RemoveAllListeners();
                 button.onClick.AddListener((UnityEngine.Events.UnityAction)(Open));
             }
-            else Core.Log?.Warning($"[Sideload] the icon prefab has no Button component - '{_reg.Id}' cannot be opened from the home screen.");
+            else Core.Log?.Warning($"the icon prefab has no Button component - '{_reg.Id}' cannot be opened from the home screen.");
 
             // Without this the icon exists but controller and arrow-key navigation walks straight past it.
             var selectable = _icon.GetComponent<Il2CppScheduleOne.UISelectable>();
@@ -305,7 +305,7 @@ namespace Sideload.Phone
             // drop a count the mod set before it.
             _badge = _icon.transform.Find("Notifications");
             _badgeText = _badge != null ? _badge.Find("Text")?.GetComponent<Text>() : null;
-            if (_badge == null) Core.Log?.Warning($"[Sideload] the icon prefab has no Notifications badge - '{_reg.Id}' cannot show a count.");
+            if (_badge == null) Core.Log?.Warning($"the icon prefab has no Notifications badge - '{_reg.Id}' cannot show a count.");
 
             ApplyBadge();
         }
@@ -366,7 +366,7 @@ namespace Sideload.Phone
                 manager.SendNotification(title ?? "", subtitle ?? "", AppIconSprite.For(_reg), upFor, true);
                 Widen(manager);
             }
-            catch (Exception e) { Core.Log?.Error($"[Sideload] notification from '{_reg.Id}' failed: {e.Message}"); }
+            catch (Exception e) { Core.Log?.Error($"notification from '{_reg.Id}' failed: {e.Message}"); }
         }
 
         /// <summary>
@@ -408,21 +408,21 @@ namespace Sideload.Phone
                 RectTransform container = manager != null ? manager.EntryContainer : null;
                 if (container == null || container.childCount == 0)
                 {
-                    Core.Log?.Warning("[Sideload] notification: no entry to widen.");
+                    Core.Log?.Warning("notification: no entry to widen.");
                     return;
                 }
 
                 RectTransform entry = container.GetChild(container.childCount - 1)?.GetComponent<RectTransform>();
                 if (entry == null)
                 {
-                    Core.Log?.Warning("[Sideload] notification: the new entry has no RectTransform.");
+                    Core.Log?.Warning("notification: the new entry has no RectTransform.");
                     return;
                 }
 
                 Transform box = entry.Find("Container");
                 if (box == null)
                 {
-                    Core.Log?.Warning("[Sideload] notification: no 'Container' under the entry - left at prefab width.");
+                    Core.Log?.Warning("notification: no 'Container' under the entry - left at prefab width.");
                     return;
                 }
 
@@ -433,7 +433,7 @@ namespace Sideload.Phone
                 SetWidth(entry, Mathf.Min(needed, NotifyMaxWidth));
                 PinLeftEdge(container);
             }
-            catch (Exception e) { Core.Log?.Warning($"[Sideload] widening a notification failed: {e.Message}"); }
+            catch (Exception e) { Core.Log?.Warning($"widening a notification failed: {e.Message}"); }
         }
 
         /// <summary>
@@ -503,10 +503,10 @@ namespace Sideload.Phone
             Transform image = icon.Find("Mask/Image");
             var picture = image != null ? image.GetComponent<Image>() : icon.GetComponentInChildren<Image>(true);
             if (picture != null && sprite != null) picture.sprite = sprite;
-            else if (picture == null) Core.Log?.Warning($"[Sideload] no Image under the icon for '{appId}' - it keeps the prefab's picture.");
+            else if (picture == null) Core.Log?.Warning($"no Image under the icon for '{appId}' - it keeps the prefab's picture.");
 
             if (!SetIconLabel(icon.gameObject, caption))
-                Core.Log?.Warning($"[Sideload] no label found on the icon for '{appId}' - it stays unnamed.");
+                Core.Log?.Warning($"no label found on the icon for '{appId}' - it stays unnamed.");
         }
 
         /// <summary>
@@ -599,7 +599,7 @@ namespace Sideload.Phone
                 if (_view != null && _view.DispatchBack(exit.Type == ExitType.Secondary ? "rightClick" : "escape"))
                     return;
             }
-            catch (Exception e) { Core.Log?.Error($"[Sideload] the back handler of '{_reg.Id}' threw: {e.Message}"); }
+            catch (Exception e) { Core.Log?.Error($"the back handler of '{_reg.Id}' threw: {e.Message}"); }
 
             Close();
         }
@@ -659,13 +659,13 @@ namespace Sideload.Phone
                 Devtools.Probe.LogRect(_container != null ? _container.GetComponent<RectTransform>() : null, $"app container '{_reg.Id}'");
 #endif
             }
-            catch (Exception e) { Core.Log?.Error($"[Sideload] opening '{_reg.Id}' failed: {e.Message}"); }
+            catch (Exception e) { Core.Log?.Error($"opening '{_reg.Id}' failed: {e.Message}"); }
         }
 
         internal void Close()
         {
             try { if (IsOpen) SetOpen(false); }
-            catch (Exception e) { Core.Log?.Error($"[Sideload] closing '{_reg.Id}' failed: {e.Message}"); }
+            catch (Exception e) { Core.Log?.Error($"closing '{_reg.Id}' failed: {e.Message}"); }
         }
 
         /// <summary>

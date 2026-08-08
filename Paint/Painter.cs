@@ -423,7 +423,7 @@ namespace Sideload.Paint
 
             // One line per scroll area per build, so it follows the same developer switch as the build report itself.
             if (Config.Preferences.LogPageBuilds)
-                Core.Log?.Msg($"[Sideload] scroll area at ({absX:0.#},{absY:0.#}) size {node.Width:0.#}x{node.Height:0.#}, " +
+                Core.Log?.Msg($"scroll area at ({absX:0.#},{absY:0.#}) size {node.Width:0.#}x{node.Height:0.#}, " +
                               $"content {ContentBottom(node):0.#}, clip={clip}");
 
             return content;
@@ -755,7 +755,7 @@ namespace Sideload.Paint
             field.onSubmit.AddListener((UnityEngine.Events.UnityAction<string>)(v =>
             {
                 try { submitted?.Invoke(element, v); }
-                catch (Exception e) { Core.Log?.Warning("[Sideload] submit handler failed: " + e.Message); }
+                catch (Exception e) { Core.Log?.Warning("submit handler failed: " + e.Message); }
             }));
 
             field.onSelect.AddListener((UnityEngine.Events.UnityAction<string>)(_ => SetTyping(true)));
@@ -768,7 +768,7 @@ namespace Sideload.Paint
             field.onValueChanged.AddListener((UnityEngine.Events.UnityAction<string>)(v =>
             {
                 try { changed?.Invoke(element, v); }
-                catch (Exception e) { Core.Log?.Warning("[Sideload] input handler failed: " + e.Message); }
+                catch (Exception e) { Core.Log?.Warning("input handler failed: " + e.Message); }
             }));
 
             if (_inputs != null) _inputs[element] = field;
@@ -808,7 +808,7 @@ namespace Sideload.Paint
             }
             catch (Exception e)
             {
-                Core.Log?.Warning("[Sideload] data-reject-first could not be installed: " + e.Message);
+                Core.Log?.Warning("data-reject-first could not be installed: " + e.Message);
             }
         }
 
@@ -843,14 +843,14 @@ namespace Sideload.Paint
             }
             catch (Exception e)
             {
-                Core.Log?.Warning("[Sideload] could not move the caret to the end: " + e.Message);
+                Core.Log?.Warning("could not move the caret to the end: " + e.Message);
             }
         }
 
         private static void SetTyping(bool typing)
         {
             try { Il2CppScheduleOne.GameInput.IsTyping = typing; }
-            catch (Exception e) { Core.Log?.Warning("[Sideload] IsTyping toggle failed: " + e.Message); }
+            catch (Exception e) { Core.Log?.Warning("IsTyping toggle failed: " + e.Message); }
         }
 
         /// <summary>
@@ -870,7 +870,7 @@ namespace Sideload.Paint
             }
             catch (Exception e)
             {
-                Core.Log?.Warning("[Sideload] could not drop keyboard focus: " + e.Message);
+                Core.Log?.Warning("could not drop keyboard focus: " + e.Message);
             }
 
             SetTyping(false);

@@ -30,14 +30,14 @@ namespace Sideload.Phone
                 var tex = new Texture2D(2, 2, TextureFormat.RGBA32, false) { filterMode = FilterMode.Bilinear };
                 if (!tex.LoadImage(png))
                 {
-                    Core.Log?.Warning($"[Sideload] '{reg.Id}' has an icon.png that is not a readable PNG.");
+                    Core.Log?.Warning($"'{reg.Id}' has an icon.png that is not a readable PNG.");
                     return null;
                 }
                 return Finish(tex);
             }
             catch (Exception e)
             {
-                Core.Log?.Warning($"[Sideload] loading icon.png for '{reg.Id}' failed: {e.Message}");
+                Core.Log?.Warning($"loading icon.png for '{reg.Id}' failed: {e.Message}");
                 return null;
             }
         }
