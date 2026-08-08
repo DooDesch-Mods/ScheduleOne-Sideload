@@ -74,6 +74,9 @@ namespace Sideload.Devtools.Cdp
             Put("right", style.Inset.Right.ToString());
             Put("bottom", style.Inset.Bottom.ToString());
             Put("left", style.Inset.Left.ToString());
+            Put("z-index", style.ZIndex.HasValue
+                ? style.ZIndex.Value.ToString(CultureInfo.InvariantCulture)
+                : "auto");
 
             Put("overflow-x", Overflow(style.OverflowX));
             Put("overflow-y", Overflow(style.OverflowY));

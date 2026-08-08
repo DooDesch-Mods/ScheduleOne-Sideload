@@ -48,6 +48,18 @@ namespace Sideload.Css
         internal PositionKind Position = PositionKind.Static;
         internal Edges Inset = new Edges { Top = Len.Auto, Right = Len.Auto, Bottom = Len.Auto, Left = Len.Auto };
 
+        /// <summary>
+        /// The stack level this box paints on among its siblings. Null is `auto` - the default, and document order.
+        ///
+        /// Only meaningful on a POSITIONED box: CSS gives a static box no stack level, and
+        /// <see cref="Layout.StackingOrder"/> follows that and says so rather than ignoring the declaration quietly.
+        ///
+        /// Not inherited, and deliberately absent from <see cref="CreateFrom"/>. A z-index that cascaded would put a
+        /// whole subtree on the level its container asked for, and the children of a lifted panel could no longer be
+        /// ordered against each other at all.
+        /// </summary>
+        internal int? ZIndex;
+
         internal OverflowKind OverflowX = OverflowKind.Visible;
         internal OverflowKind OverflowY = OverflowKind.Visible;
 

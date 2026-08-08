@@ -130,6 +130,15 @@ namespace Sideload.Css
                 case "bottom": if (Length(value, out Len ib)) s.Inset.Bottom = ib; break;
                 case "left": if (Length(value, out Len il)) s.Inset.Left = il; break;
 
+                // An integer only, as in CSS: `z-index: 1.5` is invalid there and is dropped here with a word about
+                // it. Whether the box may use the level is not decided until the whole rule has been applied - a
+                // sheet is free to write `z-index` before `position` - so that question belongs to the paint order
+                // and is answered in Layout/StackingOrder, which also reports the declarations it has to ignore.
+                case "z-index":
+                    if (Is(value, "auto")) s.ZIndex = null;
+                    else if (Integer(value, out int z)) s.ZIndex = z;
+                    break;
+
                 case "overflow": s.OverflowX = s.OverflowY = ParseOverflow(value, s.OverflowX); break;
                 case "overflow-x": s.OverflowX = ParseOverflow(value, s.OverflowX); break;
                 case "overflow-y": s.OverflowY = ParseOverflow(value, s.OverflowY); break;
@@ -263,6 +272,17 @@ namespace Sideload.Css
         private static bool Colour(string value, out RgbaColor color)
         {
             if (ValueParser.TryColor(value, CurrentColor, out color)) return true;
+            Diagnostics.Report(DiagnosticKind.ValueRejected, _applying, value);
+            return false;
+        }
+
+        /// <summary>A whole number. Separate from <see cref="Number"/> because the properties that want one refuse a
+        /// fraction rather than rounding it - a rounded `z-index: 1.5` would be a level the author never wrote.</summary>
+        private static bool Integer(string value, out int number)
+        {
+            if (int.TryParse(value, System.Globalization.NumberStyles.Integer,
+                             System.Globalization.CultureInfo.InvariantCulture, out number)) return true;
+
             Diagnostics.Report(DiagnosticKind.ValueRejected, _applying, value);
             return false;
         }

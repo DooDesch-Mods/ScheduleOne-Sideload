@@ -327,7 +327,9 @@ Honest limits, because a browser sets different expectations:
   screen, drawn over everything else, and it takes the pointer - which is how an app gets a modal), the
   box and paint properties, text properties, custom
   properties with `var()`, `transform` and `transition`, `overflow` (`hidden` clips, `auto` and `scroll`
-  clip and scroll), and `@media (orientation: ...)`. Units are `px` and `%` only. No Grid, no `float`, no `z-index`, no `em`/`rem`/`vh`/`vw`, no `calc()`, no `hsl()`. Anything
+  clip and scroll), `z-index` on a positioned box (it orders siblings inside one parent; there are no
+  stacking contexts, so it cannot lift a box out of the subtree it was written in), and
+  `@media (orientation: ...)`. Units are `px` and `%` only. No Grid, no `float`, no `em`/`rem`/`vh`/`vw`, no `calc()`, no `hsl()`. Anything
   unsupported is named in the log, once per app, so a rule that never took effect is findable instead
   of a mystery.
 - **Text that has to line up.** `font-family: monospace` draws in a real monospaced face - the game ships none,
