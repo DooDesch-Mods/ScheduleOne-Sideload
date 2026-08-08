@@ -35,7 +35,7 @@ namespace Sideload.Script
         /// Null unless the devtools protocol server is running, which is what keeps the log path free of it. Raised on
         /// the main thread, so a handler may read the values it is given.
         /// </summary>
-        internal static Action<string, string, object[], string> Diagnostics;
+        internal static Action<string, string, object[], string> Diagnostics = null;
 
         /// <summary>One registration. The capture flag is part of the identity: the DOM lets the same function be
         /// registered twice for one type, once per phase, and removing one must not remove the other.</summary>

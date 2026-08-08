@@ -78,7 +78,7 @@ namespace Sideload.Script
         /// something asked for it, and never more than one - a second consumer would be a second reason to keep
         /// events alive, and the one that exists is a companion server that already multiplexes.
         /// </summary>
-        internal static Action<string, string, string> Tap;
+        internal static Action<string, string, string> Tap = null;
 
         /// <summary>
         /// Run a registered `s1.call` handler without a page. Same lookup and the same failure behaviour as

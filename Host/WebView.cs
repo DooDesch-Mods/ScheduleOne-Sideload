@@ -168,7 +168,7 @@ namespace Sideload.Host
         internal float LastRenderMs => _lastRenderMs;
 
         /// <summary>Ablation lever: stop rendering entirely, so what is left of the frame time is the game's.</summary>
-        internal static bool RenderingDisabled;
+        internal static bool RenderingDisabled = false;
 
         /// <summary>A few lines of live state, for the dev overlay.</summary>
         internal string Stats =>

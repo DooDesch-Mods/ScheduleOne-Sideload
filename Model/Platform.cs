@@ -13,11 +13,11 @@ namespace Sideload.Model
     /// </summary>
     internal static class Platform
     {
-        internal static Action<string> LogMsg;
+        internal static Action<string> LogMsg = null;
 
-        internal static Action<string> LogWarning;
+        internal static Action<string> LogWarning = null;
 
-        internal static Action<string> LogError;
+        internal static Action<string> LogError = null;
 
         /// <summary>Where an app's own storage file goes. Falls back to the process directory, which is where a
         /// headless run wants it and where a misconfigured game would at least still work.</summary>
