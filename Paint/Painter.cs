@@ -1143,8 +1143,8 @@ namespace Sideload.Paint
             // A border of equal width all round is the shader's rounded ring, which follows the corner radii. Anything
             // else - the single hairline under a list row, say - becomes solid edge quads instead, because the ring is
             // one number in the vertex payload and cannot describe four different widths.
-            float top = s.BorderWidth.Top.Resolve(width), right = s.BorderWidth.Right.Resolve(width);
-            float bottom = s.BorderWidth.Bottom.Resolve(width), left = s.BorderWidth.Left.Resolve(width);
+            float top = SnapBorder(s.BorderWidth.Top.Resolve(width)), right = SnapBorder(s.BorderWidth.Right.Resolve(width));
+            float bottom = SnapBorder(s.BorderWidth.Bottom.Resolve(width)), left = SnapBorder(s.BorderWidth.Left.Resolve(width));
 
             bool uniform = top == right && right == bottom && bottom == left;
 
@@ -1235,5 +1235,31 @@ namespace Sideload.Paint
             }
             return "node" + depth;
         }
+
+        /// <summary>
+        /// Round a border width up to a whole number of DEVICE pixels.
+        ///
+        /// The panel draws css pixels at about 1.64 device pixels, so a 1px border lands on 1.64 of them: it is
+        /// antialiased across two rows and each row gets a fraction of the colour. In a browser the same declaration
+        /// is one crisp row. The visible result is a hairline that reads on a design and disappears in the game -
+        /// an outlined button whose label ends up floating with no button around it, which is exactly how this was
+        /// found.
+        ///
+        /// Snapping the WIDTH rather than the position is enough because every border here is drawn from the box
+        /// edge inwards. The floor of one device pixel keeps a sub-pixel border visible instead of letting it round
+        /// away to nothing; a zero width still means "no border" and is passed through untouched.
+        /// </summary>
+        internal static float SnapBorder(float cssWidth)
+        {
+            if (cssWidth <= 0f) return 0f;
+            float scale = CssToDevice;
+            if (scale <= 0f) return cssWidth;
+            float devicePixels = Mathf.Max(1f, Mathf.Round(cssWidth * scale));
+            return devicePixels / scale;
+        }
+
+        /// <summary>How many device pixels one css pixel covers, published by the view that is currently painting.
+        /// One number for the whole pass - every box in a page is drawn at the same scale.</summary>
+        internal static float CssToDevice = 1f;
     }
 }

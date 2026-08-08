@@ -55,7 +55,10 @@ namespace Sideload.Css
                 {
                     foreach (IElement element in document.QuerySelectorAll(rule.BaseSelector)) result.Add(element);
                 }
-                catch { }
+                catch (Exception e)
+                {
+                    Model.Diagnostics.Report(Model.DiagnosticKind.SelectorRejected, rule.BaseSelector, e.Message);
+                }
             }
             return result;
         }
@@ -71,8 +74,15 @@ namespace Sideload.Css
                 if (rule.Media.HasValue && rule.Media.Value != orientation) continue;
 
                 IHtmlCollection<IElement> hits;
+                // A selector the DOM library rejects drops out and the rest of the sheet still works - but it
+                // drops out in total silence unless it is named here. `.a:not(:hover)` gets here: the state
+                // stripper tears the :hover out of the :not() and leaves `.a:not()`, which is not a selector.
                 try { hits = document.QuerySelectorAll(rule.BaseSelector); }
-                catch { continue; }   // a selector the DOM library rejects drops out, the rest of the sheet still works
+                catch (Exception e)
+                {
+                    Model.Diagnostics.Report(Model.DiagnosticKind.SelectorRejected, rule.Selector, e.Message);
+                    continue;
+                }
 
                 foreach (IElement element in hits)
                 {

@@ -14,14 +14,15 @@ name: Build and Release on Tag
 #   - Repo/org variable NEXUS_FILE_GROUP_ID = the Nexus mod's file group id (the Nexus upload job is skipped
 #     until this is set, so GitHub + Thunderstore releases work immediately).
 #   - thunderstore/icon.png must be exactly 256x256 (Thunderstore requirement).
-#   - AngleSharp and Jint (with its transitive Esprima) are NuGet PackageReferences restored by `dotnet build`.
-#     They are shipped as their own DLLs rather than merged into Sideload.dll, and they must reach the player:
-#     UserLibs/ in the Thunderstore package, mods/ in the Nexus package (see the Nexus step for why). Core.cs
-#     probes both locations. System.Text.Encoding.CodePages is referenced but deliberately NOT shipped - it is
-#     part of Microsoft.NETCore.App 6.0, the framework MelonLoader's runtimeconfig asks for.
+#   - AngleSharp and Jint (with its transitive Esprima) are NuGet PackageReferences restored by `dotnet build`
+#     and embedded INTO Sideload.dll by the EmbedRuntimeDependencies target in Sideload.csproj. Nothing ships to
+#     UserLibs any more; every package here is a single DLL. System.Text.Encoding.CodePages is referenced but
+#     deliberately neither shipped nor embedded - it is part of Microsoft.NETCore.App 6.0, the framework
+#     MelonLoader's runtimeconfig asks for.
 #
-# The dependency copy below globs every DLL in the build output except Sideload.dll rather than naming the
-# three. A package's transitive dependencies are easy to miss, and a missing one only shows up at runtime.
+# The packaging step greps the built DLL for all three resource names. The MSBuild target already fails when a
+# package asset goes missing, but the artifact that reaches players is the DLL, and a Sideload without those
+# resources installs cleanly and then renders nothing at all.
 
 on:
   push:
@@ -138,18 +139,21 @@ jobs:
 
       - name: Prepare release directory
         run: |
-          mkdir -p release release/UserLibs
+          mkdir -p release
           cp bin/Release/net6.0/Sideload.dll release/
-          # Every other assembly in the build output is a runtime dependency (AngleSharp, Jint, Esprima).
-          # MelonLoader resolves them from UserLibs, which is also where Sideload's own preload looks first.
-          find bin/Release/net6.0 -maxdepth 1 -name '*.dll' ! -name 'Sideload.dll' -exec cp {} release/UserLibs/ \;
-          echo "Shipping these support assemblies under UserLibs/:"
-          ls -la release/UserLibs/
-          # A package with no dependency DLLs would install and then fail to build a single page, silently.
-          if [ -z "$(ls -A release/UserLibs)" ]; then
-            echo "No runtime dependencies were copied - the package would not load. Failing the build."
-            exit 1
-          fi
+          # AngleSharp, Jint and Esprima travel INSIDE Sideload.dll (Sideload.csproj, EmbedRuntimeDependencies).
+          # The package is one file; nothing goes to UserLibs any more.
+          #
+          # The MSBuild target already fails the build if a package asset went missing, but the thing that actually
+          # reaches players is this DLL, so it is checked here too: a Sideload without these resources installs
+          # cleanly and then cannot build a single page.
+          for lib in AngleSharp Jint Esprima; do
+            if ! grep -aq "Sideload.Libs.$lib.dll" release/Sideload.dll; then
+              echo "Sideload.dll does not carry the embedded $lib - the package would not render anything. Failing the build."
+              exit 1
+            fi
+          done
+          echo "Sideload.dll carries all three embedded runtime dependencies ($(du -h release/Sideload.dll | cut -f1))."
           if [ -d "thunderstore" ]; then
             cp -r thunderstore/* release/ 2>/dev/null || true
             if [ -f "release/manifest.json" ]; then
@@ -191,8 +195,6 @@ jobs:
         run: |
           mkdir -p debug
           cp bin/Debug/net6.0/Sideload.dll debug/
-          mkdir -p debug/UserLibs
-          find bin/Debug/net6.0 -maxdepth 1 -name '*.dll' ! -name 'Sideload.dll' -exec cp {} debug/UserLibs/ \;
           [ -f "LICENSE.md" ] && cp LICENSE.md debug/ || true
           (cd debug && zip -r "../Sideload_${{ steps.version-check.outputs.version }}_debug.zip" .)
 
@@ -206,14 +208,13 @@ jobs:
       # maps loose non-.md files at the archive root (manifest.json, icon.png) to a bare "mods" path - which
       # lands a FILE named "mods" in the game folder, replacing the real Mods DIRECTORY and wiping other mods.
       # So Nexus gets its own archive: the payload under mods/, and none of the Thunderstore-only files.
-      # The support DLLs go under mods/ too, not UserLibs/: that extension misroutes a UserLibs/ folder into
-      # MelonLoader/, so shipping them beside the mod is the reliable placement (same call Inkubator makes for
-      # ImageSharp). Sideload's own preload probes UserLibs first and its own folder second, so both land right.
+      # There are no support DLLs to place any more - they are embedded in Sideload.dll - which also removes the
+      # reason this step used to need special handling for them (that extension misroutes a UserLibs/ folder into
+      # MelonLoader/, so they had to ship beside the mod instead).
       - name: Create Nexus/Vortex ZIP (payload under mods/ so the Schedule 1 Vortex extension installs cleanly)
         run: |
           mkdir -p nexus/mods
           cp release/Sideload.dll nexus/mods/
-          cp release/UserLibs/*.dll nexus/mods/
           for f in README.md CHANGELOG.md LICENSE.md; do
             [ -f "release/$f" ] && cp "release/$f" nexus/ || true
           done
@@ -263,8 +264,9 @@ jobs:
 
             ${{ needs.build.outputs.notes }}
 
-            Installing by hand: `Sideload.dll` goes into `Mods/`, and everything from `UserLibs/` in the zip
-            goes into the game's `UserLibs/` folder.
+            Installing by hand: put `Sideload.dll` into `Mods/`. That is the whole install - AngleSharp, Jint and
+            Esprima are inside it now, so there is nothing to place in `UserLibs/` any more. Old copies there do no
+            harm and are still used if present; delete them whenever you like.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

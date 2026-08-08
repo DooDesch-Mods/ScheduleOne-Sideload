@@ -48,7 +48,8 @@ namespace Sideload.Script
 
         internal ScriptHost(string appId, IDocument document, Action onDomChanged,
                             Action<IElement> onFocusRequested, Action<IElement> onScrollToEnd,
-                            Action<IElement> onPaintOnlyChange = null)
+                            Action<IElement> onPaintOnlyChange = null,
+                            Func<IElement, float[]> onRectRequested = null)
         {
             _appId = appId;
             _document = document;
@@ -56,6 +57,7 @@ namespace Sideload.Script
             OnFocusRequested = onFocusRequested;
             OnScrollToEnd = onScrollToEnd;
             OnPaintOnlyChange = onPaintOnlyChange;
+            OnRectRequested = onRectRequested;
 
             Engine = new Engine(options =>
             {
@@ -97,6 +99,10 @@ namespace Sideload.Script
         internal Action<IElement> OnFocusRequested { get; }
 
         internal Action<IElement> OnScrollToEnd { get; }
+
+        /// <summary>Where an element ended up, in css pixels, as x/y/width/height. Supplied by the view, because the
+        /// layout pass is the only thing that knows.</summary>
+        internal Func<IElement, float[]> OnRectRequested { get; }
 
         /// <summary>
         /// An inline style changed that only affects how one box is PAINTED, never where anything sits. Null falls
@@ -165,6 +171,8 @@ namespace Sideload.Script
 
         internal void RequestScrollToEnd(IElement element) => OnScrollToEnd?.Invoke(element);
 
+        internal float[] RectOf(IElement element) => OnRectRequested?.Invoke(element) ?? new[] { 0f, 0f, 0f, 0f };
+
         internal JsElement Wrap(IElement element)
         {
             if (element == null) return null;
@@ -220,7 +228,7 @@ namespace Sideload.Script
         private static void WarnAboutAwaitedFetch(string source, string fileName)
         {
             if (source.IndexOf("fetch(", StringComparison.Ordinal) < 0) return;
-            if (!System.Text.RegularExpressions.Regex.IsMatch(source, @"await")) return;
+            if (!System.Text.RegularExpressions.Regex.IsMatch(source, @"\bawait\b")) return;
 
             Core.Log?.Warning(
                 $"[Sideload] {fileName} uses both `await` and `fetch(`. Awaiting a PENDING promise freezes the game " +
@@ -271,9 +279,24 @@ namespace Sideload.Script
 
         // ------------------------------------------------------------------ events --
 
+        /// <summary>
+        /// Every event type this engine can actually deliver. A page may register anything - `addEventListener`
+        /// takes a string and asks no questions - but a listener on a type outside this set is dead code that
+        /// looks alive, which is the most expensive kind of gap there is: the handler is right there in the file,
+        /// it just never runs, and nothing anywhere says so.
+        /// </summary>
+        private static readonly HashSet<string> Dispatchable = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "click", "mouseenter", "mouseleave", "wheel", "input", "keydown",
+            "dragstart", "drag", "dragend", "orientationchange", "back",
+        };
+
         internal void AddListener(IElement element, string type, JsValue handler)
         {
             if (element == null || string.IsNullOrEmpty(type) || handler == null || !handler.IsObject()) return;
+
+            if (!Dispatchable.Contains(type))
+                Model.Diagnostics.Report(Model.DiagnosticKind.DeadEventListener, type);
 
             if (!_listeners.TryGetValue(element, out Dictionary<string, List<JsValue>> byType))
                 _listeners[element] = byType = new Dictionary<string, List<JsValue>>(StringComparer.OrdinalIgnoreCase);
@@ -310,7 +333,7 @@ namespace Sideload.Script
                                   Input.PointerSpot spot = default,
                                   float deltaX = 0f, float deltaY = 0f, float wheelDelta = 0f,
                                   bool ctrl = false, bool shift = false, bool alt = false, bool repeat = false,
-                                  bool hasSelection = false)
+                                  bool hasSelection = false, bool bubbles = true)
         {
             var evt = new JsEvent(type, Wrap(target))
             {
@@ -338,7 +361,9 @@ namespace Sideload.Script
                     }
                 }
 
-                node = node.ParentElement;
+                // mouseenter/mouseleave do not bubble, here as in a browser: a tooltip that fired again for every
+                // ancestor would open and shut as the pointer crossed each nested box on the way in.
+                node = bubbles ? node.ParentElement : null;
             }
 
             return evt;

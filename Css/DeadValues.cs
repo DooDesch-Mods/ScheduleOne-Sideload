@@ -1,0 +1,142 @@
+using Sideload.Model;
+
+namespace Sideload.Css
+{
+    /// <summary>
+    /// Declarations this renderer reads without complaint and then does nothing with.
+    ///
+    /// These are the worst kind of gap, and the reason this file exists rather than a line in the register.
+    /// An unknown property has been named in the log since 1.9.0; an unreadable value is named since the parse
+    /// helpers in <see cref="StyleApplier"/> started reporting. But `align-items: baseline` passes both of those:
+    /// the property is implemented, the value parses into the enum, and the layout then has no branch for it. The
+    /// author sees a correct-looking rule, a browser that honours it, and a game that does not - with nothing
+    /// anywhere to say which of the three is lying.
+    ///
+    /// ENGINE-GAPS.md asked for exactly this: "a value that parses but is not implemented is a second silent
+    /// class. Either the layout implements them, or the applier should refuse the value so it falls back visibly."
+    /// Refusing would change rendering, so this reports instead - the visible fallback without the behaviour change.
+    ///
+    /// Not on the list on purpose: `display: block` and `inline-block`. They ARE mapped onto flex rather than
+    /// implemented, but a column flex container is the closest thing this engine has and the result is usually what
+    /// the author wanted. Reporting them would put a line in every app's log that nobody can act on, and a report
+    /// people learn to skip is worse than no report.
+    /// </summary>
+    internal static class DeadValues
+    {
+        /// <summary>Called for every declaration before the switch runs. Cheap: one switch on the property name,
+        /// and for all but a handful of names that is the whole cost.</summary>
+        internal static void Check(string property, string value)
+        {
+            if (!Diagnostics.Listening) return;
+
+            switch (property)
+            {
+                case "display":
+                    // Everything the engine has no box model for. It keeps whatever display it already had,
+                    // which is a column flex container - so `grid` quietly becomes a vertical stack.
+                    if (IsAny(value, "grid", "inline-grid", "inline", "inline-flex", "contents",
+                                     "table", "table-row", "table-cell", "table-row-group", "list-item", "flow-root"))
+                        Report(property, value);
+                    break;
+
+                case "position":
+                    // `relative` is mapped to static, so it neither offsets nor becomes a containing block -
+                    // which breaks the relative/absolute pair, the standard way to anchor anything.
+                    if (IsAny(value, "relative", "sticky")) Report(property, value);
+                    break;
+
+                case "align-items":
+                case "align-self":
+                    // Parses into AlignKind.Baseline; FlexLayout.PlaceLine has cases for end and centre only.
+                    if (IsAny(value, "baseline", "first baseline", "last baseline")) Report(property, value);
+                    break;
+
+                case "border-style":
+                    // The case in the switch is `break;` - the whole property is a no-op. Even `none` does not
+                    // remove a border, and dashed and dotted are drawn solid.
+                    Report(property, value);
+                    break;
+
+                case "transition-property":
+                    // Read and discarded: there is one duration for the whole box and every animatable value
+                    // rides along, so naming a property changes nothing.
+                    Report(property, value);
+                    break;
+
+                case "overflow-x":
+                    // Only overflow-y ever builds a scroll area. On the x axis `auto` and `scroll` clip like
+                    // `hidden` and nothing scrolls.
+                    if (IsAny(value, "auto", "scroll")) Report(property, value);
+                    break;
+
+                case "white-space":
+                    // Any unrecognised value falls back to Normal - for `pre-line` that loses exactly the line
+                    // breaks it was written to keep.
+                    if (IsAny(value, "pre-line")) Report(property, value);
+                    break;
+
+                case "text-align":
+                    if (IsAny(value, "justify")) Report(property, value);
+                    break;
+
+                case "line-height":
+                    // Parsed, inherited, and used only to measure an empty box. Normal text keeps TMP's own
+                    // spacing, so the number an author writes here is not the number on the screen.
+                    Report(property, value);
+                    break;
+
+                case "margin":
+                case "margin-top":
+                case "margin-right":
+                case "margin-bottom":
+                case "margin-left":
+                    // Auto margins resolve to zero, so `margin: 0 auto` does not centre - one of the most common
+                    // pieces of layout CSS there is.
+                    if (Contains(value, "auto")) Report(property, value);
+                    break;
+
+                case "box-shadow":
+                    // An `inset` keyword drops the entire declaration; a fourth length (spread) is eaten; a
+                    // comma list is merged into one shadow. All three are how focus rings and elevation are
+                    // normally written.
+                    if (Contains(value, "inset")) Report(property, value + "  (inset verwirft die ganze Deklaration)");
+                    else if (ValueParser.SplitTopLevel(value, commaSeparated: true).Length > 1)
+                        Report(property, value + "  (nur der erste Schatten wird gezeichnet)");
+                    break;
+
+                case "transform":
+                    if (ContainsAny(value, "skew", "matrix", "perspective", "rotate3d", "rotatex", "rotatey",
+                                           "rotatez", "translate3d", "translatez", "scale3d", "scalez"))
+                        Report(property, value + "  (diese Funktion kennt die Engine nicht)");
+                    else if (Contains(value, "translate") && Contains(value, "%"))
+                        Report(property, value + "  (Prozent loest gegen null auf, translate(-50%) wird zu 0)");
+                    break;
+
+                case "font-family":
+                    // Only the first family is kept; the rest of the stack is never tried.
+                    if (Contains(value, ",")) Report(property, value + "  (nur die erste Familie zaehlt)");
+                    break;
+            }
+        }
+
+        private static void Report(string property, string value) =>
+            Diagnostics.Report(DiagnosticKind.ValueIgnored, property, value);
+
+        private static bool IsAny(string value, params string[] candidates)
+        {
+            foreach (string candidate in candidates)
+                if (value.Equals(candidate, StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
+        }
+
+        private static bool Contains(string value, string needle) =>
+            value.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0;
+
+        private static bool ContainsAny(string value, params string[] needles)
+        {
+            foreach (string needle in needles)
+                if (Contains(value, needle)) return true;
+            return false;
+        }
+    }
+}

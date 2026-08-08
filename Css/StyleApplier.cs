@@ -1,12 +1,30 @@
+using Sideload.Model;
+
 namespace Sideload.Css
 {
     /// <summary>
     /// Applies one declaration to a <see cref="ComputedStyle"/>, expanding shorthands on the way. This is where the
     /// engine's supported property set is actually defined: an unknown property, or a value that does not parse, is
-    /// dropped silently - the same "ignore the bad declaration, keep the rest" behaviour a browser has.
+    /// dropped - the same "ignore the bad declaration, keep the rest" behaviour a browser has.
+    ///
+    /// A browser drops it silently because a browser implements the property. This one often does not, and then a
+    /// silent drop is a page that comes out wrong with nothing anywhere to say why. So every drop is reported to
+    /// <see cref="Diagnostics"/>: the unknown NAME (which the host has warned about since 1.9.0), and now also the
+    /// unreadable VALUE - `padding: 1rem`, `color: oklch(...)`, `width: calc(...)` - which is the far more common
+    /// case once a page comes from a build tool rather than from hand.
     /// </summary>
     internal static class StyleApplier
     {
+        /// <summary>
+        /// The property currently being applied, so the parse helpers below can name it without every one of the
+        /// fifty call sites having to repeat it.
+        ///
+        /// A static field rather than a parameter because everything here runs on one thread - Unity's main thread
+        /// in the game, the single test thread headless - which the engine relies on throughout. <see cref="Apply"/>
+        /// is never re-entered, so there is no nesting to get wrong.
+        /// </summary>
+        private static string _applying;
+
         /// <summary>
         /// Apply one declaration. Returns FALSE when this renderer has no case for that property - which is the
         /// only signal that exists, because an unsupported declaration is otherwise dropped without a trace.
@@ -19,6 +37,9 @@ namespace Sideload.Css
             property = property.Trim().ToLowerInvariant();
             value = value.Trim();
             if (value.Length == 0) return true;
+
+            _applying = property;
+            DeadValues.Check(property, value);
 
             switch (property)
             {
@@ -39,9 +60,9 @@ namespace Sideload.Css
                     break;
 
                 case "flex": ApplyFlex(s, value); break;
-                case "flex-grow": if (ValueParser.TryNumber(value, out float g)) s.FlexGrow = g; break;
-                case "flex-shrink": if (ValueParser.TryNumber(value, out float sh)) s.FlexShrink = sh; break;
-                case "flex-basis": if (ValueParser.TryLength(value, out Len fb)) s.FlexBasis = fb; break;
+                case "flex-grow": if (Number(value, out float g)) s.FlexGrow = g; break;
+                case "flex-shrink": if (Number(value, out float sh)) s.FlexShrink = sh; break;
+                case "flex-basis": if (Length(value, out Len fb)) s.FlexBasis = fb; break;
 
                 case "justify-content": s.JustifyContent = ParseJustify(value, s.JustifyContent); break;
                 case "align-items": s.AlignItems = ParseAlign(value, s.AlignItems); break;
@@ -50,31 +71,33 @@ namespace Sideload.Css
                 case "gap":
                 {
                     string[] p = ValueParser.SplitTopLevel(value);
-                    if (p.Length >= 1 && ValueParser.TryLength(p[0], out Len rg)) { s.RowGap = rg; s.ColumnGap = rg; }
-                    if (p.Length >= 2 && ValueParser.TryLength(p[1], out Len cg)) s.ColumnGap = cg;
+                    bool tookGap = false;
+                    if (p.Length >= 1 && ValueParser.TryLength(p[0], out Len rg)) { s.RowGap = rg; s.ColumnGap = rg; tookGap = true; }
+                    if (p.Length >= 2 && ValueParser.TryLength(p[1], out Len cg)) { s.ColumnGap = cg; tookGap = true; }
+                    if (!tookGap) Diagnostics.Report(DiagnosticKind.ValueRejected, property, value);
                     break;
                 }
-                case "row-gap": if (ValueParser.TryLength(value, out Len rgap)) s.RowGap = rgap; break;
-                case "column-gap": if (ValueParser.TryLength(value, out Len cgap)) s.ColumnGap = cgap; break;
+                case "row-gap": if (Length(value, out Len rgap)) s.RowGap = rgap; break;
+                case "column-gap": if (Length(value, out Len cgap)) s.ColumnGap = cgap; break;
 
-                case "padding": if (TryEdges(value, out Edges pad)) s.Padding = pad; break;
-                case "padding-top": if (ValueParser.TryLength(value, out Len pt)) s.Padding.Top = pt; break;
-                case "padding-right": if (ValueParser.TryLength(value, out Len pr)) s.Padding.Right = pr; break;
-                case "padding-bottom": if (ValueParser.TryLength(value, out Len pb)) s.Padding.Bottom = pb; break;
-                case "padding-left": if (ValueParser.TryLength(value, out Len pl)) s.Padding.Left = pl; break;
+                case "padding": if (Edges_(value, out Edges pad)) s.Padding = pad; break;
+                case "padding-top": if (Length(value, out Len pt)) s.Padding.Top = pt; break;
+                case "padding-right": if (Length(value, out Len pr)) s.Padding.Right = pr; break;
+                case "padding-bottom": if (Length(value, out Len pb)) s.Padding.Bottom = pb; break;
+                case "padding-left": if (Length(value, out Len pl)) s.Padding.Left = pl; break;
 
-                case "margin": if (TryEdges(value, out Edges mar)) s.Margin = mar; break;
-                case "margin-top": if (ValueParser.TryLength(value, out Len mt)) s.Margin.Top = mt; break;
-                case "margin-right": if (ValueParser.TryLength(value, out Len mr)) s.Margin.Right = mr; break;
-                case "margin-bottom": if (ValueParser.TryLength(value, out Len mb)) s.Margin.Bottom = mb; break;
-                case "margin-left": if (ValueParser.TryLength(value, out Len ml)) s.Margin.Left = ml; break;
+                case "margin": if (Edges_(value, out Edges mar)) s.Margin = mar; break;
+                case "margin-top": if (Length(value, out Len mt)) s.Margin.Top = mt; break;
+                case "margin-right": if (Length(value, out Len mr)) s.Margin.Right = mr; break;
+                case "margin-bottom": if (Length(value, out Len mb)) s.Margin.Bottom = mb; break;
+                case "margin-left": if (Length(value, out Len ml)) s.Margin.Left = ml; break;
 
-                case "width": if (ValueParser.TryLength(value, out Len w)) s.Width = w; break;
-                case "height": if (ValueParser.TryLength(value, out Len h)) s.Height = h; break;
-                case "min-width": if (ValueParser.TryLength(value, out Len mnw)) s.MinWidth = mnw; break;
-                case "min-height": if (ValueParser.TryLength(value, out Len mnh)) s.MinHeight = mnh; break;
-                case "max-width": if (ValueParser.TryLength(value, out Len mxw)) s.MaxWidth = mxw; break;
-                case "max-height": if (ValueParser.TryLength(value, out Len mxh)) s.MaxHeight = mxh; break;
+                case "width": if (Length(value, out Len w)) s.Width = w; break;
+                case "height": if (Length(value, out Len h)) s.Height = h; break;
+                case "min-width": if (Length(value, out Len mnw)) s.MinWidth = mnw; break;
+                case "min-height": if (Length(value, out Len mnh)) s.MinHeight = mnh; break;
+                case "max-width": if (Length(value, out Len mxw)) s.MaxWidth = mxw; break;
+                case "max-height": if (Length(value, out Len mxh)) s.MaxHeight = mxh; break;
 
                 case "position":
                     if (Is(value, "fixed")) s.Position = PositionKind.Fixed;
@@ -82,11 +105,11 @@ namespace Sideload.Css
                     else if (Is(value, "static") || Is(value, "relative")) s.Position = PositionKind.Static;
                     break;
 
-                case "inset": if (TryEdges(value, out Edges inset)) s.Inset = inset; break;
-                case "top": if (ValueParser.TryLength(value, out Len it)) s.Inset.Top = it; break;
-                case "right": if (ValueParser.TryLength(value, out Len ir)) s.Inset.Right = ir; break;
-                case "bottom": if (ValueParser.TryLength(value, out Len ib)) s.Inset.Bottom = ib; break;
-                case "left": if (ValueParser.TryLength(value, out Len il)) s.Inset.Left = il; break;
+                case "inset": if (Edges_(value, out Edges inset)) s.Inset = inset; break;
+                case "top": if (Length(value, out Len it)) s.Inset.Top = it; break;
+                case "right": if (Length(value, out Len ir)) s.Inset.Right = ir; break;
+                case "bottom": if (Length(value, out Len ib)) s.Inset.Bottom = ib; break;
+                case "left": if (Length(value, out Len il)) s.Inset.Left = il; break;
 
                 case "overflow": s.OverflowX = s.OverflowY = ParseOverflow(value, s.OverflowX); break;
                 case "overflow-x": s.OverflowX = ParseOverflow(value, s.OverflowX); break;
@@ -102,19 +125,19 @@ namespace Sideload.Css
                 case "border-right": ApplyBorder(s, value, Side.Right); break;
                 case "border-bottom": ApplyBorder(s, value, Side.Bottom); break;
                 case "border-left": ApplyBorder(s, value, Side.Left); break;
-                case "border-width": if (TryEdges(value, out Edges bw)) s.BorderWidth = bw; break;
-                case "border-color": if (ValueParser.TryColor(value, out RgbaColor bc)) s.BorderColor = bc; break;
+                case "border-width": if (Edges_(value, out Edges bw)) s.BorderWidth = bw; break;
+                case "border-color": if (Colour(value, out RgbaColor bc)) s.BorderColor = bc; break;
                 case "border-style": break;   // only `solid` is drawable; the value carries no other information here
-                case "border-top-width": if (ValueParser.TryLength(value, out Len btw)) s.BorderWidth.Top = btw; break;
-                case "border-right-width": if (ValueParser.TryLength(value, out Len brw)) s.BorderWidth.Right = brw; break;
-                case "border-bottom-width": if (ValueParser.TryLength(value, out Len bbw)) s.BorderWidth.Bottom = bbw; break;
-                case "border-left-width": if (ValueParser.TryLength(value, out Len blw)) s.BorderWidth.Left = blw; break;
+                case "border-top-width": if (Length(value, out Len btw)) s.BorderWidth.Top = btw; break;
+                case "border-right-width": if (Length(value, out Len brw)) s.BorderWidth.Right = brw; break;
+                case "border-bottom-width": if (Length(value, out Len bbw)) s.BorderWidth.Bottom = bbw; break;
+                case "border-left-width": if (Length(value, out Len blw)) s.BorderWidth.Left = blw; break;
 
                 case "border-radius": ApplyRadius(s, value); break;
-                case "border-top-left-radius": if (TryPx(value, out float r1)) s.BorderRadius.TopLeft = r1; break;
-                case "border-top-right-radius": if (TryPx(value, out float r2)) s.BorderRadius.TopRight = r2; break;
-                case "border-bottom-right-radius": if (TryPx(value, out float r3)) s.BorderRadius.BottomRight = r3; break;
-                case "border-bottom-left-radius": if (TryPx(value, out float r4)) s.BorderRadius.BottomLeft = r4; break;
+                case "border-top-left-radius": if (Px(value, out float r1)) s.BorderRadius.TopLeft = r1; break;
+                case "border-top-right-radius": if (Px(value, out float r2)) s.BorderRadius.TopRight = r2; break;
+                case "border-bottom-right-radius": if (Px(value, out float r3)) s.BorderRadius.BottomRight = r3; break;
+                case "border-bottom-left-radius": if (Px(value, out float r4)) s.BorderRadius.BottomLeft = r4; break;
 
                 case "box-shadow": ApplyShadow(s, value); break;
                 case "transform": ApplyTransform(s, value); break;
@@ -124,16 +147,16 @@ namespace Sideload.Css
                 case "transition-timing-function": s.TransitionEasing = Easing(value); break;
                 case "transition-property": break;   // every animatable property transitions; see ApplyTransition
 
-                case "opacity": if (ValueParser.TryNumber(value, out float op)) s.Opacity = op < 0f ? 0f : (op > 1f ? 1f : op); break;
+                case "opacity": if (Number(value, out float op)) s.Opacity = op < 0f ? 0f : (op > 1f ? 1f : op); break;
 
                 // ------------------------------------------------------------------ text --
-                case "color": if (ValueParser.TryColor(value, out RgbaColor col)) s.Color = col; break;
+                case "color": if (Colour(value, out RgbaColor col)) s.Color = col; break;
                 case "font-family": s.FontFamily = FirstFamily(value); break;
-                case "font-size": if (TryPx(value, out float fs)) s.FontSize = fs; break;
+                case "font-size": if (Px(value, out float fs)) s.FontSize = fs; break;
                 case "font-weight": s.FontWeight = ParseWeight(value, s.FontWeight); break;
                 case "font-style": s.FontStyle = Is(value, "italic") || Is(value, "oblique") ? FontStyleKind.Italic : FontStyleKind.Normal; break;
                 case "line-height": ApplyLineHeight(s, value); break;
-                case "letter-spacing": if (Is(value, "normal")) s.LetterSpacing = 0f; else if (TryPx(value, out float ls)) s.LetterSpacing = ls; break;
+                case "letter-spacing": if (Is(value, "normal")) s.LetterSpacing = 0f; else if (Px(value, out float ls)) s.LetterSpacing = ls; break;
 
                 // Sideload's own, hence the prefix: the web reaches monospace by naming a family, and there is no
                 // monospace family here to name. `normal` turns it back off, so a subtree can opt out of an inherited
@@ -144,26 +167,26 @@ namespace Sideload.Css
 
                 case "-s1-mono-advance":
                     if (Is(value, "normal") || Is(value, "none")) s.MonoAdvance = 0f;
-                    else if (TryPx(value, out float adv)) s.MonoAdvance = adv < 0f ? 0f : adv;
+                    else if (Px(value, out float adv)) s.MonoAdvance = adv < 0f ? 0f : adv;
                     break;
 
                 // Standard CSS. `auto` hands the caret back to the text colour, which is the default.
                 case "caret-color":
                     if (Is(value, "auto")) s.CaretColor = null;
-                    else if (ValueParser.TryColor(value, out RgbaColor caret)) s.CaretColor = caret;
+                    else if (Colour(value, out RgbaColor caret)) s.CaretColor = caret;
                     break;
 
                 // Sideload's own: CSS has a caret colour but no caret width, and a block cursor is the difference
                 // between a text field and a terminal.
                 case "-s1-caret-width":
-                    if (TryPx(value, out float caretWidth)) s.CaretWidth = caretWidth < 0f ? 0f : caretWidth;
+                    if (Px(value, out float caretWidth)) s.CaretWidth = caretWidth < 0f ? 0f : caretWidth;
                     break;
 
                 // The inline suggestion behind the caret. `auto` is the text colour faded, which is what fish and
                 // PSReadLine both draw and what anyone reading it expects.
                 case "-s1-ghost-color":
                     if (Is(value, "auto")) s.GhostColor = null;
-                    else if (ValueParser.TryColor(value, out RgbaColor ghost)) s.GhostColor = ghost;
+                    else if (Colour(value, out RgbaColor ghost)) s.GhostColor = ghost;
                     break;
                 case "text-align":
                     if (Is(value, "center")) s.TextAlign = TextAlignKind.Center;
@@ -195,9 +218,57 @@ namespace Sideload.Css
             if (string.IsNullOrEmpty(property)) return true;
             if (property.StartsWith("--", StringComparison.Ordinal)) return true;
 
-            // A value the parsers all tolerate, so this measures the property name and nothing else.
+            // Muted, because this runs the real switch to ask about the NAME. Without it every call would file a
+            // complaint about a value nobody wrote - "0" is not what the author said, it is what this probe says.
+            bool muted = Diagnostics.Muted;
+            Diagnostics.Muted = true;
             try { return Apply(new ComputedStyle(), property, "0"); }
             catch { return true; }
+            finally { Diagnostics.Muted = muted; }
+        }
+
+        // ------------------------------------------------------- parsing, with a paper trail --
+        //
+        // Thin wrappers around ValueParser used ONLY at the top level of the switch, where a failed parse really
+        // does mean the whole declaration was thrown away. The speculative parses inside the shorthand helpers
+        // (ApplyFlex, ApplyBorder, ApplyShadow, ApplyBackground) keep calling ValueParser directly: there a failed
+        // token is how the grammar is discovered, not a mistake, and reporting it would cry wolf.
+
+        private static bool Length(string value, out Len len)
+        {
+            if (ValueParser.TryLength(value, out len)) return true;
+            Diagnostics.Report(DiagnosticKind.ValueRejected, _applying, value);
+            return false;
+        }
+
+        private static bool Colour(string value, out RgbaColor color)
+        {
+            if (ValueParser.TryColor(value, out color)) return true;
+            Diagnostics.Report(DiagnosticKind.ValueRejected, _applying, value);
+            return false;
+        }
+
+        private static bool Number(string value, out float number)
+        {
+            if (ValueParser.TryNumber(value, out number)) return true;
+            Diagnostics.Report(DiagnosticKind.ValueRejected, _applying, value);
+            return false;
+        }
+
+        private static bool Edges_(string value, out Edges edges)
+        {
+            if (TryEdges(value, out edges)) return true;
+            Diagnostics.Report(DiagnosticKind.ValueRejected, _applying, value);
+            return false;
+        }
+
+        /// <summary>A px-only length. A percentage parses fine and is still refused here, so it is reported with
+        /// the reason - `border-radius: 50%` is valid CSS that this renderer cannot draw.</summary>
+        private static bool Px(string value, out float px)
+        {
+            if (TryPx(value, out px)) return true;
+            Diagnostics.Report(DiagnosticKind.ValueRejected, _applying, value);
+            return false;
         }
 
         // ------------------------------------------------------------------ shorthands --
@@ -302,6 +373,10 @@ namespace Sideload.Css
             {
                 if (ValueParser.TryColor(part, out RgbaColor c)) { s.BackgroundColor = c; s.HasGradient = false; return; }
             }
+
+            // Nothing in the value was a colour this engine can read. That is `url(...)`, which paints nothing,
+            // and every modern colour function - the whole of Tailwind v4's palette arrives as oklch().
+            Diagnostics.Report(DiagnosticKind.ValueRejected, _applying, value);
         }
 
         /// <summary>Which edge a border shorthand applies to; All is the plain `border` property.</summary>
@@ -468,7 +543,13 @@ namespace Sideload.Css
             float[] v = new float[p.Length];
             for (int i = 0; i < p.Length; i++)
             {
-                if (!TryPx(p[i], out v[i])) return;
+                // px only - a percentage parses as a length and is still refused, which is how `rounded-full`
+                // disappears. One bad corner drops the whole declaration, so this is the place to say so.
+                if (!TryPx(p[i], out v[i]))
+                {
+                    Diagnostics.Report(DiagnosticKind.ValueRejected, _applying, value);
+                    return;
+                }
             }
 
             switch (v.Length)

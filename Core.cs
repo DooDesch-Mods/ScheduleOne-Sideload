@@ -31,6 +31,13 @@ namespace Sideload
             // System.Text.Encoding.CodePages is deliberately absent from this list: it is part of
             // Microsoft.NETCore.App 6.0, which is the framework MelonLoader's runtimeconfig asks for, so it never
             // ships next to the mod and the runtime resolves it on its own.
+            // The hook goes on FIRST, and it is not optional. Eager loading alone gets each assembly into the
+            // process but does not make it findable BY NAME from another one: Jint resolves Esprima in its own
+            // constructor, and an assembly that came from a byte array is not in the set that bind probes. Measured
+            // outside the game: without this, every Jint.Engine() throws FileNotFoundException for Esprima - which is
+            // every app's JavaScript, on every machine.
+            AppDomain.CurrentDomain.AssemblyResolve += ResolveRuntimeDependency;
+
             PreloadRuntimeDependency("AngleSharp.dll");
             PreloadRuntimeDependency("Esprima.dll");
             PreloadRuntimeDependency("Jint.dll");
@@ -141,11 +148,51 @@ namespace Sideload
         }
 
         /// <summary>
-        /// Loads one shipped dependency from disk. UserLibs is the intended home and where the Thunderstore package
-        /// puts it, but the Nexus/Vortex installer refuses to place a folder there (it redirects a UserLibs entry into
-        /// MelonLoader/), so that package ships the same DLLs beside Sideload.dll in Mods/. Both layouts have to work,
-        /// hence the second probe.
+        /// Makes one runtime dependency available before anything asks for it.
+        ///
+        /// These ship inside Sideload.dll as embedded resources, so a normal install has no loose DLLs to lose, to
+        /// wonder about, or to leave behind when the mod is removed. Disk is still checked FIRST, and on purpose: an
+        /// install that already has these in UserLibs (every version before this one put them there) must keep loading
+        /// exactly the file it loaded yesterday, and someone debugging a newer AngleSharp by dropping it next to the
+        /// mod must still win over the copy baked in here.
+        ///
+        /// The two disk locations are both real: UserLibs is the intended home and where the Thunderstore package put
+        /// them, but the Nexus/Vortex installer refuses to place a folder there (it redirects a UserLibs entry into
+        /// MelonLoader/), so that package shipped them beside Sideload.dll in Mods/ instead.
+        ///
+        /// Loading it ourselves at all - rather than letting the runtime bind on first use - is unchanged and still
+        /// necessary: MelonLoader's own UserLibs probing does not satisfy these bindings and reports a
+        /// FileLoadException even with the correct build present.
         /// </summary>
+        /// <summary>The three assemblies this mod carries, by simple name. Everything else that fails to bind in this
+        /// process is somebody else's business - the resolve hook must stay silent for it.</summary>
+        private static readonly string[] RuntimeDependencies = { "AngleSharp", "Esprima", "Jint" };
+
+        /// <summary>What the preload actually got hold of, so a later bind is answered with the SAME assembly rather
+        /// than a second copy of it (two copies of Esprima means Jint's types stop matching its own).</summary>
+        private static readonly Dictionary<string, Assembly> _resolved =
+            new Dictionary<string, Assembly>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Answers a failed bind for one of our three dependencies. Fires for every unresolved assembly in the
+        /// process, so it returns null immediately for anything not ours.
+        /// </summary>
+        private static Assembly ResolveRuntimeDependency(object sender, ResolveEventArgs args)
+        {
+            string simple;
+            try { simple = new AssemblyName(args.Name).Name; }
+            catch { return null; }
+
+            if (_resolved.TryGetValue(simple, out Assembly already)) return already;
+            if (Array.IndexOf(RuntimeDependencies, simple) < 0) return null;
+
+            Assembly loaded = LoadEmbeddedAssembly(simple + ".dll");
+            if (loaded == null) return null;
+            _resolved[simple] = loaded;
+            Log.Msg($"[Sideload] resolved {simple} from the embedded copy (requested by {args.RequestingAssembly?.GetName().Name ?? "the runtime"})");
+            return loaded;
+        }
+
         private static void PreloadRuntimeDependency(string fileName)
         {
             try
@@ -156,22 +203,56 @@ namespace Sideload
                     string beside = Path.Combine(
                         Path.GetDirectoryName(typeof(Core).Assembly.Location) ?? MelonEnvironment.ModsDirectory,
                         fileName);
-                    if (!File.Exists(beside))
-                    {
-                        Log.Warning($"[Sideload] runtime dependency not found in UserLibs or next to the mod: {fileName}");
-                        return;
-                    }
-
-                    path = beside;
+                    if (File.Exists(beside)) path = beside;
+                    else path = null;
                 }
 
-                AssemblyName name = Assembly.LoadFrom(path).GetName();
-                Log.Msg($"[Sideload] preloaded {name.Name} {name.Version}");
+                Assembly loaded = path != null ? Assembly.LoadFrom(path) : LoadEmbeddedAssembly(fileName);
+                if (loaded == null)
+                {
+                    Log.Error($"[Sideload] runtime dependency {fileName} is neither on disk nor embedded - no app will render.");
+                    return;
+                }
+
+                AssemblyName name = loaded.GetName();
+                _resolved[name.Name] = loaded;   // the hook hands out this one, never a second copy
+                Log.Msg($"[Sideload] preloaded {name.Name} {name.Version} {(path != null ? "from disk (" + path + ")" : "(embedded)")}");
             }
             catch (Exception e)
             {
                 Log.Warning($"[Sideload] preloading {fileName} failed: {e.Message}");
             }
+        }
+
+        /// <summary>
+        /// Load one of the embedded dependency images. Read into a byte array rather than handed to the loader as the
+        /// manifest stream: the stream is backed by this assembly's image and the loader would keep it open for the
+        /// process lifetime.
+        /// </summary>
+        private static Assembly LoadEmbeddedAssembly(string fileName)
+        {
+            string resource = "Sideload.Libs." + fileName;
+            using Stream stream = typeof(Core).Assembly.GetManifestResourceStream(resource);
+            if (stream == null)
+            {
+                Log.Warning($"[Sideload] embedded dependency '{resource}' is missing from this build.");
+                return null;
+            }
+
+            byte[] image = new byte[stream.Length];
+            int read = 0;
+            while (read < image.Length)
+            {
+                int n = stream.Read(image, read, image.Length - read);
+                if (n <= 0) break;
+                read += n;
+            }
+            if (read != image.Length)
+            {
+                Log.Warning($"[Sideload] embedded dependency '{resource}' is truncated ({read} of {image.Length} bytes).");
+                return null;
+            }
+            return Assembly.Load(image);
         }
     }
 }

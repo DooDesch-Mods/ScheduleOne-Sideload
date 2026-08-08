@@ -199,3 +199,27 @@ body {
   color: #7DFFB2;
   white-space: pre;
 }
+
+/* ---------------------------------------------------------------------------------------------
+   Diagnose-Probe. Fuenf Deklarationen, die ein Browser befolgt und diese Engine verwirft - je eine
+   pro stiller Klasse. Sie stehen hier, damit jeder Debug-Start beweist, dass die Meldung ankommt:
+   ohne sie waere "die Engine meldet ihre Luecken" eine Behauptung, die nur der Testlauf kennt.
+
+   Der Selektor trifft absichtlich nichts. Es geht um die MELDUNG, nicht um die Wirkung, und eine
+   Probe, die das Bild veraendert, waere ein Selbsttest, der sich selbst im Weg steht.
+
+   Erwartet im Log beim Oeffnen der App: rem, baseline, der abgelehnte Selektor, die uebersprungene
+   Media Query - und aus app.js der Listener auf 'change'.                                        */
+
+@media (min-width: 640px) {
+  .diagnostic-probe { color: #ff0000; }
+}
+
+.diagnostic-probe {
+  padding: 1rem;
+  align-items: baseline;
+}
+
+.diagnostic-probe:not(:hover) {
+  color: #00ff00;
+}

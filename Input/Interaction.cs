@@ -26,6 +26,7 @@ namespace Sideload.Input
         private readonly Action<IElement, PointerSpot> _onClicked;
         private readonly Action<IElement, string, PointerSpot, Vector2> _onDragged;
         private readonly Action<IElement, float> _onWheel;
+        private readonly Action<IElement, bool> _onHover;
 
         /// <summary>The page root, used as the fixed frame a drag is measured against - see <see cref="RootPoint"/>.</summary>
         private readonly RectTransform _pageRoot;
@@ -46,12 +47,14 @@ namespace Sideload.Input
                              Action<IElement, PointerSpot> onClicked,
                              Action<IElement, string, PointerSpot, Vector2> onDragged = null,
                              Action<IElement, float> onWheel = null,
+                             Action<IElement, bool> onHover = null,
                              RectTransform pageRoot = null)
         {
             _onStateChanged = onStateChanged;
             _onClicked = onClicked;
             _onDragged = onDragged;
             _onWheel = onWheel;
+            _onHover = onHover;
             _pageRoot = pageRoot;
         }
 
@@ -170,12 +173,19 @@ namespace Sideload.Input
             }
 
             var trigger = handlerHost.AddComponent<EventTrigger>();
-            Add(trigger, EventTriggerType.PointerEnter, () => Set(element, StateFlags.Hover, true));
+            Add(trigger, EventTriggerType.PointerEnter, () =>
+            {
+                Set(element, StateFlags.Hover, true);
+                // The page hears about it too. :hover alone can only repaint, so anything that has to APPEAR on
+                // hover - a tooltip above all - was not buildable without this.
+                _onHover?.Invoke(element, true);
+            });
             Add(trigger, EventTriggerType.PointerExit, () =>
             {
                 // Leaving the element also ends any press that started on it - otherwise :active would stick.
                 Set(element, StateFlags.Hover, false);
                 Set(element, StateFlags.Active, false);
+                _onHover?.Invoke(element, false);
             });
             Add(trigger, EventTriggerType.PointerDown, () =>
             {

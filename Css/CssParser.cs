@@ -75,7 +75,14 @@ namespace Sideload.Css
                     while (preludeEnd < end && src[preludeEnd] != '{' && src[preludeEnd] != ';') preludeEnd++;
 
                     if (preludeEnd >= end) break;
-                    if (src[preludeEnd] == ';') { i = preludeEnd + 1; continue; }   // @import and friends: skipped
+                    if (src[preludeEnd] == ';')
+                    {
+                        // @import, @charset, @namespace, `@layer a, b;`. Nothing is loaded and nothing is ordered.
+                        Model.Diagnostics.Report(Model.DiagnosticKind.AtRuleSkipped,
+                                                 src.Substring(i, preludeEnd - i).Trim());
+                        i = preludeEnd + 1;
+                        continue;
+                    }
 
                     int blockEnd = MatchingBrace(src, preludeEnd, end);
                     if (blockEnd < 0) break;
@@ -87,6 +94,11 @@ namespace Sideload.Css
                     // applying it would be worse than ignoring it, because the author gated it for a reason.
                     if (nested.HasValue || IsAlwaysTrueMedia(prelude))
                         ParseRules(src, preludeEnd + 1, blockEnd, nested ?? media, sheet, ref order);
+                    else
+                        // @keyframes, @layer { }, @property, @supports, @font-face, @container, and every width
+                        // breakpoint - the block and everything in it. For a stylesheet out of a build tool this
+                        // is where most of the sheet goes, so it is worth a word.
+                        Model.Diagnostics.Report(Model.DiagnosticKind.AtRuleSkipped, prelude.Trim());
 
                     i = blockEnd + 1;
                     continue;

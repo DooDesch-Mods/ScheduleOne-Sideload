@@ -19,8 +19,8 @@ Sideload adds no gameplay, no menu and no phone app of its own. Mods that build 
 it as a dependency and your mod manager installs it for you. It sits idle until one of those mods registers
 an app, and every developer tool inside it is off until you switch it on.
 
-Installed by hand? `Sideload.dll` goes in `Mods/`, and `AngleSharp.dll` + `Jint.dll` + `Esprima.dll` go in
-`UserLibs/` (the mod also finds them next to itself in `Mods/`). Without them no page will build.
+Installed by hand? `Sideload.dll` goes in `Mods/`. That is all of it - AngleSharp, Jint and Esprima are inside
+that one file.
 
 ## Mod authors
 
