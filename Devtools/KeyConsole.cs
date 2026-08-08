@@ -126,8 +126,8 @@ namespace Sideload.Devtools
         ///
         /// There are two systems and they look identical to a player: `InputPrompt` is placed in a scene and carries
         /// its own action list, `InputPromptsItemUI` is built at runtime by InputPromptsManager from a module. The
-        /// turn hint clones one of the second kind, so when none is on screen it has nothing to copy - and from the
-        /// outside that is indistinguishable from the hint being broken.
+        /// turn hint is one of the second kind, so this is also how to see whether it went up - the count rises by
+        /// one while a turnable app is open.
         /// </summary>
         private static string PromptReport()
         {
@@ -151,7 +151,7 @@ namespace Sideload.Devtools
                     if (row.gameObject.activeInHierarchy) plainActive++;
                 }
 
-                return $"prompt rows: {itemsActive}/{items} InputPromptsItemUI on screen (what the turn hint clones), "
+                return $"prompt rows: {itemsActive}/{items} InputPromptsItemUI on screen (the turn hint is one of these), "
                      + $"{plainActive}/{plain} InputPrompt on screen (the in-scene kind).";
             }
             catch (Exception e) { return "prompt rows: could not be counted - " + e.Message; }

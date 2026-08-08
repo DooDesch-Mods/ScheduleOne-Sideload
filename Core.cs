@@ -144,11 +144,11 @@ namespace Sideload
         }
 
         /// <summary>Quitting the game must not leave a stray DevTools window behind - it belongs to the session.</summary>
-        /// <summary>A new scene is the one event that can honestly change whether the input assets exist, so it is
-        /// where the rotate-action search is allowed to try again after it gave up.</summary>
+        /// <summary>A new scene takes the key strip with it, so the turn hint has to be told that what it put up
+        /// is gone.</summary>
         public override void OnSceneWasLoaded(int buildIndex, string sceneName)
         {
-            Phone.TurnPrompt.RearmActionSearch();
+            Phone.TurnPrompt.SceneChanged();
         }
 
         public override void OnDeinitializeMelon()
