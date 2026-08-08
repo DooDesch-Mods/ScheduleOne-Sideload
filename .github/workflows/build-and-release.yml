@@ -1,7 +1,12 @@
 name: Build and Release on Tag
 
-# Push a tag "vX.Y.Z" (matching <Version> in Sideload.csproj) and this builds Release, publishes a GitHub
-# Release, and uploads to Thunderstore + Nexus. Mirrors the Siesta pipeline.
+# Push a tag "vX.Y.Z" on the default branch and this builds Release, publishes a GitHub Release, and uploads
+# to Thunderstore + Nexus. Mirrors the Siesta pipeline.
+#
+# The TAG is the only place a version is decided. Sideload.csproj carries a 0.0.0-dev fallback that is never
+# bumped, and the build gets -p:Version from the tag - a command-line property is a global MSBuild property
+# and a project file cannot overwrite one. Nothing in a pull request ever contains a release number.
+# Rules and reasoning: Workspace/docs/RELEASE-PROCESS.md, section "Versioning".
 #
 # One-time setup:
 #   - Private build-libs repo  ${owner}/ScheduleOne-Workspace  must contain:
@@ -60,16 +65,31 @@ jobs:
             6.0.x
             8.0.x
 
-      - name: Verify version in csproj matches the tag
+      # The tag is the ONLY place a release version is decided; the csproj keeps a 0.0.0-dev fallback it
+      # never bumps. See Workspace/docs/RELEASE-PROCESS.md, "Versioning". Both checks below run before
+      # anything is built, so a bad tag costs seconds rather than a published artefact.
+      - name: Preflight - tag shape and branch
         id: version-check
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
-          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
-          CS_VERSION=$(grep -oPm1 "(?<=<Version>)[^<]+" Sideload.csproj)
-          if [ "$TAG_VERSION" != "$CS_VERSION" ]; then
-            echo "Version mismatch: Tag version is $TAG_VERSION, but csproj version is $CS_VERSION"
+          set -euo pipefail
+          TAG="${GITHUB_REF#refs/tags/}"
+
+          # The `v*` trigger is a glob, not a pattern check - it also matches v1.2, vNext and v1.2.3-rc1.
+          if [[ ! "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "::error::Release tag must be exactly vX.Y.Z, got '$TAG'."
             exit 1
           fi
-          echo "version=$TAG_VERSION" >> $GITHUB_OUTPUT
+
+          # A tag on a feature branch would publish a version nobody can reproduce from the default branch.
+          git fetch --no-tags origin "$DEFAULT_BRANCH":"refs/remotes/origin/$DEFAULT_BRANCH"
+          if ! git merge-base --is-ancestor HEAD "refs/remotes/origin/$DEFAULT_BRANCH"; then
+            echo "::error::Tag $TAG is not on $DEFAULT_BRANCH. Merge first, then tag the commit on $DEFAULT_BRANCH."
+            exit 1
+          fi
+
+          echo "version=${TAG#v}" >> $GITHUB_OUTPUT
 
       - name: Extract release notes from CHANGELOG.md
         id: changelog
@@ -78,9 +98,16 @@ jobs:
           # this version; it is reused for the GitHub release body and the Nexus file description.
           VERSION="${{ steps.version-check.outputs.version }}"
           SECTION=$(awk -v v="$VERSION" 'index($0,"## ["v"]")==1{grab=1;next} index($0,"## [")==1{if(grab)exit} grab{print}' CHANGELOG.md)
-          if [ -z "$SECTION" ]; then
-            echo "::warning::No CHANGELOG.md section found for $VERSION"
-            SECTION="See CHANGELOG.md for details."
+          # Fatal, not a warning. This used to fall back to "See CHANGELOG.md for details." and publish that
+          # sentence as the release notes to GitHub, Thunderstore and Nexus at once.
+          if [ -z "$(printf '%s' "$SECTION" | tr -d '[:space:]')" ]; then
+            echo "::error::CHANGELOG.md has no non-empty '## [$VERSION]' section. Write the section, then re-tag."
+            exit 1
+          fi
+          HEADINGS=$(grep -c "^## \[$VERSION\]" CHANGELOG.md || true)
+          if [ "$HEADINGS" != "1" ]; then
+            echo "::error::CHANGELOG.md has $HEADINGS '## [$VERSION]' headings, expected exactly 1."
+            exit 1
           fi
           # Markdown notes - GitHub renders Markdown in release bodies.
           {
@@ -135,7 +162,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Build the project (Release, IL2CPP)
-        run: dotnet build Sideload.csproj --configuration Release /p:WorkspaceLibPath="${{ github.workspace }}/Workspace/lib"
+        run: dotnet build Sideload.csproj --configuration Release /p:Version="${{ steps.version-check.outputs.version }}" /p:WorkspaceLibPath="${{ github.workspace }}/Workspace/lib"
 
       - name: Prepare release directory
         run: |
@@ -189,7 +216,7 @@ jobs:
       # them that detour. It is deliberately NOT on the player channels: it carries developer tooling and
       # verbose logging, and a player installing it by accident would just make their log noisier and slower.
       - name: Build the project (Debug, IL2CPP)
-        run: dotnet build Sideload.csproj --configuration Debug /p:WorkspaceLibPath="${{ github.workspace }}/Workspace/lib"
+        run: dotnet build Sideload.csproj --configuration Debug /p:Version="${{ steps.version-check.outputs.version }}" /p:WorkspaceLibPath="${{ github.workspace }}/Workspace/lib"
 
       - name: Package the Debug build
         run: |
