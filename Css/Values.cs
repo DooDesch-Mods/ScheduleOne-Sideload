@@ -135,7 +135,13 @@ namespace Sideload.Css
         internal bool IsZero => TopLeft == 0f && TopRight == 0f && BottomRight == 0f && BottomLeft == 0f;
     }
 
-    internal enum DisplayKind { Flex, None }
+    /// <summary>
+    /// Which layout algorithm a box runs on its children.
+    ///
+    /// <c>Grid</c> covers `grid` and `inline-grid` alike: the inline/block distinction is a block-layout idea and
+    /// this engine has no block layout, so the two differ in nothing it can observe.
+    /// </summary>
+    internal enum DisplayKind { Flex, None, Grid }
     internal enum FlexDirection { Row, RowReverse, Column, ColumnReverse }
     internal enum FlexWrap { NoWrap, Wrap, WrapReverse }
     internal enum Justify { FlexStart, FlexEnd, Center, SpaceBetween, SpaceAround, SpaceEvenly }

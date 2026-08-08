@@ -25,7 +25,12 @@ namespace Sideload.Devtools.Cdp
             void Put(string name, string value) => css.Add(new KeyValuePair<string, string>(name, value));
 
             // --- layout ---
-            Put("display", style.Display == DisplayKind.None ? "none" : "flex");
+            Put("display", style.Display switch
+            {
+                DisplayKind.None => "none",
+                DisplayKind.Grid => "grid",
+                _ => "flex",
+            });
             Put("flex-direction", style.FlexDirection switch
             {
                 FlexDirection.Row => "row",
@@ -53,8 +58,20 @@ namespace Sideload.Devtools.Cdp
             });
             Put("align-items", Align(style.AlignItems));
             Put("align-self", Align(style.AlignSelf));
+            Put("justify-items", Align(style.JustifyItems));
+            Put("justify-self", Align(style.JustifySelf));
             Put("row-gap", style.RowGap.ToString());
             Put("column-gap", style.ColumnGap.ToString());
+
+            // Only meaningful on a grid container, and shown always for the same reason every other property is:
+            // the pane is read to compare against a stylesheet, and a property that vanishes when it is at its
+            // initial value reads as one the engine does not have.
+            Put("grid-template-columns", style.GridTemplateColumns?.ToString() ?? "none");
+            Put("grid-template-rows", style.GridTemplateRows?.ToString() ?? "none");
+            Put("grid-auto-columns", style.GridAutoColumns.ToString());
+            Put("grid-auto-rows", style.GridAutoRows.ToString());
+            Put("grid-column", style.GridColumn.ToString());
+            Put("grid-row", style.GridRow.ToString());
 
             Edges(css, "padding", style.Padding);
             Edges(css, "margin", style.Margin);
