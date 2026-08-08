@@ -13,7 +13,7 @@
 ![Type](https://img.shields.io/badge/type-framework-orange)
 ![Status](https://img.shields.io/badge/status-working-brightgreen)
 
-**[Reference app (WhatsDab)](https://github.com/DooDesch-Mods/ScheduleOne-WhatsDab)** · **[Wiki / docs](https://github.com/DooDesch-Mods/ScheduleOne-Sideload/wiki)** · **[Support](https://support.doodesch.de/sideload)**
+**[Reference app (WhatsDab)](https://github.com/DooDesch-Mods/ScheduleOne-WhatsDab)** · **[Documentation](https://docs.doodesch.de/mods/sideload/)** · **[Support](https://support.doodesch.de/sideload)**
 
 ## For players
 
@@ -258,7 +258,7 @@ app gets a plain coloured square derived from its id, which is legible but says 
 
 Build it, drop `MyMod.dll` into `Mods/`, open the phone. Full guide, the exact CSS subset, the layout rules
 that differ from a browser and the edge cases worth knowing before you hit them: the
-**[wiki](https://github.com/DooDesch-Mods/ScheduleOne-Sideload/wiki)**. A complete, working mod to copy from:
+**[wiki](https://docs.doodesch.de/mods/sideload/)**. A complete, working mod to copy from:
 **[WhatsDab](https://github.com/DooDesch-Mods/ScheduleOne-WhatsDab)**.
 
 ## Sideload.Api, the modder shim
