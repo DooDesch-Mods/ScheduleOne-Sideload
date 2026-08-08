@@ -3,6 +3,29 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.16.0] - 2026-08-09
+
+### Added
+
+- Preact runs. A component mounts, updates, reorders a keyed list and answers a click, all inside the game.
+- Text nodes: `createTextNode`, `createComment`, and writing `node.data` to change one word without rebuilding
+  the markup around it.
+- Node navigation: `parentNode`, `firstChild`, `nextSibling`, `childNodes`, `nodeType`, `nodeName`, `ownerDocument`.
+- Capture phase: `addEventListener(type, fn, true)` and `{ capture: true }` both work, and
+  `stopImmediatePropagation` now differs from `stopPropagation`.
+- `window` is the global object, with `innerWidth`, `innerHeight`, `addEventListener` and
+  `requestAnimationFrame`.
+
+### Changed
+
+- A page can hang its own properties on a node. `el.whatever = x` used to throw, which is why no virtual-DOM
+  renderer could mount.
+- `el.tagName` is upper case, as a browser reports it. `el.localName` is the lower-case spelling.
+- Properties that spell their attribute differently work: `htmlFor`, `readOnly`, `tabIndex`, `checked`,
+  `selected`, plus `onclick` and every other `on...` handler.
+- `style.setProperty` reaches custom properties, so `--brand` can be written from script.
+- `getBoundingClientRect()` carries `top`, `left`, `right` and `bottom` next to the four `rect()` already had.
+
 ## [1.15.0] - 2026-08-08
 
 ### Added

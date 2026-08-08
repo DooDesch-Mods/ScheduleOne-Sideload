@@ -323,15 +323,17 @@ structured. `s1.call` is synchronous and returns a string, not a Promise.
 
 Honest limits, because a browser sets different expectations:
 
-- **CSS:** flexbox, absolute positioning, and `position: fixed` as a top layer (measured against the
-  screen, drawn over everything else, and it takes the pointer - which is how an app gets a modal), the
-  box and paint properties, text properties, custom
-  properties with `var()`, `transform` and `transition`, `overflow` (`hidden` clips, `auto` and `scroll`
-  clip and scroll), `z-index` on a positioned box (it orders siblings inside one parent; there are no
-  stacking contexts, so it cannot lift a box out of the subtree it was written in), and
-  `@media (orientation: ...)`. Units are `px` and `%` only. No Grid, no `float`, no `em`/`rem`/`vh`/`vw`, no `calc()`, no `hsl()`. Anything
-  unsupported is named in the log, once per app, so a rule that never took effect is findable instead
-  of a mystery.
+- **CSS:** flexbox, Grid, absolute positioning, `position: relative`, and `position: fixed` as a top layer
+  (measured against the screen, drawn over everything else, and it takes the pointer - which is how an app
+  gets a modal), the box and paint properties, text properties, custom properties with `var()`, `transform`
+  and `transition`, `overflow` (`hidden` clips, `auto` and `scroll` clip and scroll), `z-index` on a
+  positioned box (it orders siblings inside one parent; there are no stacking contexts, so it cannot lift a
+  box out of the subtree it was written in), auto margins, and `@media` on width, height and orientation.
+  Units are `px`, `%`, `em`, `rem`, the viewport units and the physical ones, with `calc()` over all of them.
+  Colours in hex, `rgb()`, `hsl()`, `oklch()`, `color-mix()`, `currentColor` and the CSS names. `@layer`,
+  `@property`, `@supports` and nesting are read. No `float` and no block flow - every box is a flex or grid
+  container. Anything unsupported is named in the log, once per app, so a rule that never took effect is
+  findable instead of a mystery.
 - **Text that has to line up.** `font-family: monospace` draws in a real monospaced face - the game ships none,
   so Sideload builds one from the machine's own font file (Consolas first, then Cascadia Mono, Lucida Console,
   Courier New, DejaVu Sans Mono) and the log says which it took. Nothing is shipped with the mod. Where none of
@@ -349,8 +351,14 @@ Honest limits, because a browser sets different expectations:
   The box is a flex item of its element rather than inline, so it stacks the way that element stacks. No
   counters, no images, and no other pseudo-element.
 - **JavaScript:** ES2015 through ES2024 on Jint, including `#private` fields, optional chaining and
-  generators. Globals are `document`, `s1`, `console`, `fetch`, `Promise` and the four timer functions.
-  There is no `window` and no `localStorage`; `s1.storage` replaces the latter.
+  generators. Globals are `window` (which is the global object, as in a browser), `document`, `s1`,
+  `console`, `fetch`, `Promise`, the four timer functions and `requestAnimationFrame`. No `localStorage`;
+  `s1.storage` replaces it.
+- **A virtual DOM can drive the page.** Preact 10 mounts, updates, reorders a keyed list and delivers a
+  click, unchanged and unbundled. What that took: text and comment nodes, `nodeType`, sibling and parent
+  navigation, properties a page hangs on a node itself, and `document.createElement(tag, options)`. React's
+  own `react-dom` does not run yet - it delegates every event to one listener on the root, and an element
+  here only takes the pointer if it listens itself.
 - **Both orientations.** Declare them with `.Orientation("landscape", "portrait")` and the **player** turns
   the phone with the game's rotate keys; Sideload explains them in the game's own key strip, not in your app.
   The viewport is 733 x 400 CSS pixels one way and 400 x 733 the other, and `@media (orientation: ...)`
@@ -358,8 +366,11 @@ Honest limits, because a browser sets different expectations:
   it, `s1.setOrientation(v)` turns it, and the choice is remembered per app without you storing anything.
   A page whose SHAPE changes with the orientation also gets `orientationchange` (`e.value` is the new one),
   because which of two panes the player should land on is a question a stylesheet cannot answer.
-- **Events:** `click`, `input`, `keydown`, `dragstart` / `drag` / `dragend`, `wheel`,
-  `back` and `orientationchange`. Others are not dispatched, however plausible the name. Right-click and
+- **Events:** `click`, `input`, `keydown`, `dragstart` / `drag` / `dragend`, `wheel`, `mouseenter` /
+  `mouseleave`, `back` and `orientationchange`. Others are not dispatched, however plausible the name; a
+  listener on one of those is reported in the log rather than sitting there looking alive. Both phases work:
+  `addEventListener(type, fn, true)` runs on the way down, `stopPropagation` ends the walk and
+  `stopImmediatePropagation` also ends the current element. Right-click and
   Escape both raise `back` at the document; `preventDefault()` keeps the app open so a page can step back
   inside itself, and not taking it closes the app. `e.source` is `"rightClick"` or `"escape"`.
 - **An app can ask for keys.** Name them on a text field with `data-keys="Tab ArrowUp Ctrl+R"` and they arrive

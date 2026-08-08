@@ -168,7 +168,7 @@ namespace Sideload.Host
         internal float LastRenderMs => _lastRenderMs;
 
         /// <summary>Ablation lever: stop rendering entirely, so what is left of the frame time is the game's.</summary>
-        internal static bool RenderingDisabled;
+        internal static bool RenderingDisabled = false;
 
         /// <summary>A few lines of live state, for the dev overlay.</summary>
         internal string Stats =>
@@ -507,7 +507,8 @@ namespace Sideload.Host
                 // The script runs BEFORE the first render, not after: it may build half the page and it registers
                 // the click listeners that decide which boxes need a hit target. Rendering first would either miss
                 // those or force a second full pass one frame later.
-                _script = new ScriptHost(_appId, _document, QueueRebuild, Focus, PinToEnd, RepaintOnly, RectOf, Blur);
+                _script = new ScriptHost(_appId, _document, QueueRebuild, Focus, PinToEnd, RepaintOnly, RectOf, Blur,
+                                         FocusedElement, ViewportSize);
                 RunScripts(_document);
                 script = phase.ElapsedMilliseconds;
 
@@ -1200,6 +1201,27 @@ namespace Sideload.Host
         /// Zeroes for a node the last render did not lay out - a box the script created a moment ago is not on
         /// screen yet, and a made-up position would be worse than an obviously empty one.
         /// </summary>
+        /// <summary>
+        /// `document.activeElement` - the field this page put the caret in, or null.
+        ///
+        /// Confirmed against TextMeshPro rather than answered from memory: <c>_focused</c> is where this view last
+        /// asked for the caret, and the player can take it away by clicking anywhere else without the page hearing
+        /// about it. A renderer that restores focus after an update would otherwise take the caret back off whatever
+        /// the player moved it to.
+        /// </summary>
+        private IElement FocusedElement()
+        {
+            if (_focused == null) return null;
+            return _inputs.TryGetValue(_focused, out Il2CppTMPro.TMP_InputField field) && field != null && field.isFocused
+                ? _focused
+                : null;
+        }
+
+        /// <summary>`window.innerWidth`/`innerHeight`, in css pixels - the viewport the cascade laid this page out
+        /// against, so a page that measures it and a `@media` rule agree.</summary>
+        private float[] ViewportSize() =>
+            _root == null ? new[] { 0f, 0f } : new[] { _root.sizeDelta.x, _root.sizeDelta.y };
+
         private float[] RectOf(IElement element)
         {
             if (element == null || _painted == null) return new[] { 0f, 0f, 0f, 0f };

@@ -34,7 +34,7 @@ namespace Sideload.Css
         /// an undeclared flex container lays out as a ROW, the way a browser does - and it exists because a page
         /// built by a web toolchain says `.flex` and means a row. See ComputedStyle.DefaultDirection.
         /// </summary>
-        internal bool WebDefaults;
+        internal bool WebDefaults = false;
     }
 
     /// <summary>

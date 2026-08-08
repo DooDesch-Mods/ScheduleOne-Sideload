@@ -12,7 +12,7 @@ namespace Sideload.Devtools
     internal static class LayoutOverlay
     {
         /// <summary>Draw a magenta hairline around every box.</summary>
-        internal static bool Outlines;   // off by default - switched on from the dev overlay
+        internal static bool Outlines = false;   // off by default - switched on from the dev overlay
 
         /// <summary>Write the computed tree to the log after every build.</summary>
         internal static bool DumpTree = true;

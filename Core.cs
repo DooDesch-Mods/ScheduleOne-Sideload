@@ -24,6 +24,14 @@ namespace Sideload
             // it is given somewhere to write a blocked request to.
             Net.HostAllowlist.Log = line => Log.Warning(line);
 
+            // Same arrangement for the script engine, which is free of the loader for the same reason.
+            Model.Platform.LogMsg = line => Log.Msg(line);
+            Model.Platform.LogWarning = line => Log.Warning(line);
+            Model.Platform.LogError = line => Log.Error(line);
+            Model.Platform.UserDataDirectory = () => MelonLoader.Utils.MelonEnvironment.UserDataDirectory;
+            Model.Platform.IsPortrait = id => Registry.Find(id)?.Portrait == true;
+            Model.Platform.SetOrientation = Registry.SetOrientation;
+
             // MelonLoader's own UserLibs probing does not satisfy these bindings (it reports a FileLoadException even
             // with the correct Windows build present), so load them into the default context ourselves before
             // anything can ask for them. AngleSharp registers the code-page encoding provider in a static

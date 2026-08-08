@@ -2,7 +2,10 @@ using System.Reflection;
 using AngleSharp.Dom;
 using Jint;
 using Jint.Native;
+using Jint.Native.Function;
+using Jint.Native.Object;
 using Jint.Runtime;
+using Jint.Runtime.Descriptors;
 using Jint.Runtime.Interop;
 
 namespace Sideload.Script
@@ -32,16 +35,32 @@ namespace Sideload.Script
         /// Null unless the devtools protocol server is running, which is what keeps the log path free of it. Raised on
         /// the main thread, so a handler may read the values it is given.
         /// </summary>
-        internal static Action<string, string, object[], string> Diagnostics;
+        internal static Action<string, string, object[], string> Diagnostics = null;
 
-        private readonly Dictionary<IElement, Dictionary<string, List<JsValue>>> _listeners = new();
-        private readonly Dictionary<IElement, JsElement> _wrappers = new();
+        /// <summary>One registration. The capture flag is part of the identity: the DOM lets the same function be
+        /// registered twice for one type, once per phase, and removing one must not remove the other.</summary>
+        private readonly struct Listener
+        {
+            internal Listener(JsValue handler, bool capture)
+            {
+                Handler = handler;
+                Capture = capture;
+            }
+
+            internal JsValue Handler { get; }
+
+            internal bool Capture { get; }
+        }
+
+        private readonly Dictionary<INode, Dictionary<string, List<Listener>>> _listeners = new();
+        private readonly Dictionary<INode, JsNode> _wrappers = new();
         private readonly List<Timer> _timers = new();
         private readonly string _appId;
 
         private Promises _promises;
         private FetchApi _fetch;
         private IDocument _document;
+        private JsDocument _documentObject;
         private Bridge _bridge;
         private int _nextTimerId = 1;
         private bool _failed;
@@ -50,7 +69,9 @@ namespace Sideload.Script
                             Action<IElement> onFocusRequested, Action<IElement> onScrollToEnd,
                             Action<IElement> onPaintOnlyChange = null,
                             Func<IElement, float[]> onRectRequested = null,
-                            Action<IElement> onBlurRequested = null)
+                            Action<IElement> onBlurRequested = null,
+                            Func<IElement> onActiveElementRequested = null,
+                            Func<float[]> onViewportRequested = null)
         {
             _appId = appId;
             _document = document;
@@ -60,6 +81,8 @@ namespace Sideload.Script
             OnPaintOnlyChange = onPaintOnlyChange;
             OnRectRequested = onRectRequested;
             OnBlurRequested = onBlurRequested;
+            OnActiveElementRequested = onActiveElementRequested;
+            OnViewportRequested = onViewportRequested;
 
             Engine = new Engine(options =>
             {
@@ -110,6 +133,13 @@ namespace Sideload.Script
         /// layout pass is the only thing that knows.</summary>
         internal Func<IElement, float[]> OnRectRequested { get; }
 
+        /// <summary>`document.activeElement`. The caret lives in TextMeshPro rather than in the document, so only the
+        /// view can answer it.</summary>
+        internal Func<IElement> OnActiveElementRequested { get; }
+
+        /// <summary>`window.innerWidth`/`innerHeight`, in css pixels.</summary>
+        internal Func<float[]> OnViewportRequested { get; }
+
         /// <summary>
         /// An inline style changed that only affects how one box is PAINTED, never where anything sits. Null falls
         /// back to a full rebuild, so a host that does not offer the fast path still behaves correctly.
@@ -129,8 +159,15 @@ namespace Sideload.Script
         {
             _document = document;
             _wrappers.Clear();
-            Engine.SetValue("document", new JsDocument(this, _document));
+            _documentObject = new JsDocument(this, _document);
+            Engine.SetValue("document", _documentObject);
         }
+
+        /// <summary>The one `document` object, so `node.ownerDocument === document` holds - which a renderer checks
+        /// before it will mount into a node.</summary>
+        internal JsValue DocumentObject => JsValue.FromObject(Engine, _documentObject);
+
+        internal IElement ActiveElement() => OnActiveElementRequested?.Invoke();
 
         /// <summary>
         /// Retire this engine. A page that is reloaded or destroyed must let go of its host subscriptions, its DOM
@@ -141,6 +178,7 @@ namespace Sideload.Script
         {
             _bridge?.Dispose();
             _listeners.Clear();
+            _inlineHandlers.Clear();
             _wrappers.Clear();
             _timers.Clear();
         }
@@ -150,14 +188,15 @@ namespace Sideload.Script
         /// element, so a page that creates and removes nodes - which is what re-rendering a list does - would retain
         /// every node it ever built.
         /// </summary>
-        internal void Forget(IElement element)
+        internal void Forget(INode node)
         {
-            if (element == null) return;
+            if (node == null) return;
 
-            _wrappers.Remove(element);
-            _listeners.Remove(element);
+            _wrappers.Remove(node);
+            _listeners.Remove(node);
+            _inlineHandlers.Remove(node);
 
-            foreach (IElement child in element.Children) Forget(child);
+            foreach (INode child in node.ChildNodes) Forget(child);
         }
 
         internal void MarkDirty() => OnDomChanged?.Invoke();
@@ -181,21 +220,54 @@ namespace Sideload.Script
 
         internal float[] RectOf(IElement element) => OnRectRequested?.Invoke(element) ?? new[] { 0f, 0f, 0f, 0f };
 
-        internal JsElement Wrap(IElement element)
-        {
-            if (element == null) return null;
-            if (_wrappers.TryGetValue(element, out JsElement existing)) return existing;
+        internal JsElement Wrap(IElement element) => (JsElement)WrapNode(element);
 
-            var wrapper = new JsElement(this, element);
-            _wrappers[element] = wrapper;
+        /// <summary>
+        /// The ONE wrapper for a node, for as long as that node is in the document.
+        ///
+        /// Identity is the load-bearing part, not the caching. A renderer compares the node it is looking at with
+        /// `parent.childNodes[i]` and with `node.nextSibling` to decide whether to move anything; hand it a fresh
+        /// wrapper each time and every comparison says "different", so it moves every node on every update.
+        /// </summary>
+        internal JsNode WrapNode(INode node)
+        {
+            if (node == null) return null;
+            if (_wrappers.TryGetValue(node, out JsNode existing)) return existing;
+
+            JsNode wrapper = node switch
+            {
+                IElement element => new JsElement(this, element),
+                IText text => new JsText(this, text),
+                IComment comment => new JsComment(this, comment),
+                _ => null,
+            };
+
+            if (wrapper != null) _wrappers[node] = wrapper;
             return wrapper;
         }
 
-        internal JsValue WrapAll(IEnumerable<IElement> elements)
+        internal JsValue WrapNodes(IEnumerable<INode> nodes)
+        {
+            var items = new List<JsValue>();
+            if (nodes != null)
+                foreach (INode n in nodes)
+                {
+                    JsNode wrapped = WrapNode(n);
+                    if (wrapped != null) items.Add(wrapped);
+                }
+
+            return new JsArray(Engine, items.ToArray());
+        }
+
+        internal JsValue WrapNodes(IEnumerable<IElement> elements)
         {
             var items = new List<JsValue>();
             if (elements != null)
-                foreach (IElement e in elements) items.Add(JsValue.FromObject(Engine, Wrap(e)));
+                foreach (IElement e in elements)
+                {
+                    JsNode wrapped = WrapNode(e);
+                    if (wrapped != null) items.Add(wrapped);
+                }
 
             return new JsArray(Engine, items.ToArray());
         }
@@ -241,13 +313,13 @@ namespace Sideload.Script
                     Engine.Execute(source, fileName);
                 }
 
-                Core.Log?.Msg($"{fileName} executed ({source.Length} chars).");
+                Model.Platform.Msg($"{fileName} executed ({source.Length} chars).");
             }
             catch (Exception e)
             {
                 _failed = true;
                 LastError = Describe(e);
-                Core.Log?.Error($"{fileName} failed: {LastError}");
+                Model.Platform.Error($"{fileName} failed: {LastError}");
                 Diagnostics?.Invoke(_appId, "exception", null, $"{fileName}: {LastError}");
             }
         }
@@ -268,7 +340,7 @@ namespace Sideload.Script
             if (source.IndexOf("fetch(", StringComparison.Ordinal) < 0) return;
             if (!System.Text.RegularExpressions.Regex.IsMatch(source, @"\bawait\b")) return;
 
-            Core.Log?.Warning(
+            Model.Platform.Warning(
                 $"[Sideload] {fileName} uses both `await` and `fetch(`. Awaiting a PENDING promise freezes the game " +
                 "on this engine - it blocks the main thread that would settle it. Use `fetch(url).then(res => ...)` " +
                 "instead. Awaiting an already-settled promise, such as `res.text()`, is safe.");
@@ -329,20 +401,25 @@ namespace Sideload.Script
             "dragstart", "drag", "dragend", "orientationchange", "back",
         };
 
-        internal void AddListener(IElement element, string type, JsValue handler)
+        internal void AddListener(INode node, string type, JsValue handler, bool capture = false)
         {
-            if (element == null || string.IsNullOrEmpty(type) || handler == null || !handler.IsObject()) return;
+            if (node == null || string.IsNullOrEmpty(type) || handler == null || !handler.IsObject()) return;
 
             if (!Dispatchable.Contains(type))
                 Model.Diagnostics.Report(Model.DiagnosticKind.DeadEventListener, type);
 
-            if (!_listeners.TryGetValue(element, out Dictionary<string, List<JsValue>> byType))
-                _listeners[element] = byType = new Dictionary<string, List<JsValue>>(StringComparer.OrdinalIgnoreCase);
+            if (!_listeners.TryGetValue(node, out Dictionary<string, List<Listener>> byType))
+                _listeners[node] = byType = new Dictionary<string, List<Listener>>(StringComparer.OrdinalIgnoreCase);
 
-            if (!byType.TryGetValue(type, out List<JsValue> handlers))
-                byType[type] = handlers = new List<JsValue>();
+            if (!byType.TryGetValue(type, out List<Listener> handlers))
+                byType[type] = handlers = new List<Listener>();
 
-            handlers.Add(handler);
+            // The DOM ignores a second registration of the same function in the same phase. Without that rule a
+            // component that re-attaches its handler on every update runs it once more each time.
+            foreach (Listener existing in handlers)
+                if (existing.Capture == capture && Same(existing.Handler, handler)) return;
+
+            handlers.Add(new Listener(handler, capture));
 
             // A listener decides whether the element gets a hit target at all - WireInteraction asks
             // ElementsListeningFor. Adding one to an already-painted box therefore has to rebuild, or the box
@@ -352,13 +429,13 @@ namespace Sideload.Script
             MarkDirty();
         }
 
-        internal void RemoveListener(IElement element, string type, JsValue handler)
+        internal void RemoveListener(INode node, string type, JsValue handler, bool capture = false)
         {
-            if (element == null || handler == null) return;
-            if (!_listeners.TryGetValue(element, out Dictionary<string, List<JsValue>> byType)) return;
-            if (!byType.TryGetValue(type, out List<JsValue> handlers)) return;
+            if (node == null || handler == null || string.IsNullOrEmpty(type)) return;
+            if (!_listeners.TryGetValue(node, out Dictionary<string, List<Listener>> byType)) return;
+            if (!byType.TryGetValue(type, out List<Listener> handlers)) return;
 
-            if (handlers.RemoveAll(h => ReferenceEquals(h, handler) || Equals(h, handler)) > 0)
+            if (handlers.RemoveAll(l => l.Capture == capture && Same(l.Handler, handler)) > 0)
             {
                 // Same reason as adding one: the last listener leaving means the element should stop taking the
                 // pointer, and until a rebuild it keeps intercepting clicks meant for whatever is behind it.
@@ -366,13 +443,43 @@ namespace Sideload.Script
             }
         }
 
+        private static bool Same(JsValue a, JsValue b) => ReferenceEquals(a, b) || Equals(a, b);
+
+        /// <summary>
+        /// `el.onclick`. One handler per element per type, replacing whatever was there - which is the difference
+        /// between this and addEventListener, and the reason both exist.
+        /// </summary>
+        internal JsValue InlineHandler(INode node, string type)
+        {
+            if (_inlineHandlers.TryGetValue(node, out Dictionary<string, JsValue> byType)
+                && byType.TryGetValue(type, out JsValue handler)) return handler;
+
+            return JsValue.Null;
+        }
+
+        internal void SetInlineHandler(INode node, string type, JsValue handler)
+        {
+            if (!_inlineHandlers.TryGetValue(node, out Dictionary<string, JsValue> byType))
+                _inlineHandlers[node] = byType = new Dictionary<string, JsValue>(StringComparer.OrdinalIgnoreCase);
+
+            if (byType.TryGetValue(type, out JsValue previous)) RemoveListener(node, type, previous);
+
+            if (handler == null || !handler.IsObject()) { byType.Remove(type); return; }
+
+            byType[type] = handler;
+            AddListener(node, type, handler);
+        }
+
+        private readonly Dictionary<INode, Dictionary<string, JsValue>> _inlineHandlers = new();
+
         /// <summary>Which elements listen for that event type. Asked before wiring pointer handling, so a page that
         /// uses no script stays free of the extra hit targets.</summary>
         internal IEnumerable<IElement> ElementsListeningFor(string type)
         {
-            foreach (KeyValuePair<IElement, Dictionary<string, List<JsValue>>> pair in _listeners)
-                if (pair.Value.TryGetValue(type, out List<JsValue> handlers) && handlers.Count > 0)
-                    yield return pair.Key;
+            foreach (KeyValuePair<INode, Dictionary<string, List<Listener>>> pair in _listeners)
+                if (pair.Key is IElement element
+                    && pair.Value.TryGetValue(type, out List<Listener> handlers) && handlers.Count > 0)
+                    yield return element;
         }
 
         /// <summary>
@@ -385,7 +492,7 @@ namespace Sideload.Script
                                   bool ctrl = false, bool shift = false, bool alt = false, bool repeat = false,
                                   bool hasSelection = false, bool bubbles = true)
         {
-            var evt = new JsEvent(type, Wrap(target))
+            var evt = new JsEvent(type, WrapNode(target))
             {
                 Value = value ?? "", Key = key ?? "", Source = source ?? "",
                 OffsetX = spot.OffsetX, OffsetY = spot.OffsetY, NormX = spot.NormX, NormY = spot.NormY,
@@ -394,29 +501,77 @@ namespace Sideload.Script
             };
             if (_failed || target == null) return evt;
 
-            IElement node = target;
-            while (node != null)
-            {
-                if (_listeners.TryGetValue(node, out Dictionary<string, List<JsValue>> byType)
-                    && byType.TryGetValue(type, out List<JsValue> handlers)
-                    && handlers.Count > 0)
-                {
-                    evt.CurrentTarget = Wrap(node);
+            evt.Bubbles = bubbles;
 
-                    // Copied first: a handler is allowed to remove itself or its siblings while the event is running.
-                    foreach (JsValue handler in handlers.ToArray())
-                    {
-                        Invoke(handler, $"{type} handler on <{node.LocalName}>", JsValue.FromObject(Engine, evt));
-                        if (evt.PropagationStopped) return evt;
-                    }
-                }
+            // The path, root first. A browser walks it down running the capturing listeners, then back up running the
+            // bubbling ones, and the two halves are not interchangeable: a delegating listener registered with
+            // capture exists precisely to see the event BEFORE the element it happened on can stop it.
+            var path = new List<IElement>();
+            for (IElement walk = target; walk != null; walk = walk.ParentElement)
+            {
+                path.Add(walk);
 
                 // mouseenter/mouseleave do not bubble, here as in a browser: a tooltip that fired again for every
-                // ancestor would open and shut as the pointer crossed each nested box on the way in.
-                node = bubbles ? node.ParentElement : null;
+                // ancestor would open and shut as the pointer crossed each nested box on the way in. Such an event
+                // has no path beyond its target - not even a capturing one, which is what a browser does too.
+                if (!bubbles) break;
+            }
+
+            for (int i = path.Count - 1; i > 0; i--)
+            {
+                evt.EventPhase = 1;
+                if (!RunHandlers(path[i], type, evt, capture: true)) return evt;
+            }
+
+            evt.EventPhase = 2;
+            if (!RunHandlers(target, type, evt, capture: true)) return evt;
+            if (!RunHandlers(target, type, evt, capture: false)) return evt;
+
+            for (int i = 1; i < path.Count; i++)
+            {
+                evt.EventPhase = 3;
+                if (!RunHandlers(path[i], type, evt, capture: false)) return evt;
             }
 
             return evt;
+        }
+
+        /// <summary>Runs one node's handlers for one phase. False means the walk is over.</summary>
+        private bool RunHandlers(IElement node, string type, JsEvent evt, bool capture)
+        {
+            if (!_listeners.TryGetValue(node, out Dictionary<string, List<Listener>> byType)) return true;
+            if (!byType.TryGetValue(type, out List<Listener> handlers) || handlers.Count == 0) return true;
+
+            JsNode self = WrapNode(node);
+            evt.CurrentTarget = self;
+
+            // Copied first: a handler is allowed to remove itself or its siblings while the event is running.
+            foreach (Listener listener in handlers.ToArray())
+            {
+                if (listener.Capture != capture) continue;
+
+                InvokeOn(listener.Handler, self, $"{type} handler on <{node.LocalName}>",
+                         JsValue.FromObject(Engine, evt));
+                if (evt.ImmediatelyStopped) return false;
+            }
+
+            return !evt.PropagationStopped;
+        }
+
+        /// <summary>
+        /// `node.dispatchEvent(evt)` - the page raising its own event. Only the type is taken from the object handed
+        /// in; everything else a synthetic event could carry has no meaning here, and inventing values for it would
+        /// let a page fake a pointer position the renderer never measured.
+        /// </summary>
+        internal JsValue DispatchFromScript(INode node, ObjectInstance evt)
+        {
+            if (node is not IElement element || evt == null) return true;
+
+            JsValue type = evt.Get("type");
+            if (type.IsUndefined() || type.IsNull()) return true;
+
+            JsEvent raised = Dispatch(element, type.ToString());
+            return !raised.DefaultPrevented;
         }
 
         // ------------------------------------------------------------------ timers --
@@ -492,13 +647,24 @@ namespace Sideload.Script
 
         // ------------------------------------------------------------------ plumbing --
 
-        private void Invoke(JsValue callback, string what, params JsValue[] args)
+        private void Invoke(JsValue callback, string what, params JsValue[] args) =>
+            InvokeOn(callback, JsValue.Undefined, what, args);
+
+        /// <summary>
+        /// Call a script function with a `this` of our choosing.
+        ///
+        /// An event listener is called with `this` set to the element it was registered on, and that is not a
+        /// nicety: Preact registers ONE shared function for every element and has it look up
+        /// `this._listeners[type]` to find the real handler. Called with an undefined `this` it throws on the first
+        /// click - the page mounts, updates, reorders its lists, and does nothing at all when touched.
+        /// </summary>
+        private void InvokeOn(JsValue callback, JsValue self, string what, params JsValue[] args)
         {
-            try { Engine.Invoke(callback, args); }
+            try { Engine.Invoke(callback, self, Array.ConvertAll(args, a => (object)a)); }
             catch (Exception e)
             {
                 LastError = Describe(e);
-                Core.Log?.Error($"{what} failed: {LastError}");
+                Model.Platform.Error($"{what} failed: {LastError}");
                 Diagnostics?.Invoke(_appId, "exception", null, $"{what} failed: {LastError}");
             }
         }
@@ -513,17 +679,20 @@ namespace Sideload.Script
 
         private void Fault(string line)
         {
-            Core.Log?.Error($"[{_appId}] {line}");
+            Model.Platform.Error($"[{_appId}] {line}");
             Diagnostics?.Invoke(_appId, "error", null, $"[{_appId}] {line}");
         }
 
         private void Bind()
         {
-            Engine.SetValue("document", new JsDocument(this, _document));
+            _documentObject = new JsDocument(this, _document);
+            Engine.SetValue("document", _documentObject);
             _bridge = new Bridge(this, _appId);
             Engine.SetValue("s1", _bridge);
 
             Engine.SetValue("console", new Console(_appId));
+
+            BindWindow();
 
             // A rejection nobody in the chain took would otherwise disappear - Jint has no unhandled-rejection hook,
             // and a page that forgot a `.catch` would look like a page whose fetch never came back.
@@ -535,7 +704,59 @@ namespace Sideload.Script
             Engine.SetValue("setInterval", new Func<JsValue, double, int>((fn, ms) => AddTimer(fn, ms, repeating: true)));
             Engine.SetValue("clearTimeout", new Action<double>(ClearTimer));
             Engine.SetValue("clearInterval", new Action<double>(ClearTimer));
+
+            // One frame at 60 Hz. A page that animates uses this rather than setInterval, and so does every hook
+            // implementation that defers an effect until after paint - without it they fall back to a 100 ms timer
+            // and the first frame of every animation is late.
+            Engine.SetValue("requestAnimationFrame", new Func<JsValue, int>(fn => AddTimer(fn, 16, repeating: false)));
+            Engine.SetValue("cancelAnimationFrame", new Action<double>(ClearTimer));
         }
+
+        /// <summary>
+        /// `window`, which IS the global object - the same arrangement a browser has, where `window.foo = 1` and
+        /// `var foo = 1` reach the same place.
+        ///
+        /// That equivalence is the point. Bundled code assigns its export to `window.Something` and reads it back as
+        /// a bare name a moment later; a `window` that was a separate object would swallow the first half and leave
+        /// the page with an undefined global and no error to explain it.
+        /// </summary>
+        private void BindWindow()
+        {
+            ObjectInstance global = Engine.Global;
+            Engine.SetValue("window", global);
+            Engine.SetValue("self", global);
+            Engine.SetValue("globalThis", global);
+
+            Engine.SetValue("addEventListener", new ClrFunction(Engine, "addEventListener", (_, a) =>
+            {
+                AddListener(Root(), a.Length > 0 ? a[0].ToString() : null, a.Length > 1 ? a[1] : null,
+                            JsDocument.IsCapture(a.Length > 2 ? a[2] : null));
+                return JsValue.Undefined;
+            }));
+
+            Engine.SetValue("removeEventListener", new ClrFunction(Engine, "removeEventListener", (_, a) =>
+            {
+                RemoveListener(Root(), a.Length > 0 ? a[0].ToString() : null, a.Length > 1 ? a[1] : null,
+                               JsDocument.IsCapture(a.Length > 2 ? a[2] : null));
+                return JsValue.Undefined;
+            }));
+
+            // Sizes rather than a full screen object: a page asks for these to decide a layout, and everything else
+            // a browser hangs off window here would be a number this renderer cannot honestly answer. Accessors
+            // rather than values, because the phone turns and the numbers swap while the page is running.
+            global.FastSetProperty("innerWidth", new GetSetPropertyDescriptor(
+                new ClrFunction(Engine, "innerWidth", (_, _) => Viewport()[0]), null, false, true));
+            global.FastSetProperty("innerHeight", new GetSetPropertyDescriptor(
+                new ClrFunction(Engine, "innerHeight", (_, _) => Viewport()[1]), null, false, true));
+
+            // Device pixels per css pixel. Always 1: the renderer measures in css pixels and the phone's own scale is
+            // applied after layout, so a page that divided by this would end up drawing at the wrong size.
+            Engine.SetValue("devicePixelRatio", 1);
+        }
+
+        private INode Root() => (INode)_document.Body ?? _document.DocumentElement;
+
+        private float[] Viewport() => OnViewportRequested?.Invoke() ?? new[] { 0f, 0f };
 
         /// <summary>Both the camelCase spelling JavaScript expects and the original CLR name, so neither side has to
         /// guess.</summary>
@@ -586,9 +807,9 @@ namespace Sideload.Script
 
                 switch (level)
                 {
-                    case "warn": Core.Log?.Warning(line); break;
-                    case "error": Core.Log?.Error(line); break;
-                    default: Core.Log?.Msg(line); break;
+                    case "warn": Model.Platform.Warning(line); break;
+                    case "error": Model.Platform.Error(line); break;
+                    default: Model.Platform.Msg(line); break;
                 }
 
                 Diagnostics?.Invoke(_appId, level, args, line);
