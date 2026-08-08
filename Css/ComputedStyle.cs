@@ -9,7 +9,22 @@ namespace Sideload.Css
     {
         // --- layout ---
         internal DisplayKind Display = DisplayKind.Flex;
-        internal FlexDirection FlexDirection = FlexDirection.Column;   // block-like default: children stack downwards
+        internal FlexDirection FlexDirection = DefaultDirection;
+
+        /// <summary>
+        /// Which way an undeclared box stacks its children.
+        ///
+        /// Column, because every box here is a flex container and a block-like stack is what unstyled HTML looks
+        /// like. CSS says a flex container defaults to ROW - but CSS also has block layout, and this engine does
+        /// not, so copying the row default would make plain markup lay out sideways.
+        ///
+        /// A page can ask for the web's answer instead with `&lt;meta name="sideload" content="web-defaults"&gt;`,
+        /// which is what anything built by a web toolchain wants: Tailwind's `.flex` means a row and says so
+        /// nowhere, because in a browser it does not have to. Opt-in rather than a new default, because the
+        /// fourteen shipped apps are all written against the column and flipping it would silently reflow every
+        /// box they did not think to declare.
+        /// </summary>
+        internal static FlexDirection DefaultDirection = FlexDirection.Column;
         internal FlexWrap FlexWrap = FlexWrap.NoWrap;
         internal float FlexGrow = 0f;
         internal float FlexShrink = 1f;
@@ -142,6 +157,7 @@ namespace Sideload.Css
                 return s;
             }
 
+            s.FlexDirection = DefaultDirection;
             s.FontFamily = parent.FontFamily;
             s.FontSize = parent.FontSize;
             s.FontWeight = parent.FontWeight;

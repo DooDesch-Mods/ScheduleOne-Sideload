@@ -211,7 +211,10 @@ body {
    Erwartet im Log beim Oeffnen der App: rem, baseline, der abgelehnte Selektor, die uebersprungene
    Media Query - und aus app.js der Listener auf 'change'.                                        */
 
-@media (min-width: 640px) {
+/* 1024px, nicht 640: seit die Engine Breiten-Breakpoints auswertet, GILT 640px auf diesem Schirm
+   (733 css px quer) und wird korrekt angewandt statt gemeldet. Eine Probe muss unerreichbar bleiben,
+   sonst prueft sie nichts mehr - im Hochformat sind es 400 px, quer 733, also liegt 1024 sicher darueber. */
+@media (min-width: 1024px) {
   .diagnostic-probe { color: #ff0000; }
 }
 
