@@ -49,7 +49,8 @@ namespace Sideload.Script
         internal ScriptHost(string appId, IDocument document, Action onDomChanged,
                             Action<IElement> onFocusRequested, Action<IElement> onScrollToEnd,
                             Action<IElement> onPaintOnlyChange = null,
-                            Func<IElement, float[]> onRectRequested = null)
+                            Func<IElement, float[]> onRectRequested = null,
+                            Action<IElement> onBlurRequested = null)
         {
             _appId = appId;
             _document = document;
@@ -58,6 +59,7 @@ namespace Sideload.Script
             OnScrollToEnd = onScrollToEnd;
             OnPaintOnlyChange = onPaintOnlyChange;
             OnRectRequested = onRectRequested;
+            OnBlurRequested = onBlurRequested;
 
             Engine = new Engine(options =>
             {
@@ -97,6 +99,10 @@ namespace Sideload.Script
         internal Action OnDomChanged { get; }
 
         internal Action<IElement> OnFocusRequested { get; }
+
+        /// <summary>`el.blur()`. The counterpart to focus, and the only way a page can hand the keyboard back to
+        /// the game - which it owes the player the moment it took it.</summary>
+        internal Action<IElement> OnBlurRequested { get; }
 
         internal Action<IElement> OnScrollToEnd { get; }
 
@@ -168,6 +174,8 @@ namespace Sideload.Script
         }
 
         internal void RequestFocus(IElement element) => OnFocusRequested?.Invoke(element);
+
+        internal void RequestBlur(IElement element) => OnBlurRequested?.Invoke(element);
 
         internal void RequestScrollToEnd(IElement element) => OnScrollToEnd?.Invoke(element);
 

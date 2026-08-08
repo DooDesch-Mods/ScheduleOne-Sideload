@@ -172,6 +172,10 @@ namespace Sideload.Script
 
         public void Focus() => _host.RequestFocus(Native);
 
+        /// <summary>Give the keyboard back to the game. A focused field holds the game's typing flag, and while
+        /// that is up the player cannot move and Escape does nothing - so a page that focuses owes them this.</summary>
+        public void Blur() => _host.RequestBlur(Native);
+
         /// <summary>
         /// Pin a scrollable box to its end. Takes effect after the next render, which is the only moment it can mean
         /// anything: the box a script is looking at is about to be replaced by the one the renderer builds from the

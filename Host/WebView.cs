@@ -197,6 +197,13 @@ namespace Sideload.Host
         /// scene.</summary>
         internal void Dispose()
         {
+            // Before anything is destroyed. A focused TMP_InputField holds GameInput.IsTyping, and a field only
+            // fires onDeselect when something else takes the selection - which nothing does when its container is
+            // simply destroyed. The flag then stays raised for the rest of the session, and a raised flag means the
+            // player cannot move and Escape does nothing. The phone has always done this on the way out
+            // (Phone/PhoneScreen.Lower); a surface never did, so closing one after typing in it was a one-way trap.
+            if (_focused != null) Paint.Painter.ReleaseKeyboard();
+
             _script?.Dispose();
             _script = null;
             foreach (int id in _publishedKeys) Input.Keys.Withdraw(id);
@@ -216,7 +223,9 @@ namespace Sideload.Host
                 if (view._root == null)
                 {
                     // The panel is gone, so this view never renders again - let go of the engine and, with it, this
-                    // page's subscription to host events.
+                    // page's subscription to host events. Same keyboard rule as Dispose: a page that had the caret
+                    // when its panel vanished would otherwise leave the game's typing flag raised for good.
+                    if (view._focused != null) Paint.Painter.ReleaseKeyboard();
                     view._script?.Dispose();
                     view._script = null;
                     foreach (int id in view._publishedKeys) Input.Keys.Withdraw(id);
@@ -495,7 +504,7 @@ namespace Sideload.Host
                 // The script runs BEFORE the first render, not after: it may build half the page and it registers
                 // the click listeners that decide which boxes need a hit target. Rendering first would either miss
                 // those or force a second full pass one frame later.
-                _script = new ScriptHost(_appId, _document, QueueRebuild, Focus, PinToEnd, RepaintOnly, RectOf);
+                _script = new ScriptHost(_appId, _document, QueueRebuild, Focus, PinToEnd, RepaintOnly, RectOf, Blur);
                 RunScripts(_document);
                 script = phase.ElapsedMilliseconds;
 
@@ -1011,6 +1020,23 @@ namespace Sideload.Host
 
             _focused = element;
             field.ActivateInputField();
+        }
+
+        /// <summary>
+        /// Let the caret go, from script (<c>el.blur()</c>).
+        ///
+        /// The counterpart to <see cref="Focus"/>, and not decoration: while a field holds the caret the game's
+        /// own exit handling returns on its first line, so a page that takes focus owes the player a way to give
+        /// it back. Only ever releases a field THIS page put the caret in.
+        /// </summary>
+        private void Blur(IElement element)
+        {
+            _focusWanted = null;
+            if (element != null && _focused != null && element != _focused) return;
+            if (_focused == null) return;
+
+            _focused = null;
+            Paint.Painter.ReleaseKeyboard();
         }
 
         /// <summary>
