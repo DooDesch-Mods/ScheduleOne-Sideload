@@ -685,6 +685,8 @@ namespace Sideload.Script
 
         private void Bind()
         {
+            Types = new DomTypes(Engine);
+
             _documentObject = new JsDocument(this, _document);
             Engine.SetValue("document", _documentObject);
             _bridge = new Bridge(this, _appId);
@@ -720,6 +722,10 @@ namespace Sideload.Script
         /// a bare name a moment later; a `window` that was a separate object would swallow the first half and leave
         /// the page with an undefined global and no error to explain it.
         /// </summary>
+        /// <summary>The DOM's type chain, so `instanceof` works. Built once per engine, before the first wrapper -
+        /// a node created earlier would carry the plain object prototype for the rest of its life.</summary>
+        internal DomTypes Types { get; private set; }
+
         private void BindWindow()
         {
             ObjectInstance global = Engine.Global;

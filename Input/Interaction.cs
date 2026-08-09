@@ -23,7 +23,7 @@ namespace Sideload.Input
         /// states so a render reset cannot silently drop them.</summary>
         private readonly Dictionary<IElement, StateFlags> _forced = new Dictionary<IElement, StateFlags>();
         private readonly Action<IElement> _onStateChanged;
-        private readonly Action<IElement, PointerSpot> _onClicked;
+        private readonly Action<IElement, PointerSpot, PointerRay> _onClicked;
         private readonly Action<IElement, string, PointerSpot, Vector2> _onDragged;
         private readonly Action<IElement, float> _onWheel;
         private readonly Action<IElement, bool> _onHover;
@@ -44,7 +44,7 @@ namespace Sideload.Input
         private bool _dragged;
 
         internal Interaction(Action<IElement> onStateChanged,
-                             Action<IElement, PointerSpot> onClicked,
+                             Action<IElement, PointerSpot, PointerRay> onClicked,
                              Action<IElement, string, PointerSpot, Vector2> onDragged = null,
                              Action<IElement, float> onWheel = null,
                              Action<IElement, bool> onHover = null,
@@ -208,7 +208,9 @@ namespace Sideload.Input
                 // asked to handle the drag itself, so it gets the drag and not a click on top of it.
                 if (draggable && _dragged) return;
 
-                _onClicked?.Invoke(element, SpotIn(measured, data));
+                // The screen point travels with the event, because the element that CAUGHT the click is not
+                // necessarily the one that was clicked - see WebView.OnClicked.
+                _onClicked?.Invoke(element, SpotIn(measured, data), Ray(data));
             });
 
             if (draggable) AttachDragging(trigger, element, measured);
@@ -369,6 +371,38 @@ namespace Sideload.Input
 
             if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(
                     rect, pointer.position, pointer.pressEventCamera, out Vector2 local))
+                return default;
+
+            Rect r = rect.rect;
+            return new PointerSpot(local.x - r.xMin, r.yMax - local.y, r.width, r.height);
+        }
+
+        /// <summary>
+        /// Where the pointer was, in screen coordinates, with the camera the event came through.
+        ///
+        /// Kept raw rather than converted, because the caller has to ask a DIFFERENT rectangle whether it contains
+        /// this point - and the only reliable way to answer that under a scaled, rotated, scrolled hierarchy is to
+        /// hand the screen point and the camera to <see cref="RectTransformUtility"/> once per rectangle.
+        /// </summary>
+        private static PointerRay Ray(BaseEventData data)
+        {
+            var pointer = data?.TryCast<PointerEventData>();
+            return pointer == null ? default : new PointerRay(pointer.position, pointer.pressEventCamera);
+        }
+
+        /// <summary>Whether a rectangle covers the point the pointer was at.</summary>
+        internal static bool Covers(RectTransform rect, PointerRay ray) =>
+            rect != null && ray.Valid
+            && RectTransformUtility.RectangleContainsScreenPoint(rect, ray.Screen, ray.Camera);
+
+        /// <summary>The same conversion <see cref="SpotIn(RectTransform, BaseEventData)"/> does, for a point that is
+        /// no longer carried by an event - the re-targeted element needs its own offsets, not the ones measured
+        /// against whatever box happened to catch the click.</summary>
+        internal static PointerSpot SpotIn(RectTransform rect, PointerRay ray)
+        {
+            if (rect == null || !ray.Valid) return default;
+
+            if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(rect, ray.Screen, ray.Camera, out Vector2 local))
                 return default;
 
             Rect r = rect.rect;

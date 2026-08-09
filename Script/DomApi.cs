@@ -32,7 +32,15 @@ namespace Sideload.Script
         {
             Host = host;
             Node = node;
+
+            // Puts this wrapper on the DOM's own type chain, so `instanceof` answers the way a browser answers it.
+            // See DomTypes for what one missing name costs.
+            ObjectInstance proto = Interface(host.Types);
+            if (proto != null) base.Prototype = proto;
         }
+
+        /// <summary>Which of the DOM interfaces this node is. Null leaves the plain object prototype in place.</summary>
+        private protected virtual ObjectInstance Interface(DomTypes types) => types?.Node;
 
         internal ScriptHost Host { get; }
 
@@ -278,6 +286,12 @@ namespace Sideload.Script
 
         internal IElement Native { get; }
 
+        // Reads the base's node rather than `Native`: this runs from the base constructor, before this class's own
+        // field is assigned. With `Native` here every element came out a plain HTMLElement and `instanceof
+        // HTMLInputElement` was false for every input on the page.
+        private protected override ObjectInstance Interface(DomTypes types) =>
+            types?.For((Node as IElement)?.LocalName);
+
         private protected override int NodeTypeCode => 1;
 
         /// <summary>Upper case, as a browser reports it for an HTML element. `localName` is the lower-case spelling;
@@ -522,6 +536,8 @@ namespace Sideload.Script
 
         internal IText Native { get; }
 
+        private protected override ObjectInstance Interface(DomTypes types) => types?.Text;
+
         private protected override int NodeTypeCode => 3;
 
         private protected override string NodeName => "#text";
@@ -557,6 +573,8 @@ namespace Sideload.Script
         internal JsComment(ScriptHost host, IComment comment) : base(host, comment) => Native = comment;
 
         internal IComment Native { get; }
+
+        private protected override ObjectInstance Interface(DomTypes types) => types?.Comment;
 
         private protected override int NodeTypeCode => 8;
 

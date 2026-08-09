@@ -7,7 +7,7 @@
 > objects and TextMeshPro text. No browser, no native code, no subprocess. The in game phone is the first
 > place it mounts, not the foundation.
 
-![Version](https://img.shields.io/badge/version-1.16.0-blue)
+![Version](https://img.shields.io/badge/version-1.17.0-blue)
 ![Game](https://img.shields.io/badge/game-Schedule%20I-purple)
 ![MelonLoader](https://img.shields.io/badge/MelonLoader-0.7.3+-green)
 ![Type](https://img.shields.io/badge/type-framework-orange)
@@ -354,11 +354,11 @@ Honest limits, because a browser sets different expectations:
   generators. Globals are `window` (which is the global object, as in a browser), `document`, `s1`,
   `console`, `fetch`, `Promise`, the four timer functions and `requestAnimationFrame`. No `localStorage`;
   `s1.storage` replaces it.
-- **A virtual DOM can drive the page.** Preact 10 mounts, updates, reorders a keyed list and delivers a
-  click, unchanged and unbundled. What that took: text and comment nodes, `nodeType`, sibling and parent
-  navigation, properties a page hangs on a node itself, and `document.createElement(tag, options)`. React's
-  own `react-dom` does not run yet - it delegates every event to one listener on the root, and an element
-  here only takes the pointer if it listens itself.
+- **React runs.** `ReactDOM.createRoot(el).render(...)` draws, `onClick` fires, `useState` updates and a keyed
+  list reorders - react-dom 18 and Preact 10 both, unchanged and unbundled. What that took: text and comment
+  nodes, `nodeType`, sibling and parent navigation, properties a page hangs on a node itself, the DOM's
+  constructor chain so `instanceof` answers, and a click that reports the element it landed on rather than the
+  box that caught it. Both are checked against the shipped bundles on every test run.
 - **Both orientations.** Declare them with `.Orientation("landscape", "portrait")` and the **player** turns
   the phone with the game's rotate keys; Sideload explains them in the game's own key strip, not in your app.
   The viewport is 733 x 400 CSS pixels one way and 400 x 733 the other, and `@media (orientation: ...)`
