@@ -7,6 +7,10 @@ All notable changes to Sideload are documented here. This project adheres to
 
 ### Added
 
+- `text-decoration` draws an underline or a strike, the `font` shorthand sets the whole type in one line, and
+  `inherit` works on every property the cascade can carry down.
+- A font stack is read the way a browser reads it: `Inter, game-comic` reaches the comic face instead of falling
+  back to the UI font on the first name it does not have.
 - `sideloadwheel [notches] [appId]` turns the wheel over a page through the real raycast and names what took the
   notch. A screenshot cannot tell scrolling from cropping. Debug builds only.
 
@@ -16,6 +20,8 @@ All notable changes to Sideload are documented here. This project adheres to
   phone, over the game world, out of reach.
 - A page whose script listens for the wheel still scrolls. React registers one on its root container, which took
   scrolling away from every React app.
+- The log names only what is lost. A React and Tailwind build reported 128 dead declarations and now reports 28,
+  and most of the difference was the report being wrong.
 - `scrollToEnd()` works on a box that already had a scroll area. The position restore that follows a rebuild put it
   straight back where it was.
 
