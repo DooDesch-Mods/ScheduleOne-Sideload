@@ -7,7 +7,7 @@
 > objects and TextMeshPro text. No browser, no native code, no subprocess. The in game phone is the first
 > place it mounts, not the foundation.
 
-![Version](https://img.shields.io/badge/version-1.17.0-blue)
+![Version](https://img.shields.io/badge/version-1.18.0-blue)
 ![Game](https://img.shields.io/badge/game-Schedule%20I-purple)
 ![MelonLoader](https://img.shields.io/badge/MelonLoader-0.7.3+-green)
 ![Type](https://img.shields.io/badge/type-framework-orange)

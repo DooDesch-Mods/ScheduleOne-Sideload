@@ -3,6 +3,17 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.18.0] - 2026-08-09
+
+### Changed
+
+- A page that redraws is about six times faster. A 206-box page built by React went from 754 ms to 128 ms, and a
+  state update from the same to 116 ms.
+- Text measurements are cached across renders. One render was asking TextMeshPro the same 599 questions 74000
+  times, and that was 720 of those 754 ms.
+- Every page build logs where its time went - `cascade / layout / paint / wire`, plus how many text measurements
+  were taken and how many came from the cache. Turn it on with `LogPageBuilds`.
+
 ## [1.17.0] - 2026-08-09
 
 ### Added

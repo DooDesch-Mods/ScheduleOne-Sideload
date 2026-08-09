@@ -167,16 +167,108 @@ namespace Sideload.Paint
     }
 
     /// <summary>
-    /// Text measurement for the layout engine, backed by a single hidden TextMeshPro instance. One measurer is
-    /// enough because measuring is synchronous: configure, ask, discard.
+    /// Text measurement for the layout engine, backed by a single hidden TextMeshPro instance and a cache.
+    ///
+    /// The cache is the whole reason this class outlives a render. Measured on a 206-box page built by react-dom:
+    /// the cascade cost 0 ms, the uGUI objects 33 ms, and the LAYOUT 720 ms - and effectively all of the layout is
+    /// this method, because flexbox asks for the same string several times while it resolves a line and asks again
+    /// on every rebuild. `GetPreferredValues` regenerates TextMeshPro's whole text mesh each time.
+    ///
+    /// That number also settles an argument the gap register had wrong: reusing GameObjects across rebuilds - the
+    /// retained-rendering plan - could have saved at most those 33 ms.
     /// </summary>
     internal sealed class TmpMeasure : IMeasureText
     {
         private const float Unbounded = 100000f;
 
-        private readonly TextMeshProUGUI _probe;
+        /// <summary>
+        /// Everything that changes the ANSWER, and nothing that does not.
+        ///
+        /// Colour and alignment are deliberately absent: neither moves a glyph, so a row whose text only changed
+        /// colour keeps its measurement. The font is keyed by the asset actually resolved rather than by the family
+        /// name, which is what makes a late-resolving fallback invalidate the entries it would have changed.
+        /// </summary>
+        private readonly struct Key : IEquatable<Key>
+        {
+            private readonly string _text;
+            private readonly float _width, _size, _spacing, _mono;
+            private readonly int _font, _flags;
 
-        internal TmpMeasure(Transform parent)
+            internal Key(string text, float width, TMP_FontAsset font, ComputedStyle s)
+            {
+                _text = text;
+                _width = width;
+                _font = font == null ? 0 : font.GetInstanceID();
+                _size = s.FontSize;
+                _spacing = s.LetterSpacing;
+
+                // `-s1-mono-advance` is applied as a rich-text tag INSIDE the measurement, so it changes the answer
+                // for the same string and has to be part of what identifies it.
+                _mono = s.MonoAdvance;
+
+                _flags = (int)s.WhiteSpace
+                         | (s.TextOverflowEllipsis ? 1 << 8 : 0)
+                         | (s.WrapsWholeWords ? 1 << 9 : 0);
+            }
+
+            public bool Equals(Key other) =>
+                _font == other._font && _flags == other._flags
+                && _width.Equals(other._width) && _size.Equals(other._size) && _spacing.Equals(other._spacing)
+                && _mono.Equals(other._mono)
+                && string.Equals(_text, other._text, StringComparison.Ordinal);
+
+            public override bool Equals(object obj) => obj is Key other && Equals(other);
+
+            public override int GetHashCode()
+            {
+                int hash = _text?.GetHashCode() ?? 0;
+                hash = (hash * 397) ^ _width.GetHashCode();
+                hash = (hash * 397) ^ _size.GetHashCode();
+                hash = (hash * 397) ^ _font;
+                hash = (hash * 397) ^ _flags;
+                return hash;
+            }
+        }
+
+        /// <summary>
+        /// Bounded, because a page that prints a clock produces a new string every second and an unbounded cache
+        /// would be a leak with a friendly name. Cleared wholesale rather than evicted one by one: measuring is
+        /// cheap enough that a cold cache costs one render, and an LRU here would cost more to maintain than it
+        /// saves.
+        /// </summary>
+        private const int MaxEntries = 4000;
+
+        private readonly Dictionary<Key, Size> _cache = new Dictionary<Key, Size>();
+
+        private TextMeshProUGUI _probe;
+
+        internal TmpMeasure(Transform parent) => Attach(parent);
+
+        /// <summary>Measurements taken and answered from the cache since the last reset - the two numbers that say
+        /// whether a page is paying for its text twice.</summary>
+        internal int Measured { get; private set; }
+
+        internal int Reused { get; private set; }
+
+        internal void ResetCounters()
+        {
+            Measured = 0;
+            Reused = 0;
+        }
+
+        /// <summary>
+        /// Build the probe again after a rebuild destroyed it, and KEEP the cache.
+        ///
+        /// The probe lives under the page root, which every rebuild empties. Recreating the measurer along with it
+        /// is what made the cache pointless before it existed: the expensive part is the answers, and those do not
+        /// stop being true because a GameObject went away.
+        /// </summary>
+        internal void Reattach(Transform parent)
+        {
+            if (_probe == null) Attach(parent);
+        }
+
+        private void Attach(Transform parent)
         {
             // The probe has to stay ACTIVE: TextMeshPro sets itself up in Awake, which never runs on an inactive
             // object, and GetPreferredValues then answers from an uninitialised state - every line came back far too
@@ -194,14 +286,32 @@ namespace Sideload.Paint
         public Size Measure(string text, ComputedStyle style, float availableWidth)
         {
             if (_probe == null || string.IsNullOrEmpty(text))
-                return new Size(0f, style?.ResolvedLineHeight ?? 0f);
+                return new Size(0f, style?.ResolvedLineHeight ?? 0f, Ascent(_probe?.font, style));
 
+            var key = new Key(text, availableWidth, FontRegistry.Resolve(style.FontFamily, style.FontWeight, style.FontStyle), style);
+            if (_cache.TryGetValue(key, out Size cached))
+            {
+                Reused++;
+                return cached;
+            }
+
+            Size fresh = MeasureNow(text, style, availableWidth);
+            Measured++;
+
+            if (_cache.Count >= MaxEntries) _cache.Clear();
+            _cache[key] = fresh;
+            return fresh;
+        }
+
+        private Size MeasureNow(string text, ComputedStyle style, float availableWidth)
+        {
             try
             {
                 Apply(_probe, style);
                 text = Content(text, style);
 
                 float width = float.IsPositiveInfinity(availableWidth) || availableWidth <= 0f ? Unbounded : availableWidth;
+                width = WidenForWholeWords(text, style, width);
 
                 // Both halves matter and each one alone is wrong:
                 //   * The rect has to carry the width, or GetPreferredValues answers for the UNWRAPPED line - it
@@ -221,12 +331,83 @@ namespace Sideload.Paint
                 // Never hand back more than we were given: the layout engine treats the result as a fitted box, and a
                 // wider answer would push the parent open.
                 float w = float.IsPositiveInfinity(availableWidth) ? measuredWidth : Math.Min(measuredWidth, availableWidth);
-                return new Size(w, measuredHeight);
+                return new Size(w, measuredHeight, Ascent(_probe.font, style), width);
             }
             catch (Exception e)
             {
                 Core.Log?.Warning("text measure failed: " + e.Message);
                 return new Size(0f, style.ResolvedLineHeight);
+            }
+        }
+
+        /// <summary>
+        /// The width to wrap into, raised until no WORD has to be cut in half.
+        ///
+        /// TextMeshPro offers two behaviours and a browser has three. Its word wrapping breaks at spaces until a
+        /// single word is wider than the line, and then it breaks that word between two characters; with wrapping
+        /// off nothing breaks at all. The default a browser gives every page is the missing third: break at word
+        /// boundaries, and let a word that does not fit hang OUT of the box. Racket printed a stock count of
+        /// 1073904864 as "10739048" over "64", which reads as two numbers - the renderer, not the app.
+        ///
+        /// Getting the third state out of the two on offer needs one observation: TMP only cuts a word when the
+        /// line is narrower than that word. Hand it a line as wide as the longest word and it never reaches for
+        /// the knife - it still breaks at every space, and the overhang is simply drawn past the edge, where
+        /// whatever clips the box clips it. Exactly what the browser does.
+        ///
+        /// <para>The longest word costs ONE measurement, not one per word: every space becomes a newline and the
+        /// widest line of that is by definition the widest word. Rich-text tags come through untouched because
+        /// they carry no spaces.</para>
+        ///
+        /// Skipped whenever it cannot matter: text that may not wrap, an unbounded line, or a stylesheet that
+        /// asked for the cutting behaviour with `overflow-wrap` or `word-break`.
+        /// </summary>
+        private float WidenForWholeWords(string text, ComputedStyle style, float width)
+        {
+            if (style == null || !style.WrapsWholeWords) return width;
+            if (width >= Unbounded) return width;
+            if (style.WhiteSpace == WhiteSpaceKind.NoWrap || style.WhiteSpace == WhiteSpaceKind.Pre) return width;
+
+            string perLine = text.Replace(' ', '\n').Replace('\t', '\n');
+            float longest = _probe.GetPreferredValues(perLine, Unbounded, Unbounded).x;
+
+            return longest > width ? longest : width;
+        }
+
+        /// <summary>
+        /// How far below the top of the text box the FIRST baseline sits - the one number `align-items: baseline`
+        /// needs and the one TextMeshPro does not hand out.
+        ///
+        /// Taken from the face's own ascent rather than as a fraction of the measured height, because those two
+        /// differ exactly where it matters: a box with two lines, or a `line-height` that is not the font's own,
+        /// still puts its first baseline one ascent below the top. A fraction of the total would drift down with
+        /// every extra line and align a one-line label against the middle of a paragraph.
+        ///
+        /// <para>Reading <c>textInfo</c> would give the exact value and is off limits - it corrupts the cached
+        /// generation for the next caller, which is the same reason <see cref="Measure"/> works off
+        /// <c>GetPreferredValues</c>. The face metrics are static per font asset, so this costs nothing per call
+        /// beyond the multiply.</para>
+        ///
+        /// Returns NaN when there is no font to ask, and the layout then synthesizes a baseline from the box.
+        /// </summary>
+        private static float Ascent(TMP_FontAsset font, ComputedStyle style)
+        {
+            if (font == null || style == null) return float.NaN;
+
+            try
+            {
+                var face = font.faceInfo;
+                float point = face.pointSize;
+                if (point <= 0f) return float.NaN;
+
+                float scale = face.scale > 0f ? face.scale : 1f;
+                float ascent = face.ascentLine * (style.FontSize / point) * scale;
+
+                return ascent > 0f ? ascent : float.NaN;
+            }
+            catch (Exception e)
+            {
+                Core.Log?.Warning("baseline metric unavailable: " + e.Message);
+                return float.NaN;
             }
         }
 

@@ -114,6 +114,13 @@ namespace Sideload.Host
         private int _renders;
         private int _reloads;
         private float _lastRenderMs;
+
+        /// <summary>Where the last render's time went, phase by phase. A single total names no place to look.</summary>
+        private string _phases = "";
+
+        /// <summary>The text measurer, and with it the measurement cache. Outlives every rebuild on purpose - see
+        /// TmpMeasure for the numbers that make that the whole of the render cost.</summary>
+        private Paint.TmpMeasure _measure;
         private int _boxes;
 
         private WebView(RectTransform host, RectTransform root, AppBundle bundle, string appId, float referenceShortSide)
@@ -166,6 +173,8 @@ namespace Sideload.Host
         internal int ReloadCount => _reloads;
 
         internal float LastRenderMs => _lastRenderMs;
+
+        internal string LastRenderPhases => _phases;
 
         /// <summary>Ablation lever: stop rendering entirely, so what is left of the frame time is the game's.</summary>
         internal static bool RenderingDisabled = false;
@@ -524,7 +533,7 @@ namespace Sideload.Host
             if (Config.Preferences.LogPageBuilds)
                 Core.Log?.Msg($"{_appId}: read {tRead} ms, html {tParse - tRead} ms, css {tCss - tParse} ms, "
                               + $"script {tScript - tCss} ms, render {phase.ElapsedMilliseconds - tScript} ms "
-                              + $"= {phase.ElapsedMilliseconds} ms.");
+                              + $"= {phase.ElapsedMilliseconds} ms  [{_phases}].");
             _rebuildQueued = false;   // the render above already covers whatever the script just changed
 
             if (Config.Preferences.LogPageBuilds)
@@ -585,24 +594,44 @@ namespace Sideload.Host
             Transitions.Clear();
             _styleWas.Clear();
 
+            // The five phases, measured separately. "A rebuild costs about a millisecond per box" was true and
+            // useless: it names no place to look, and the four candidates - the cascade, the flexbox, the uGUI
+            // objects and the interaction wiring - are worked on by different code and cost wildly different amounts.
+            // Same reasoning as the read/html/css/script split on the first build, which is what found the parser
+            // warm-up.
+            var split = System.Diagnostics.Stopwatch.StartNew();
+
             Dictionary<IElement, ComputedStyle> styles =
                 StyleResolver.Resolve(_document, _sheet, _context, out PseudoStyles generated);
+            long tCascade = split.ElapsedMilliseconds;
 
             IElement body = _document.Body ?? _document.DocumentElement;
             LayoutNode tree = DomBuilder.Build(body, styles, generated);
             if (tree == null) { ShowError("the document has no renderable content"); return; }
 
-            var measure = new TmpMeasure(_root);
-            FlexLayout.Compute(tree, cssW, cssH, measure);
+            // ONE measurer for the life of the view, so its cache survives a rebuild. Its probe object does not -
+            // it lives under the page root and every rebuild empties that - so the probe is rebuilt on demand and
+            // the answers are kept, which is the half that costs.
+            _measure ??= new TmpMeasure(_root);
+            _measure.Reattach(_root);
+            _measure.ResetCounters();
+
+            FlexLayout.Compute(tree, cssW, cssH, _measure);
+            long tLayout = split.ElapsedMilliseconds;
 
             _painted = Painter.Paint(tree, _root, new Vector2(cssW, cssH),
                                      _inputs, OnInputChanged, OnInputSubmitted, _survivors, _bundle, _appId);
             _survivors = null;
+            long tPaint = split.ElapsedMilliseconds;
 
             PublishDeclaredKeys();
             WireInteraction(styles);
             ApplyPin();
             ApplyPendingFocus();
+            long tWire = split.ElapsedMilliseconds;
+
+            _phases = $"cascade {tCascade} / layout {tLayout - tCascade} / paint {tPaint - tLayout}"
+                      + $" / wire {tWire - tPaint} ms, text {_measure.Measured} measured + {_measure.Reused} cached";
 
             foreach (KeyValuePair<IElement, Painter.PaintedBox> pair in _painted)
                 if (styles.TryGetValue(pair.Key, out ComputedStyle painted)) _styleWas[pair.Key] = painted;
@@ -1433,7 +1462,8 @@ namespace Sideload.Host
             ["scale"] = _root == null ? 0f : _root.localScale.x,
             ["boxes"] = _boxes,
             ["rules"] = _sheet?.Rules.Count ?? 0,
-            ["wiredElements"] = _painted?.Count ?? 0,
+            ["paintedBoxes"] = _painted?.Count ?? 0,
+            ["lastRenderPhases"] = _phases,
             ["renders"] = _renders,
             ["lastRenderMs"] = _lastRenderMs,
             ["reloads"] = _reloads,

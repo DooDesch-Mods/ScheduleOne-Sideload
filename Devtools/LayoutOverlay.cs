@@ -14,7 +14,8 @@ namespace Sideload.Devtools
         /// <summary>Draw a magenta hairline around every box.</summary>
         internal static bool Outlines = false;   // off by default - switched on from the dev overlay
 
-        /// <summary>Write the computed tree to the log after every build.</summary>
+        /// <summary>Write the computed tree to the log after every build. On, because the MCP's get_layout_tree
+        /// reads exactly these lines and a debug build is where it is read.</summary>
         internal static bool DumpTree = true;
 
         /// <summary>
