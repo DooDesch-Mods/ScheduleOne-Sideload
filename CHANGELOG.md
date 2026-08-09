@@ -20,6 +20,19 @@ All notable changes to Sideload are documented here. This project adheres to
 - An invalid `flex` value is named in the log. It used to vanish in silence, leaving the box at its default with
   nothing pointing at the line that caused it.
 
+## [1.23.0] - 2026-08-09
+
+### Changed
+
+- The report about unusable CSS only names what is actually lost. `will-change`, `touch-action`, `user-select`
+  and the other pure browser hints are accepted in silence.
+- A breakpoint wider than the phone now says so and names the screen, rather than reading as a missing feature.
+
+### Fixed
+
+- `border-style: none` removes the border. It used to leave it drawn, and every value including `solid` was
+  reported as doing nothing.
+
 ## [1.22.0] - 2026-08-09
 
 ### Added

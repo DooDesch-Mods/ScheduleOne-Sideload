@@ -55,12 +55,6 @@ namespace Sideload.Css
                     if (IsAny(value, "first baseline", "last baseline")) Report(property, value);
                     break;
 
-                case "border-style":
-                    // The case in the switch is `break;` - the whole property is a no-op. Even `none` does not
-                    // remove a border, and dashed and dotted are drawn solid.
-                    ReportProperty(property);
-                    break;
-
                 case "transition-property":
                     // Read and discarded: there is one duration for the whole box and every animatable value
                     // rides along, so naming a property changes nothing.

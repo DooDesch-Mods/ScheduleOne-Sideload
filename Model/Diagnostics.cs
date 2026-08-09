@@ -28,6 +28,15 @@ namespace Sideload.Model
         /// <summary>An at-rule block was skipped - `@media (min-width:)`, `@keyframes`, `@layer`.</summary>
         AtRuleSkipped,
 
+        /// <summary>
+        /// A `@media` block this engine read perfectly well and that no screen it draws on can ever satisfy.
+        ///
+        /// Its own kind rather than <see cref="AtRuleSkipped"/>, because the two ask different things of the
+        /// author. "Skipped" says the engine fell short and there is nothing to do; this one says the breakpoint
+        /// is wider than the phone will ever be, and the fix is a smaller number.
+        /// </summary>
+        MediaUnreachable,
+
         /// <summary>A listener on an event type this engine never delivers.</summary>
         DeadEventListener,
     }
@@ -77,6 +86,9 @@ namespace Sideload.Model
                 $"the selector '{Subject}' was refused ({Detail}), so the whole rule is dropped.",
             DiagnosticKind.AtRuleSkipped =>
                 $"'{Subject}' is skipped - everything inside that block does nothing.",
+            DiagnosticKind.MediaUnreachable =>
+                $"'{Subject}' can never match{(Detail == null ? "" : " - the viewport is " + Detail)}, "
+                + "so everything inside it does nothing. The breakpoint is outside this screen.",
             DiagnosticKind.DeadEventListener =>
                 $"a listener on '{Subject}' - Sideload never delivers that event, so the handler never runs.",
             _ => $"{Kind} {Subject} {Detail}",
