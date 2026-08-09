@@ -45,6 +45,19 @@ namespace Sideload.Css
 
         /// <summary>`vertical-align`. Read where an inline run is built and nowhere else - see the enum.</summary>
         internal VerticalAlignKind VerticalAlign = VerticalAlignKind.Baseline;
+
+        /// <summary>
+        /// `display: list-item` - this box draws a marker before its content.
+        ///
+        /// A separate flag rather than a <see cref="DisplayKind"/>, because it is not an alternative to being a box:
+        /// a list item is a block that ALSO has a marker, and every display value can carry one. The marker itself
+        /// is built in DomBuilder, where there is a tree to put it in.
+        /// </summary>
+        internal bool ListItem;
+
+        /// <summary>What the marker draws. `none` means a list item with no marker at all, which is how a navigation
+        /// bar written as a `&lt;ul&gt;` gets rid of its bullets.</summary>
+        internal ListMarkerKind ListMarker = ListMarkerKind.Disc;
         internal Len RowGap = Len.Zero;
         internal Len ColumnGap = Len.Zero;
 
@@ -333,6 +346,7 @@ namespace Sideload.Css
             s.LetterSpacing = parent.LetterSpacing;
             s.MonoAdvance = parent.MonoAdvance;
             s.TabSize = parent.TabSize;
+            s.ListMarker = parent.ListMarker;
             s.SmoothScroll = parent.SmoothScroll;
             s.CaretColor = parent.CaretColor;
             s.GhostColor = parent.GhostColor;

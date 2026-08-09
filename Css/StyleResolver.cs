@@ -108,6 +108,11 @@ namespace Sideload.Css
 
             Dictionary<IElement, List<StyleRule>> matches = MatchRules(document, sheet, context.Orientation);
 
+            // The user-agent sheet goes in FIRST and below everything, so an author rule of any specificity beats
+            // it - which is what "user agent origin" means. Only when the page asked for web defaults: see
+            // UserAgentSheet for why switching it on under fourteen existing apps is not an option.
+            if (context.WebDefaults) Add(matches, MatchRules(document, UserAgentSheet.Rules, context.Orientation));
+
             // `@property` declares what a custom property means when nobody has set it. Tailwind v4 leans on that
             // hard: a utility writes `transform: translate(var(--tw-translate-x), ...)` and expects the registered
             // initial value to stand in for the axis nobody touched. Without this the whole declaration is
@@ -152,6 +157,20 @@ namespace Sideload.Css
         }
 
         /// <summary>Inverts "rule -> elements" into "element -> rules", skipping rules gated behind the other orientation.</summary>
+        /// <summary>
+        /// Fold one match map into another. The cascade sorts by layer before specificity and before document
+        /// order, so which map contributed a rule does not matter here - only its rank does.
+        /// </summary>
+        private static void Add(Dictionary<IElement, List<StyleRule>> into,
+                                Dictionary<IElement, List<StyleRule>> more)
+        {
+            foreach (KeyValuePair<IElement, List<StyleRule>> pair in more)
+            {
+                if (into.TryGetValue(pair.Key, out List<StyleRule> list)) list.AddRange(pair.Value);
+                else into[pair.Key] = pair.Value;
+            }
+        }
+
         private static Dictionary<IElement, List<StyleRule>> MatchRules(IDocument document, Stylesheet sheet, Orientation orientation)
         {
             var map = new Dictionary<IElement, List<StyleRule>>();

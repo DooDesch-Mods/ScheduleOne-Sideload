@@ -722,6 +722,12 @@ namespace Sideload.Script
             _bridge = new Bridge(this, _appId);
             Engine.SetValue("s1", _bridge);
 
+            // The same store under the name a library knows. `sessionStorage` is the same object rather than a
+            // second one that empties on reload: an app is reloaded by a developer saving a file, and losing the
+            // page's state on every save is a worse lie than outliving the session.
+            Engine.SetValue("localStorage", _bridge.Storage);
+            Engine.SetValue("sessionStorage", _bridge.Storage);
+
             Engine.SetValue("console", new Console(_appId));
 
             BindWindow();
