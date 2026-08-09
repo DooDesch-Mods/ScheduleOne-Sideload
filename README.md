@@ -90,7 +90,20 @@ DevTools, which re-reads the bundle from disk.
 
 ## Build an app
 
-The smallest thing that runs. Four files, no Unity reference, no reference to Sideload itself.
+Fastest way in, if you have Node:
+
+```
+npx @doodesch/create-sideload-app my-app --template preact
+```
+
+That writes the web bundle, the C# mod that registers it, a Vite build that puts the result straight into your
+`Mods/` folder, and TypeScript types generated from this engine's own source. `preact` is the default because
+it loads in 37 ms against react-dom's 113 ms, measured against the script host - a framework is parsed on every
+page build here, so its size is a load-time cost rather than a download cost. `--template react` and
+`--template vanilla` are the other two.
+
+The rest of this section is the same thing by hand. Four files, no Unity reference, no reference to Sideload
+itself.
 
 ### `MyMod.csproj`
 
