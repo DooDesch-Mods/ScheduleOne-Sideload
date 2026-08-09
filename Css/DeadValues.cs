@@ -7,10 +7,11 @@ namespace Sideload.Css
     ///
     /// These are the worst kind of gap, and the reason this file exists rather than a line in the register.
     /// An unknown property has been named in the log since 1.9.0; an unreadable value is named since the parse
-    /// helpers in <see cref="StyleApplier"/> started reporting. But `align-items: baseline` passes both of those:
-    /// the property is implemented, the value parses into the enum, and the layout then has no branch for it. The
+    /// helpers in <see cref="StyleApplier"/> started reporting. But `position: sticky` passes both of those: the
+    /// property is implemented, the value parses into the enum, and the layout then has no branch for it. The
     /// author sees a correct-looking rule, a browser that honours it, and a game that does not - with nothing
-    /// anywhere to say which of the three is lying.
+    /// anywhere to say which of the three is lying. (`align-items: baseline` was the founding case here and is
+    /// implemented as of 1.19; the two-word forms of it are still listed.)
     ///
     /// ENGINE-GAPS.md asked for exactly this: "a value that parses but is not implemented is a second silent
     /// class. Either the layout implements them, or the applier should refuse the value so it falls back visibly."
@@ -47,8 +48,11 @@ namespace Sideload.Css
 
                 case "align-items":
                 case "align-self":
-                    // Parses into AlignKind.Baseline; FlexLayout.PlaceLine has cases for end and centre only.
-                    if (IsAny(value, "baseline", "first baseline", "last baseline")) Report(property, value);
+                    // `baseline` is implemented as of 1.19 and is NOT on this list any more. The two-word forms
+                    // still are: `first baseline` is what plain `baseline` already does, and `last baseline`
+                    // hangs the line from the LAST baseline in each item, which needs a second metric per box.
+                    // Both parse into AlignKind.Baseline and quietly become the first-baseline behaviour.
+                    if (IsAny(value, "first baseline", "last baseline")) Report(property, value);
                     break;
 
                 case "border-style":

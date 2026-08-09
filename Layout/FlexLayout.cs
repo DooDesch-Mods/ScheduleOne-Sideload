@@ -85,6 +85,7 @@ namespace Sideload.Layout
             {
                 node.Width = 0f;
                 node.Height = 0f;
+                node.Baseline = float.NaN;
                 return;
             }
 
@@ -108,10 +109,18 @@ namespace Sideload.Layout
             float contentW = Math.Max(width - padH, 0f);
             float contentH = float.IsNaN(height) ? float.NaN : Math.Max(height - padV, 0f);
 
+            float borderAndPadTop = s.BorderWidth.Top.Resolve(availWidth) + s.Padding.Top.Resolve(availWidth);
+
             float usedContentH;
             if (node.IsTextLeaf)
             {
-                usedContentH = measure.Measure(node.Text, s, contentW).Height;
+                Size text = measure.Measure(node.Text, s, contentW);
+                usedContentH = text.Height;
+                node.Baseline = float.IsNaN(text.Baseline) ? float.NaN : borderAndPadTop + text.Baseline;
+
+                // Only when the text needs MORE room than the box has. Anything else is the ordinary case and the
+                // painter can size the text to the content box without asking.
+                node.TextWrapWidth = text.WrapWidth > contentW + 0.01f ? text.WrapWidth : float.NaN;
             }
             else
             {
@@ -127,8 +136,47 @@ namespace Sideload.Layout
             if (!node.IsTextLeaf && Math.Abs(finalContentH - usedContentH) > 0.01f)
                 PlaceChildren(node, contentW, finalContentH, availWidth, measure);
 
+            // After the LAST placement, so the children's Y values are the ones that survive.
+            if (!node.IsTextLeaf) node.Baseline = BaselineFromChildren(node);
+
+            // A text box taller than its text does not draw the text at the top: the painter hands TMP a centred
+            // alignment whenever the box says `align-items: center`, and the baseline moves down with it. Reading
+            // the baseline off the measurement alone would put it where the text ISN'T, which is worse than having
+            // no baseline - the item would be aligned confidently and wrongly.
+            else if (!float.IsNaN(node.Baseline) && s.AlignItems == AlignKind.Center)
+            {
+                float slack = Math.Max(height - padV, 0f) - usedContentH;
+                if (slack > 0f) node.Baseline += slack * 0.5f;
+            }
+
             node.Width = width;
             node.Height = height;
+        }
+
+        /// <summary>
+        /// A container's own baseline: the first in-flow child that has one, in document order, plus wherever that
+        /// child ended up. Recursive by construction - the child's baseline was filled in the same way - which is
+        /// what lets `align-items: baseline` line up a label that happens to be wrapped in two divs with one that
+        /// is bare text.
+        ///
+        /// Deliberate narrowings, both of them cases where CSS is finer than any app stylesheet needs:
+        ///   * <b>Document order, not flex order.</b> `row-reverse` takes its baseline from the item written first
+        ///     rather than the one drawn first.
+        ///   * <b>A box with no text anywhere has no baseline</b> and is aligned by its bottom margin edge instead
+        ///     (see <see cref="PlaceLine"/>), which is what CSS calls a synthesized baseline.
+        /// </summary>
+        private static float BaselineFromChildren(LayoutNode node)
+        {
+            foreach (LayoutNode child in node.Children)
+            {
+                if (child.Style.Display == DisplayKind.None) continue;
+                if (child.Style.Position != PositionKind.Static && child.Style.Position != PositionKind.Relative) continue;
+                if (float.IsNaN(child.Baseline)) continue;
+
+                return child.Y + child.Baseline;
+            }
+
+            return float.NaN;
         }
 
         /// <summary>
@@ -173,6 +221,13 @@ namespace Sideload.Layout
             foreach (LayoutNode child in flow)
                 items.Add(BuildItem(child, row, mainAvail, crossAvail, contentW, s.AlignItems, measure));
 
+            // A wrapping container decides where the lines break from the sizes the items are holding, so a floor
+            // that has been put off has to be paid before the break - unlike on a single line, where the flex pass
+            // is the first thing that can be affected by it.
+            if (s.FlexWrap != FlexWrap.NoWrap)
+                foreach (Item item in items)
+                    item.MainSize = Math.Clamp(item.BaseSize, MinOf(item, measure), item.MaxMain);
+
             List<List<Item>> lines = BreakIntoLines(items, s.FlexWrap, mainAvail, mainGap);
 
             float crossCursor = 0f;
@@ -180,7 +235,7 @@ namespace Sideload.Layout
 
             foreach (List<Item> line in lines)
             {
-                ResolveFlexibleLengths(line, mainAvail, mainGap);
+                ResolveFlexibleLengths(line, mainAvail, mainGap, measure);
 
                 // Give every item its main size, then read back the cross size it needs.
                 foreach (Item item in line)
@@ -241,7 +296,14 @@ namespace Sideload.Layout
                     if (float.IsNaN(mainForced)) item.MainSize = row ? item.Node.Width : item.Node.Height;
                 }
 
-                PlaceLine(line, s, row, reverse, mainAvail, mainGap, crossCursor, lineCross);
+                // Baseline alignment can need MORE room than the tallest item: two items whose baselines are at
+                // different depths push each other apart. Measured after the stretch pass, because an item that
+                // was just stretched has a new baseline, and applied to the line size, because that is the only
+                // thing a browser grows here - the items themselves keep the size they asked for.
+                float ascent = BaselineBand(line, s, row, out float descent);
+                if (!float.IsNaN(ascent)) lineCross = Math.Max(lineCross, ascent + descent);
+
+                PlaceLine(line, s, row, reverse, mainAvail, mainGap, crossCursor, lineCross, ascent);
 
                 float lineExtent = 0f;
                 foreach (Item item in line)
@@ -324,6 +386,9 @@ namespace Sideload.Layout
             internal bool CrossMarginStartAuto, CrossMarginEndAuto;
 
             internal float MinMain, MaxMain;
+
+            /// <summary>The row minimum has not been measured yet - see <see cref="MinOf"/>.</summary>
+            internal bool MinPending;
         }
 
         private static Item BuildItem(LayoutNode child, bool row, float mainAvail, float crossAvail,
@@ -394,10 +459,39 @@ namespace Sideload.Layout
                 item.ContentMain = child.Height;
             }
 
-            item.MinMain = AutomaticMinimum(item, minProperty, row, mainAvail);
+            item.MinMain = AutomaticMinimum(item, minProperty, row, mainAvail, out bool pending);
+            item.MinPending = pending;
             item.MaxMain = maxProperty.IsDefinite ? maxProperty.Resolve(mainAvail) : float.PositiveInfinity;
-            item.MainSize = Math.Clamp(item.BaseSize, item.MinMain, item.MaxMain);
+
+            // A floor that has not been measured yet does not clamp here. It cannot bind in the ordinary cases -
+            // a measured base size IS the max-content width and a declared one is its own floor - and the case
+            // where it can (`flex: 1`, whose basis is 0%) is caught before the lines are broken.
+            item.MainSize = Math.Clamp(item.BaseSize, pending ? 0f : item.MinMain, item.MaxMain);
             return item;
+        }
+
+        /// <summary>
+        /// The item's minimum, measuring it first if that was put off.
+        ///
+        /// Along a row the floor is the min-content width, and finding it means walking the item's subtree and
+        /// asking the font about each piece of text in it. That is worth doing once for an item about to be
+        /// squeezed and wasted on the many that are not, so <see cref="AutomaticMinimum"/> only marks it and the
+        /// answer is worked out at the first read - which for a row that fits never comes at all.
+        /// </summary>
+        private static float MinOf(Item item, IMeasureText measure)
+        {
+            if (!item.MinPending) return item.MinMain;
+
+            item.MinPending = false;
+
+            // The content size suggestion, then capped by the declared width. Both halves are CSS Flexbox 4.5:
+            // an item may be squeezed down to what is inside it, and never past a width its author wrote down -
+            // whichever of the two is the SMALLER floor, so a wide box with narrow content still shrinks.
+            float content = GridLayout.MinContentWidth(item.Node, measure, honourDeclaredWidth: false);
+            if (item.Node.Style.Width.IsDefinite) content = Math.Min(content, item.ContentMain);
+
+            item.MinMain = content;
+            return item.MinMain;
         }
 
         /// <summary>
@@ -406,29 +500,39 @@ namespace Sideload.Layout
         /// smaller than the text inside it. Without this a page whose children add up to more than the viewport
         /// collapses every box a little, and every paragraph spills out of the card that holds it.
         ///
-        /// Two deliberate narrowings of the spec:
-        ///   * <b>Along a row the automatic minimum is zero.</b> The real rule is the min-content width, i.e. the
-        ///     longest unbreakable word, which needs a second text measurement pass per item. Row items in app UIs are
-        ///     buttons and icons with `flex: 1` or a fixed width, where the difference does not show.
-        ///   * <b>An explicit main size is never shrunk past.</b> The spec would allow it when the content is smaller
-        ///     than the declared size; honouring an author's `height: 96px` is the less surprising of the two.
+        /// The two axes take it from different places, and the difference is the spec's, not a shortcut:
+        ///   * <b>Down a COLUMN</b> the floor is <see cref="Item.ContentMain"/> - the height the content came out
+        ///     at. Text cannot be made shorter than the lines it wrapped into.
+        ///   * <b>Along a ROW</b> it is the MIN-content width: the longest run with no break point in it, capped
+        ///     by a declared width where there is one. Not the measured width, which is the MAX-content width and
+        ///     would stop a row from ever shrinking. This needs the font, so it is deferred - see
+        ///     <see cref="MinOf"/> - and <paramref name="pending"/> says so.
+        ///
+        /// One deliberate narrowing stays, and only down the column: <b>an explicit height is never shrunk past.</b>
+        /// The spec takes the smaller of the declared size and the content, which would let `height: 96px` collapse
+        /// to the text inside it; honouring the number the author wrote down is the less surprising of the two.
+        /// Along a row the same reading would break `flex-shrink` outright - a declared width would pin the item -
+        /// so there the spec is followed exactly.
         ///
         /// The floor is <see cref="Item.ContentMain"/>, NOT the flex base size. Those differ exactly when the basis
         /// came from `flex-basis` - which `flex: 1` and `flex: 0` both set - and reading the base size there gave
-        /// `flex: 0` a minimum of zero, so a row of sized boxes collapsed into nothing instead of holding at its
+        /// `flex: 0` a minimum of zero, so a column of sized boxes collapsed into nothing instead of holding at its
         /// content. That was this renderer disagreeing with every browser, not a narrowing of the spec.
         /// </summary>
-        private static float AutomaticMinimum(Item item, Len minProperty, bool row, float mainAvail)
+        private static float AutomaticMinimum(Item item, Len minProperty, bool row, float mainAvail, out bool pending)
         {
+            pending = false;
             if (minProperty.IsDefinite) return minProperty.Resolve(mainAvail);
-            if (row) return 0f;
 
             // A scroll container has an automatic minimum of zero - it is allowed to be smaller than its content
             // precisely because it can scroll.
             ComputedStyle cs = item.Node.Style;
             if (cs.OverflowY != OverflowKind.Visible || cs.OverflowX != OverflowKind.Visible) return 0f;
 
-            return item.ContentMain;
+            if (!row) return item.ContentMain;
+
+            pending = true;
+            return 0f;
         }
 
         private static List<List<Item>> BreakIntoLines(List<Item> items, FlexWrap wrap, float mainAvail, float mainGap)
@@ -473,7 +577,7 @@ namespace Sideload.Layout
         /// the rest, which is what makes "one scrollable box soaks up the whole overflow" come out right instead of
         /// shaving a few pixels off every box on the page. Follows CSS Flexbox 9.7.
         /// </summary>
-        private static void ResolveFlexibleLengths(List<Item> line, float mainAvail, float mainGap)
+        private static void ResolveFlexibleLengths(List<Item> line, float mainAvail, float mainGap, IMeasureText measure)
         {
             if (line.Count == 0 || float.IsNaN(mainAvail)) return;
 
@@ -493,7 +597,7 @@ namespace Sideload.Layout
             for (int i = 0; i < count; i++)
             {
                 Item item = line[i];
-                item.MainSize = Math.Clamp(item.BaseSize, item.MinMain, item.MaxMain);
+                item.MainSize = Math.Clamp(item.BaseSize, MinOf(item, measure), item.MaxMain);
 
                 // An item with no flex factor in the active direction keeps its base size, clamped.
                 float factor = growing ? item.Node.Style.FlexGrow : item.Node.Style.FlexShrink;
@@ -529,7 +633,7 @@ namespace Sideload.Layout
                     Item item = line[i];
 
                     unclamped[i] = item.BaseSize + Weight(item, growing) / weightTotal * free;
-                    item.MainSize = Math.Clamp(unclamped[i], item.MinMain, item.MaxMain);
+                    item.MainSize = Math.Clamp(unclamped[i], MinOf(item, measure), item.MaxMain);
                     violation += item.MainSize - unclamped[i];
                 }
 
@@ -563,8 +667,47 @@ namespace Sideload.Layout
         /// Only POSITIVE free space is shared out. A line that overflows has none to give, and the spec's answer is
         /// that every auto margin is then simply zero rather than negative - which falls out of the clamp below.
         /// </summary>
+        /// <summary>
+        /// How much room the baseline-aligned items on a line need above and below their shared baseline.
+        ///
+        /// Returns <see cref="float.NaN"/> when nothing on the line asks for baseline alignment, which is the
+        /// common case and costs one walk of the line. Cross-axis only: down a COLUMN the cross axis is the
+        /// horizontal one, there is no baseline to share, and CSS falls back to start alignment - so does this.
+        ///
+        /// An item that carries no text has no baseline of its own. CSS synthesizes one from its bottom margin
+        /// edge, which is what an icon next to a label wants: the icon sits ON the line rather than floating
+        /// somewhere inside it.
+        /// </summary>
+        private static float BaselineBand(List<Item> line, ComputedStyle parent, bool row, out float descent)
+        {
+            descent = 0f;
+            if (!row) return float.NaN;
+
+            float ascent = float.NaN;
+
+            foreach (Item item in line)
+            {
+                if (AlignOf(item.Node, parent) != AlignKind.Baseline) continue;
+
+                float baseline = float.IsNaN(item.Node.Baseline) ? item.CrossSize : item.Node.Baseline;
+                float above = item.CrossMarginStart + baseline;
+                float below = item.CrossSize - baseline + item.CrossMarginEnd;
+
+                if (float.IsNaN(ascent) || above > ascent) ascent = above;
+                if (below > descent) descent = below;
+            }
+
+            return ascent;
+        }
+
+        /// <summary>Which alignment an item actually gets: its own <c>align-self</c> when it has one, the
+        /// container's <c>align-items</c> otherwise.</summary>
+        private static AlignKind AlignOf(LayoutNode node, ComputedStyle parent) =>
+            node.Style.AlignSelf != AlignKind.Auto ? node.Style.AlignSelf : parent.AlignItems;
+
         private static void PlaceLine(List<Item> line, ComputedStyle parent, bool row, bool reverse,
-                                      float mainAvail, float mainGap, float crossOffset, float lineCross)
+                                      float mainAvail, float mainGap, float crossOffset, float lineCross,
+                                      float baselineAscent)
         {
             float content = 0f;
             foreach (Item item in line) content += item.MainSize + item.MainMarginStart + item.MainMarginEnd;
@@ -608,7 +751,7 @@ namespace Sideload.Layout
             {
                 cursor += item.MainMarginStart + (item.MainMarginStartAuto ? autoMain : 0f);
 
-                AlignKind align = item.Node.Style.AlignSelf != AlignKind.Auto ? item.Node.Style.AlignSelf : parent.AlignItems;
+                AlignKind align = AlignOf(item.Node, parent);
                 float crossFree = Math.Max(lineCross - item.CrossSize - item.CrossMarginStart - item.CrossMarginEnd, 0f);
                 float crossPos = crossOffset + item.CrossMarginStart;
 
@@ -623,6 +766,14 @@ namespace Sideload.Layout
                     {
                         case AlignKind.FlexEnd: crossPos += crossFree; break;
                         case AlignKind.Center: crossPos += crossFree * 0.5f; break;
+
+                        // Every baseline-aligned item on the line hangs from the SAME depth, so the offset is the
+                        // line's, not this item's share of the free space. Centring aligns the boxes; this aligns
+                        // the text inside them, which is the difference a 13px name and a 12px amount make visible.
+                        case AlignKind.Baseline when !float.IsNaN(baselineAscent):
+                            crossPos = crossOffset + baselineAscent
+                                     - (float.IsNaN(item.Node.Baseline) ? item.CrossSize : item.Node.Baseline);
+                            break;
                     }
                 }
 

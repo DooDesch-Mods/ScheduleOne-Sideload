@@ -940,8 +940,16 @@ namespace Sideload.Paint
             float padTop = s.Padding.Top.Resolve(node.Width) + s.BorderWidth.Top.Resolve(node.Width);
             float padBottom = s.Padding.Bottom.Resolve(node.Width) + s.BorderWidth.Bottom.Resolve(node.Width);
 
+            // A word wider than its box hangs out of it rather than being cut - see TmpMeasure.WidenForWholeWords.
+            // The measurement already worked out how far, and the text has to be given exactly that room here: hand
+            // TMP the narrower content box instead and it would wrap where the measured height says it does not,
+            // and the box would come out a line short.
+            float overhang = float.IsNaN(node.TextWrapWidth)
+                ? 0f
+                : Math.Max(node.TextWrapWidth - (node.Width - padLeft - padRight), 0f);
+
             RectTransform rt = UiFactory.Rect("text", box);
-            UiFactory.Stretch(rt, top: padTop, right: padRight, bottom: padBottom, left: padLeft);
+            UiFactory.Stretch(rt, top: padTop, right: padRight - overhang, bottom: padBottom, left: padLeft);
 
             var tmp = rt.gameObject.AddComponent<TextMeshProUGUI>();
             TmpMeasure.Apply(tmp, s);

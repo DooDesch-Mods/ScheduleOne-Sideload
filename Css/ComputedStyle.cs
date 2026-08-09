@@ -162,6 +162,27 @@ namespace Sideload.Css
 
         internal TextAlignKind TextAlign = TextAlignKind.Left;
         internal WhiteSpaceKind WhiteSpace = WhiteSpaceKind.Normal;
+
+        /// <summary>
+        /// Whether a word that does not fit may be cut. Together with <see cref="WordBreak"/> this is the third
+        /// wrapping state: TextMeshPro offers "wrap anywhere" and "never wrap", and a browser's DEFAULT is neither
+        /// of them - break at word boundaries, and when a single word is wider than the box, let it overflow.
+        /// See <see cref="WrapsWholeWords"/> for how the three fold back into TMP's one boolean.
+        /// </summary>
+        internal OverflowWrapKind OverflowWrap = OverflowWrapKind.Normal;
+
+        internal WordBreakKind WordBreak = WordBreakKind.Normal;
+
+        /// <summary>
+        /// Whether this text keeps its words whole - the browser default, and false as soon as the stylesheet
+        /// asks for the opposite in either of the two properties that can.
+        ///
+        /// `overflow-wrap: break-word` is in the false group deliberately: it says a word MAY be cut when it does
+        /// not fit on a line of its own, which is exactly what TextMeshPro already does, so it needs nothing added.
+        /// `keep-all` is about CJK, where this engine has no line-breaking rules to keep, and behaves as normal.
+        /// </summary>
+        internal bool WrapsWholeWords =>
+            OverflowWrap == OverflowWrapKind.Normal && WordBreak != WordBreakKind.BreakAll;
         internal RgbaColor Color = new RgbaColor(0.925f, 0.929f, 0.945f, 1f);   // --text
         internal bool TextOverflowEllipsis;
 
@@ -222,6 +243,8 @@ namespace Sideload.Css
             s.CaretWidth = parent.CaretWidth;
             s.TextAlign = parent.TextAlign;
             s.WhiteSpace = parent.WhiteSpace;
+            s.OverflowWrap = parent.OverflowWrap;
+            s.WordBreak = parent.WordBreak;
             s.Color = parent.Color;
 
             // Copy-on-write: children share the parent's table until one of them declares a variable of its own.
