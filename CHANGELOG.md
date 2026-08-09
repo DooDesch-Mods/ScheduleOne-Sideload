@@ -20,6 +20,20 @@ All notable changes to Sideload are documented here. This project adheres to
 - An invalid `flex` value is named in the log. It used to vanish in silence, leaving the box at its default with
   nothing pointing at the line that caused it.
 
+## [1.21.0] - 2026-08-09
+
+### Changed
+
+- A page that redraws is twice as fast again. The same 206-box React page went from 128 ms to 56 ms, and a state
+  update from 116 ms to 48 ms.
+- The layout stopped asking for the same measurement over and over: 73600 requests per render became 20100, and
+  the layout phase 95 ms became 19 ms.
+
+### Fixed
+
+- A deeply nested box no longer costs exponentially more than a shallow one. One line of text eight levels down
+  took 40963 measurements; it takes 154.
+
 ## [1.20.0] - 2026-08-09
 
 ### Added
