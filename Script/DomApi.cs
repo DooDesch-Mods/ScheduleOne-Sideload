@@ -322,6 +322,12 @@ namespace Sideload.Script
                 case "tabIndex": return TabIndex;
                 case "htmlFor": return Native.GetAttribute("for") ?? "";
                 case "readOnly": return Native.HasAttribute("readonly");
+
+                // React reads this on every host node to decide which namespace its children belong in - an <svg>
+                // whose namespaceURI came back undefined put the whole subtree back into HTML, and the next element
+                // it created was a plain <path> that nothing draws. Answering it costs nothing and keeps the
+                // renderer's own bookkeeping straight even though this engine paints no SVG.
+                case "namespaceURI": return (JsValue)Native.NamespaceUri ?? JsValue.Null;
             }
 
             // Plain attribute-backed strings and booleans. Kept as tables rather than more cases because the two
@@ -818,9 +824,19 @@ namespace Sideload.Script
         /// </summary>
         public JsElement CreateElement(string tag, JsValue options) => CreateElement(tag);
 
-        /// <summary>The namespaced spelling. The namespace is ignored - this renderer draws no SVG - so an
-        /// `&lt;svg&gt;` subtree builds and lays out as empty boxes rather than throwing halfway through a mount.</summary>
-        public JsElement CreateElementNS(string ns, string tag) => _host.Wrap(_document.CreateElement(tag));
+        /// <summary>
+        /// The namespaced spelling. The element really is created in the namespace it names, so `namespaceURI` reads
+        /// back what the caller asked for - which is what a renderer uses to decide the namespace of the children it
+        /// creates next.
+        ///
+        /// Nothing draws an SVG here. The subtree builds and lays out as empty boxes, which is the fail-soft the rest
+        /// of the engine follows: a page with one icon in it renders the other ninety-nine per cent rather than
+        /// throwing halfway through a mount.
+        /// </summary>
+        public JsElement CreateElementNS(string ns, string tag) =>
+            _host.Wrap(string.IsNullOrEmpty(ns)
+                           ? _document.CreateElement(tag)
+                           : Try(() => _document.CreateElement(ns, tag)) ?? _document.CreateElement(tag));
 
         public JsElement CreateElementNS(string ns, string tag, JsValue options) => CreateElementNS(ns, tag);
 

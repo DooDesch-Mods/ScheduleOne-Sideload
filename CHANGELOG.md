@@ -3,6 +3,26 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.29.0] - 2026-08-09
+
+### Added
+
+- `outline` draws a focus ring, outside the box and without moving it. Width, colour, offset and `auto` are all read.
+- `vertical-align` puts an icon or a badge on the line it sits in: `top`, `middle`, `bottom` and `baseline`.
+- `touch-action: none` says a box handles its own drag, so a map pans instead of scrolling the page around it.
+- `tab-size` fills a tab to the next stop in preserved text, counted from the line start. Default 8, as in CSS.
+- `FormData` exists, including `new FormData(form)`, iteration and posting it as a `fetch` body.
+
+### Fixed
+
+- A rounded box with a border and no background draws its border. It drew nothing at all, so an outlined chip was
+  an empty rectangle.
+- A drag listener no longer takes scrolling away from the list underneath. Claim the gesture with `preventDefault()`
+  or `touch-action: none`.
+- `el.value = x` no longer reports itself as typing. A field whose page wrote its value back could loop.
+- A page that needs longer than 250 ms to start now gets it: loading has a 5 s budget, a handler still has 250 ms.
+- `mousemove` fires while a page listens for it, and `createElementNS` puts the element in the namespace it names.
+
 ## [1.28.0] - 2026-08-09
 
 ### Fixed

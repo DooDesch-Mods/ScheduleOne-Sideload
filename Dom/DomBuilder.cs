@@ -95,7 +95,10 @@ namespace Sideload.Dom
                 if (child is IElement childElement)
                 {
                     LayoutNode built = Build(childElement, styles, generated);
-                    if (built != null) node.Add(built);
+                    if (built == null) continue;
+
+                    if (inlineRun) AlignOnTheLine(built.Style);
+                    node.Add(built);
                 }
             }
 
@@ -373,6 +376,27 @@ namespace Sideload.Dom
             }
 
             line.Children.RemoveAll(child => child.IsTextLeaf && child.Text.Length == 0);
+        }
+
+        /// <summary>
+        /// `vertical-align` on a box that is ON a line, turned into the cross-axis alignment that line understands.
+        ///
+        /// Here rather than in the cascade because this is the only place that knows the box is on a line at all. On
+        /// a block the property means nothing - a browser ignores it there too - and mapping it onto `align-self`
+        /// unconditionally would have centred a paragraph horizontally for saying `vertical-align: middle`.
+        ///
+        /// An explicit `align-self` wins: the page said it in the language the layout actually speaks.
+        /// </summary>
+        private static void AlignOnTheLine(ComputedStyle style)
+        {
+            if (style == null || style.AlignSelf != AlignKind.Auto) return;
+
+            switch (style.VerticalAlign)
+            {
+                case VerticalAlignKind.Top: style.AlignSelf = AlignKind.FlexStart; break;
+                case VerticalAlignKind.Middle: style.AlignSelf = AlignKind.Center; break;
+                case VerticalAlignKind.Bottom: style.AlignSelf = AlignKind.FlexEnd; break;
+            }
         }
 
         /// <summary>

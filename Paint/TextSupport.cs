@@ -452,9 +452,47 @@ namespace Sideload.Paint
         /// </summary>
         internal static string Content(string text, ComputedStyle s)
         {
-            if (string.IsNullOrEmpty(text) || s == null || s.MonoAdvance <= 0f) return text;
+            if (string.IsNullOrEmpty(text) || s == null) return text;
+
+            text = ExpandTabs(text, s.TabSize);
+            if (s.MonoAdvance <= 0f) return text;
 
             return "<mspace=" + s.MonoAdvance.ToString("0.###", CultureInfo.InvariantCulture) + "px>" + text;
+        }
+
+        /// <summary>
+        /// Turn tabs into the spaces that reach the next tab stop, counted from the start of the line.
+        ///
+        /// A tab is not a fixed number of spaces, and treating it as one is what makes an indented code block drift
+        /// one column further right on every nested line. TextMeshPro has a tab stop of its own but it is a distance
+        /// in points and does not know about `tab-size`, so the stops are computed here and handed over as spaces.
+        ///
+        /// Only preserved whitespace can still contain a tab - everywhere else it was folded into a single space
+        /// while the DOM was built, which is what CSS says as well.
+        /// </summary>
+        private static string ExpandTabs(string text, int size)
+        {
+            if (text.IndexOf('\t') < 0) return text;
+            if (size <= 0) return text.Replace("\t", "");
+
+            var sb = new System.Text.StringBuilder(text.Length + size);
+            int column = 0;
+
+            foreach (char c in text)
+            {
+                if (c == '\t')
+                {
+                    int stop = size - column % size;
+                    sb.Append(' ', stop);
+                    column += stop;
+                    continue;
+                }
+
+                sb.Append(c);
+                column = c == '\n' ? 0 : column + 1;
+            }
+
+            return sb.ToString();
         }
 
         /// <summary>Push the CSS text properties onto a TMP component - shared by measuring and rendering so the two

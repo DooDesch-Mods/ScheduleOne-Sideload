@@ -4,15 +4,8 @@
 # One line per accepted diagnostic: Kind<TAB>Subject.
 # Deleting lines is the progress - the shorter the file, the less falls away silently.
 
-SelectorRejected	::placeholder
 UnknownProperty	border-collapse
-UnknownProperty	tab-size
-ValueIgnored	appearance
 ValueIgnored	display
 ValueIgnored	font-variant-numeric
-ValueIgnored	outline
-ValueIgnored	outline-width
 ValueIgnored	resize
 ValueIgnored	text-decoration
-ValueIgnored	vertical-align
-ValueRejected	min-height

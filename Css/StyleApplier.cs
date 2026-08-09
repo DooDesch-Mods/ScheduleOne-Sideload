@@ -236,7 +236,6 @@ namespace Sideload.Css
                 // as lost would be false: nothing was lost, there was nothing to lose. And a report that names
                 // properties which are fine is a report an author learns to skip past.
                 case "will-change":
-                case "touch-action":
                 case "user-select":
                 case "-webkit-user-select":
                 case "-webkit-tap-highlight-color":
@@ -279,13 +278,21 @@ namespace Sideload.Css
                     // there is no user-agent stylesheet to put one in the cascade. Everywhere else `none` asks for
                     // something that already is not there, which is agreement rather than a loss.
                     if (Is(value, "none")) s.Appearance = AppearanceKind.None;
-                    else if (Is(value, "auto")) s.Appearance = AppearanceKind.Auto;
+                    else if (Is(value, "auto") || IsWidgetName(value)) s.Appearance = AppearanceKind.Auto;
                     else Diagnostics.Report(DiagnosticKind.ValueIgnored, property, value);
                     break;
 
                 case "resize":
                     // Nothing has a resize handle to take away.
                     if (!Is(value, "none")) Diagnostics.Report(DiagnosticKind.ValueIgnored, property, value);
+                    break;
+
+                case "tab-size":
+                case "-moz-tab-size":
+                    // A length is legal CSS here and means a distance rather than a count. Nothing writes it, and
+                    // the expansion works in characters, so it is reported instead of rounded into a count.
+                    if (Number(value, out float tabs) && tabs >= 0f) s.TabSize = (int)tabs;
+                    else Diagnostics.Report(DiagnosticKind.ValueIgnored, property, value);
                     break;
 
                 case "font-feature-settings":
@@ -297,9 +304,14 @@ namespace Sideload.Css
                     break;
 
                 case "vertical-align":
-                    // There are no inline boxes to align against a baseline: every child is a flex item, and what
-                    // moves it up or down is `align-items`. `baseline` is the initial value, so it asks for nothing.
-                    if (!Is(value, "baseline")) Diagnostics.Report(DiagnosticKind.ValueIgnored, property, value);
+                    // Only where there is a line to align against; see VerticalAlignKind. `sub` and `super` shift
+                    // the baseline itself and a length moves the box off it, neither of which a flex line can
+                    // express, so those are reported rather than approximated.
+                    if (Is(value, "baseline")) s.VerticalAlign = VerticalAlignKind.Baseline;
+                    else if (Is(value, "middle")) s.VerticalAlign = VerticalAlignKind.Middle;
+                    else if (Is(value, "top") || Is(value, "text-top")) s.VerticalAlign = VerticalAlignKind.Top;
+                    else if (Is(value, "bottom") || Is(value, "text-bottom")) s.VerticalAlign = VerticalAlignKind.Bottom;
+                    else Diagnostics.Report(DiagnosticKind.ValueIgnored, property, value);
                     break;
 
                 case "list-style":
@@ -310,15 +322,28 @@ namespace Sideload.Css
                     if (!Is(value, "none")) Diagnostics.Report(DiagnosticKind.ValueIgnored, property, value);
                     break;
 
-                case "outline":
-                case "outline-style":
+                case "outline": ApplyOutline(s, value); break;
+
                 case "outline-width":
+                    // `auto` is the browser's own focus ring, whose thickness is the platform's business. One pixel
+                    // is what every platform this runs next to draws, and a ring of an unstated width is still a
+                    // ring - refusing it would leave the same page with no focus mark at all.
+                    if (Is(value, "auto")) s.OutlineWidth = 1f;
+                    else if (Px(value, out float ow)) s.OutlineWidth = ow < 0f ? 0f : ow;
+                    break;
+
+                case "outline-style":
+                    if (Is(value, "none") || Is(value, "hidden")) s.OutlineWidth = 0f;
+                    else if (!IsLineStyle(value) && !Is(value, "auto"))
+                        Diagnostics.Report(DiagnosticKind.ValueRejected, property, value);
+                    break;
+
                 case "outline-color":
+                    if (Colour(value, out RgbaColor oc)) s.OutlineColor = oc;
+                    break;
+
                 case "outline-offset":
-                    // No outline is drawn. A focus ring written as `outline: none` - which is most of them, right
-                    // before a box-shadow ring that this engine does draw - loses nothing.
-                    if (!Is(value, "none") && !Is(value, "0") && !Is(value, "0px"))
-                        Diagnostics.Report(DiagnosticKind.ValueIgnored, property, value);
+                    if (Px(value, out float oo)) s.OutlineOffset = oo;
                     break;
 
                 case "text-indent":
@@ -346,6 +371,19 @@ namespace Sideload.Css
                     if (Is(value, "none")) s.PointerEventsNone = true;
                     else if (Is(value, "auto") || Is(value, "all")) s.PointerEventsNone = false;
                     else Diagnostics.Report(DiagnosticKind.ValueRejected, "pointer-events", value);
+                    break;
+
+                case "touch-action":
+                    // `none` is the whole of it: this box handles the drag, and the scroll area above it does not
+                    // get it. Which is exactly what the declaration means on the web, and why a map that pans
+                    // already carries it - it just had nothing to say to until now.
+                    //
+                    // `pan-x` and `pan-y` split the gesture by axis and `pinch-zoom` and `manipulation` speak about
+                    // zooming; there is no pinch here and no axis-splitting in the scroll areas, so they are
+                    // reported rather than half-honoured.
+                    if (Is(value, "none")) s.TouchActionNone = true;
+                    else if (Is(value, "auto")) s.TouchActionNone = false;
+                    else Diagnostics.Report(DiagnosticKind.ValueIgnored, "touch-action", value);
                     break;
 
                 case "overflow-x": s.OverflowX = ParseOverflow(value, s.OverflowX); break;
@@ -635,11 +673,12 @@ namespace Sideload.Css
                 case "-webkit-appearance":
                 case "list-style":
                 case "list-style-type":
-                case "outline":
-                case "outline-color":
+                case "outline": s.OutlineWidth = parent.OutlineWidth; s.OutlineColor = parent.OutlineColor; return true;
+                case "outline-color": s.OutlineColor = parent.OutlineColor; return true;
                 case "text-indent":
-                case "tab-size":
                 case "cursor": return true;
+
+                case "tab-size": s.TabSize = parent.TabSize; return true;
 
                 default: return false;
             }
@@ -1102,6 +1141,61 @@ namespace Sideload.Css
                 if (ValueParser.TryColor(part, out RgbaColor c)) s.BorderColor = c;
             }
         }
+
+        /// <summary>
+        /// `outline: <width> || <style> || <color>`, in any order, as CSS has it.
+        ///
+        /// `auto` on its own is the platform's focus ring - a browser draws its own there. One pixel in the page's
+        /// own text colour is a close enough stand-in, and far closer than nothing: `:focus-visible { outline: auto }`
+        /// is exactly the rule a page relies on to show where the keyboard is.
+        /// </summary>
+        private static void ApplyOutline(ComputedStyle s, string value)
+        {
+            if (Is(value, "none") || Is(value, "0") || Is(value, "0px")) { s.OutlineWidth = 0f; return; }
+
+            if (Is(value, "auto"))
+            {
+                s.OutlineWidth = 1f;
+                s.OutlineColor = s.Color;
+                return;
+            }
+
+            bool sized = false;
+
+            foreach (string part in ValueParser.SplitTopLevel(value))
+            {
+                if (Is(part, "none") || Is(part, "hidden")) { s.OutlineWidth = 0f; return; }
+                if (IsLineStyle(part) || Is(part, "auto")) continue;
+
+                if (!sized && ValueParser.TryLength(part, Context, out Len w) && w.IsDefinite)
+                {
+                    s.OutlineWidth = Math.Max(0f, w.Resolve(0f));
+                    sized = true;
+                    continue;
+                }
+
+                if (ValueParser.TryColor(part, out RgbaColor c)) s.OutlineColor = c;
+            }
+
+            // A style-and-colour outline with no width is one pixel, which is CSS's `medium` in every engine that
+            // ships. Without this `outline: solid red` draws nothing and reads as an unsupported property.
+            if (!sized && s.OutlineWidth <= 0f) s.OutlineWidth = 1f;
+        }
+
+        /// <summary>
+        /// The compatibility values of `appearance`: the name of a native widget to look like.
+        ///
+        /// Every one of them asks for a platform control - `appearance: button` on a `&lt;button&gt;` is what a
+        /// preflight writes to put the operating system's button back after resetting it. There are no platform
+        /// controls here; a control looks like its CSS says and nothing else. So these mean the renderer's own
+        /// drawing, which is what `auto` means, and taking them in silence is accurate rather than lenient - there
+        /// is no second appearance they could have selected.
+        /// </summary>
+        private static bool IsWidgetName(string value) =>
+            Is(value, "button") || Is(value, "textfield") || Is(value, "textarea") || Is(value, "searchfield")
+            || Is(value, "checkbox") || Is(value, "radio") || Is(value, "menulist") || Is(value, "menulist-button")
+            || Is(value, "listbox") || Is(value, "meter") || Is(value, "progress-bar")
+            || Is(value, "push-button") || Is(value, "square-button") || Is(value, "slider-horizontal");
 
         /// <summary>The CSS border line styles. All of them draw solid here; none of them is a colour.</summary>
         private static bool IsLineStyle(string part) =>

@@ -169,9 +169,26 @@ namespace Sideload.Paint
                          borderColor: new Color(0f, 0f, 0f, 0f));
             }
 
+            // The ring travels in the SAME quad as the fill, and a quad whose four vertex colours are fully
+            // transparent never reaches the fragment shader - so a rounded box with a border and no background drew
+            // nothing at all, border included. Measured in the game: the same box with a background of alpha 1/255
+            // draws its ring perfectly, alpha 0 draws nothing.
+            //
+            // So the fill gets that one step of alpha, in the border's own colour. It is 0.4 % of a colour that is
+            // already on screen around it, which is below anything a display can show, and it is the difference
+            // between an outlined chip and an empty rectangle.
+            Color fillTL = visual.FillTL, fillTR = visual.FillTR, fillBR = visual.FillBR, fillBL = visual.FillBL;
+
+            if (visual.BorderWidth > 0f && visual.BorderColor.a > 0f
+                && fillTL.a <= 0f && fillTR.a <= 0f && fillBR.a <= 0f && fillBL.a <= 0f)
+            {
+                var ghost = new Color(visual.BorderColor.r, visual.BorderColor.g, visual.BorderColor.b, 1f / 255f);
+                fillTL = fillTR = fillBR = fillBL = ghost;
+            }
+
             EmitQuad(vertices, colors, uv0, uv1, uv2, uv3, normals, tangents, triangles, ref v, ref t,
                      centre, half, half, radii,
-                     visual.FillTL, visual.FillTR, visual.FillBR, visual.FillBL,
+                     fillTL, fillTR, fillBR, fillBL,
                      visual.BorderWidth, blur: 0f, borderColor: visual.BorderColor);
 
             // Single-side borders, drawn over the fill. Adjacent sides overlap in the corner by a fraction of a pixel;

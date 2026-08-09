@@ -55,6 +55,17 @@ namespace Sideload.Paint
         private static Action<AngleSharp.Dom.IElement, string> _inputChanged;
         private static Action<AngleSharp.Dom.IElement, string> _inputSubmitted;
 
+        /// <summary>
+        /// True while the engine writes a field's text itself, so the change is not reported back as typing.
+        ///
+        /// `el.value = x` raises no `input` event on the web - the event means a person changed the field - and a
+        /// page that keeps its state in JavaScript writes the value back on every render. TMP_InputField raises
+        /// onValueChanged for a programmatic assignment just as it does for a keystroke, so without this the write
+        /// fed straight back into the page as if the player had typed it: a controlled field could hold its own
+        /// handler in a loop, and a field that reformatted what was typed fought the caret on every character.
+        /// </summary>
+        private static bool _writingValue;
+
         private static Vector2 _viewSize;
         private static RectTransform _viewRoot;
         private static Bundle.AppBundle _bundle;   // resolves <img src="..."> against the app's own files
@@ -181,6 +192,8 @@ namespace Sideload.Paint
 
             if (Paints(node.Style))
                 BoxRenderer.Paint(rt, ToVisual(node.Style, node.Width, node.Height), node.Width, node.Height);
+
+            PaintOutline(rt, node.Style, node.Width, node.Height);
 
 #if DEBUG
             if (Devtools.LayoutOverlay.Outlines) DrawOutline(rt, node);
@@ -476,6 +489,7 @@ namespace Sideload.Paint
                     : ToVisual(style, box.Node.Width, box.Node.Height);
 
                 BoxRenderer.Paint(box.Rect, visual, box.Node.Width, box.Node.Height);
+                PaintOutline(box.Rect, style, box.Node.Width, box.Node.Height);
             }
             finally { BoxRenderer.ActiveClip = outer; }
 
@@ -793,8 +807,13 @@ namespace Sideload.Paint
                 string wanted = element.GetAttribute("value") ?? "";
                 if (!string.Equals(field.text, wanted, StringComparison.Ordinal))
                 {
-                    field.text = wanted;
-                    PutCaretAtEnd(field);
+                    _writingValue = true;
+                    try
+                    {
+                        field.text = wanted;
+                        PutCaretAtEnd(field);
+                    }
+                    finally { _writingValue = false; }
                 }
 
                 field.interactable = !element.HasAttribute("disabled");
@@ -974,6 +993,8 @@ namespace Sideload.Paint
             // rebuild restore the text: the DOM, not the Unity component, is the source of truth for what was typed.
             field.onValueChanged.AddListener((UnityEngine.Events.UnityAction<string>)(v =>
             {
+                if (_writingValue) return;
+
                 try { changed?.Invoke(element, v); }
                 catch (Exception e) { Core.Log?.Warning("input handler failed: " + e.Message); }
             }));
@@ -1346,6 +1367,77 @@ namespace Sideload.Paint
         }
 
         /// <summary>Nothing to draw when the box is fully transparent - skip the mesh instead of adding an invisible one.</summary>
+        /// <summary>The child a box's outline ring is drawn into. Named so a repaint finds the one it made last
+        /// time instead of stacking a second ring on top of it.</summary>
+        private const string OutlineName = "outline";
+
+        /// <summary>
+        /// The `outline` ring: a border drawn OUTSIDE the box, in its own child, taking no room.
+        ///
+        /// Its own child because it is bigger than the box it belongs to, and a box's mesh is built to the box's
+        /// own rectangle. First child, so it sits above the fill and below everything the element contains - which
+        /// is where a ring round the outside belongs, and it raycasts against nothing either way.
+        ///
+        /// A square box gets a square ring. Following the border radius is right when there IS one, and adding the
+        /// offset to a zero radius would round the corners of a box whose corners are not round.
+        /// </summary>
+        private static void PaintOutline(RectTransform rt, ComputedStyle s, float width, float height)
+        {
+            if (rt == null) return;
+
+            RectTransform ring = null;
+            for (int i = 0; i < rt.childCount; i++)
+            {
+                Transform child = rt.GetChild(i);
+                if (child != null && child.gameObject.name == OutlineName) { ring = child.TryCast<RectTransform>(); break; }
+            }
+
+            if (s == null || s.OutlineWidth <= 0f || s.OutlineColor.IsTransparent)
+            {
+                // A style change can take the ring away - :focus-visible ends when the caret moves on - and a ring
+                // nobody removes stays on screen for the rest of the page's life.
+                if (ring != null) UnityEngine.Object.Destroy(ring.gameObject);
+                return;
+            }
+
+            float grow = s.OutlineOffset + s.OutlineWidth;
+
+            if (ring == null)
+            {
+                ring = UiFactory.Rect(OutlineName, rt);
+                ring.SetAsFirstSibling();
+            }
+
+            UiFactory.PlaceFromTopLeft(ring, -grow, -grow, width + 2f * grow, height + 2f * grow);
+
+            var clear = new Color(0f, 0f, 0f, 0f);
+            var visual = new BoxVisual
+            {
+                FillTL = clear, FillTR = clear, FillBR = clear, FillBL = clear,
+                ShadowColor = clear,
+                BorderColor = ToColor(s.OutlineColor),
+                RadiusTL = Ring(s.BorderRadius.TopLeft, grow),
+                RadiusTR = Ring(s.BorderRadius.TopRight, grow),
+                RadiusBR = Ring(s.BorderRadius.BottomRight, grow),
+                RadiusBL = Ring(s.BorderRadius.BottomLeft, grow),
+            };
+
+            // Four strips when the corners are square, the shader's ring when they are not - the same choice
+            // ToVisual makes, and for the same reason: over a transparent fill there is nothing for the ring to
+            // modulate, so a squared one would draw nothing at all.
+            bool squared = visual.RadiusTL <= 0f && visual.RadiusTR <= 0f
+                        && visual.RadiusBR <= 0f && visual.RadiusBL <= 0f;
+
+            if (squared)
+                visual.EdgeTop = visual.EdgeRight = visual.EdgeBottom = visual.EdgeLeft = s.OutlineWidth;
+            else
+                visual.BorderWidth = s.OutlineWidth;
+
+            BoxRenderer.Paint(ring, visual, ring.rect.width, ring.rect.height);
+        }
+
+        private static float Ring(float radius, float grow) => radius > 0f ? Math.Max(0f, radius + grow) : 0f;
+
         private static bool Paints(ComputedStyle s) =>
             !s.BackgroundColor.IsTransparent
             || s.HasGradient
@@ -1384,16 +1476,15 @@ namespace Sideload.Paint
             bool uniform = top == right && right == bottom && bottom == left;
 
             /*
-              A UNIFORM BORDER OVER A TRANSPARENT FILL DOES NOT DRAW AS A RING, so it is drawn as four strips instead.
+              A SQUARE UNIFORM BORDER OVER A TRANSPARENT FILL IS DRAWN AS FOUR STRIPS, which give an exact hairline
+              on each side rather than an antialiased ring rounded to nothing.
 
-              The ring lives in the same quad as the fill and is modulated by that quad's vertex colour, so with no
-              background there is nothing for it to modulate and the border disappears entirely. Every border in a
-              real page confirmed the rule: single-sided ones drew (they were already strips), bordered inputs and
-              buttons drew (they have a fill), and outlined chips with no background drew nothing at all - which is
-              how an app shipped with `border: 1px solid` on its state chips and no outline anywhere on screen.
-
-              Only when the corners are square. Four strips cannot follow a radius, and a rounded box with a
-              transparent fill is better served by the ring being subtly wrong than by its corners being cut off.
+              The reason the distinction was found is worth keeping: a quad whose four vertex colours are fully
+              transparent never reaches the fragment shader, and the ring travels in that same quad - so an outlined
+              chip with no background drew nothing at all, which is how an app shipped with `border: 1px solid` on
+              its state chips and no outline anywhere on screen. That is now handled where it belongs, in
+              BoxRenderer, by giving such a quad one step of alpha; a rounded transparent box therefore draws its
+              ring, corners and all.
             */
             bool fillCarriesTheRing = !s.BackgroundColor.IsTransparent || s.HasGradient;
             bool squared = s.BorderRadius.TopLeft <= 0f && s.BorderRadius.TopRight <= 0f

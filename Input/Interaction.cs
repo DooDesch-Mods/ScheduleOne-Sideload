@@ -28,7 +28,9 @@ namespace Sideload.Input
         /// <summary>Every other pointer event, by name: mousedown, mouseup, mouseover, mouseout, dblclick,
         /// contextmenu. One callback rather than six, because the view does the same thing with all of them.</summary>
         private readonly Action<IElement, string, PointerSpot, PointerRay, int, int> _onPointer;
-        private readonly Action<IElement, string, PointerSpot, Vector2> _onDragged;
+        /// <summary>A drag phase, reported to the page. True when the page called <c>preventDefault()</c> and the
+        /// gesture must not also scroll whatever the element sits in.</summary>
+        private readonly Func<IElement, string, PointerSpot, Vector2, bool> _onDragged;
         private readonly Func<IElement, float, bool> _onWheel;
         private readonly Action<IElement, bool> _onHover;
 
@@ -47,9 +49,24 @@ namespace Sideload.Input
         /// </summary>
         private bool _dragged;
 
+        /// <summary>True once the page has claimed the gesture in progress with <c>preventDefault()</c>. Latches for
+        /// the rest of the gesture: a pan that had to fight the scroll area for every frame would stutter.</summary>
+        private bool _dragOwned;
+
+        /// <summary>The element the pointer is over and the rectangle it was measured against, for the frame poll
+        /// that raises `mousemove`. Null whenever the pointer is over nothing wired.</summary>
+        private IElement _hovered;
+        private RectTransform _hoveredRect;
+
+        /// <summary>The camera the last pointer event came through, so a polled position can be converted the same
+        /// way an event's would be. An overlay canvas reports none, which is a valid answer and has to be kept.</summary>
+        private Camera _lastCamera;
+        private bool _sawPointer;
+        private Vector3 _lastMouse;
+
         internal Interaction(Action<IElement> onStateChanged,
                              Action<IElement, PointerSpot, PointerRay> onClicked,
-                             Action<IElement, string, PointerSpot, Vector2> onDragged = null,
+                             Func<IElement, string, PointerSpot, Vector2, bool> onDragged = null,
                              Func<IElement, float, bool> onWheel = null,
                              Action<IElement, bool> onHover = null,
                              RectTransform pageRoot = null,
@@ -138,11 +155,12 @@ namespace Sideload.Input
         /// </summary>
         /// <summary>
         /// <paramref name="draggable"/> and <paramref name="wheel"/> say the page's script listens for those events.
-        /// Both are opt-in per element because both take the gesture AWAY from the scroll area the element sits in:
-        /// a list row that swallowed the drag could no longer be scrolled past.
+        /// Listening is passive: the gesture still reaches the scroll area the element sits in, and the page takes it
+        /// by claiming it - <c>preventDefault()</c> on the event, or <paramref name="ownsGesture"/> for a box whose
+        /// stylesheet said `touch-action: none` before anything was pressed.
         /// </summary>
         internal void Attach(RectTransform rect, IElement element, bool disabled, bool ownGameObject = false,
-                             bool draggable = false, bool wheel = false)
+                             bool draggable = false, bool wheel = false, bool ownsGesture = false)
         {
             if (rect == null || element == null) return;
 
@@ -186,6 +204,8 @@ namespace Sideload.Input
             AddWithData(trigger, EventTriggerType.PointerEnter, data =>
             {
                 Set(element, StateFlags.Hover, true);
+                Entered(element, measuredRect, data);
+
                 // The page hears about it too. :hover alone can only repaint, so anything that has to APPEAR on
                 // hover - a tooltip above all - was not buildable without this.
                 _onHover?.Invoke(element, true);
@@ -199,6 +219,7 @@ namespace Sideload.Input
                 // Leaving the element also ends any press that started on it - otherwise :active would stick.
                 Set(element, StateFlags.Hover, false);
                 Set(element, StateFlags.Active, false);
+                Left(element);
                 _onHover?.Invoke(element, false);
                 Pointer(element, "mouseout", measuredRect, data);
             });
@@ -223,9 +244,10 @@ namespace Sideload.Input
             // and the element's is the one whose size the page reasons about.
             AddWithData(trigger, EventTriggerType.PointerClick, data =>
             {
-                // A pan that ends on the element it started on is still a click as far as uGUI is concerned. The page
-                // asked to handle the drag itself, so it gets the drag and not a click on top of it.
-                if (draggable && _dragged) return;
+                // A pan that ends on the element it started on is still a click as far as uGUI is concerned. A page
+                // that took the gesture gets the drag and not a click on top of it; one that let the drag scroll the
+                // list underneath still gets its click, exactly as an element with no drag listener does.
+                if (_dragged && _dragOwned) return;
 
                 // The right button raises `contextmenu`, not `click` - which is what a browser does, and what a page
                 // that wants its own menu on right-click has to be able to tell apart. Escape and right-click also
@@ -243,10 +265,10 @@ namespace Sideload.Input
                 if (IsSecondClick(element)) Pointer(element, "dblclick", measuredRect, data, detail: 2);
             });
 
-            if (draggable) AttachDragging(trigger, element, measuredRect);
-
             ScrollRect around = PassScrollingThrough(trigger, handlerHost.transform,
                                                      forwardDrag: !draggable, forwardWheel: !wheel);
+
+            if (draggable) AttachDragging(trigger, element, measuredRect, around, ownsGesture);
 
             // A wheel LISTENER reports the notch; it does not swallow it. Browsers made these listeners passive by
             // default for exactly this reason, and the page still gets its say through `preventDefault()`.
@@ -267,23 +289,41 @@ namespace Sideload.Input
         }
 
         /// <summary>
-        /// Report the drag to the page instead of handing it to a scroll area.
+        /// Report the drag to the page, and hand it on to the scroll area unless the page claims it.
         ///
-        /// The movement is measured against the PAGE ROOT rather than the element itself, and that is the whole
-        /// difficulty here: an element that pans is an element that moves under the pointer, so measuring against it
-        /// would fold this frame's movement back into the next frame's reading and the map would accelerate away.
-        /// The root stands still, carries the canvas scale and the portrait rotation, and so gives a delta already in
-        /// CSS pixels the right way up.
+        /// The claim is <c>preventDefault()</c>, on any phase of the gesture, and it latches until the gesture ends.
+        /// A listener that only watches is passive, which is what a browser does and what this engine already does
+        /// with the wheel: registering a handler is not the same as taking the gesture. It used to be - wiring decided
+        /// exclusivity at BUILD time - and the cost of that was not a nicety. React installs `dragstart`, `drag` and
+        /// `dragend` on its root container as part of its event delegation, so mounting a React app made the root the
+        /// owner of every drag on the page and nothing could be scrolled by hand any more.
+        ///
+        /// The movement is measured against the PAGE ROOT rather than the element itself, and that is the delicate
+        /// part: an element that pans is an element that moves under the pointer, so measuring against it would fold
+        /// this frame's movement back into the next frame's reading and the map would accelerate away. The root stands
+        /// still, carries the canvas scale and the portrait rotation, and so gives a delta already in CSS pixels the
+        /// right way up.
         /// </summary>
-        private void AttachDragging(EventTrigger trigger, IElement element, RectTransform measured)
+        private void AttachDragging(EventTrigger trigger, IElement element, RectTransform measured, ScrollRect around,
+                                    bool owns)
         {
             AddWithData(trigger, EventTriggerType.BeginDrag, data =>
             {
                 _dragged = true;
+                _dragOwned = owns;
                 if (!RootPoint(data, out Vector2 start)) return;
 
                 _dragFrom = start;
-                _onDragged?.Invoke(element, "dragstart", SpotIn(measured, data), Vector2.zero);
+                Claimed(element, "dragstart", measured, data, Vector2.zero);
+                if (_dragOwned || around == null) return;
+
+                var pointer = data.TryCast<PointerEventData>();
+                if (pointer == null) return;
+
+                // Taking hold of the content cancels whatever the wheel was still aiming at, or the list snaps back
+                // to it the moment the drag ends.
+                SmoothScroll.Release(around);
+                around.OnBeginDrag(pointer);
             });
 
             AddWithData(trigger, EventTriggerType.Drag, data =>
@@ -293,11 +333,27 @@ namespace Sideload.Input
 
                 Vector2 delta = now - _dragFrom;
                 _dragFrom = now;
-                _onDragged?.Invoke(element, "drag", SpotIn(measured, data), delta);
+                Claimed(element, "drag", measured, data, delta);
+                if (_dragOwned || around == null) return;
+
+                var pointer = data.TryCast<PointerEventData>();
+                if (pointer != null) around.OnDrag(pointer);
             });
 
-            AddWithData(trigger, EventTriggerType.EndDrag,
-                        data => _onDragged?.Invoke(element, "dragend", SpotIn(measured, data), Vector2.zero));
+            AddWithData(trigger, EventTriggerType.EndDrag, data =>
+            {
+                Claimed(element, "dragend", measured, data, Vector2.zero);
+                if (_dragOwned || around == null) return;
+
+                var pointer = data.TryCast<PointerEventData>();
+                if (pointer != null) around.OnEndDrag(pointer);
+            });
+        }
+
+        /// <summary>Tell the page about one drag phase and remember whether it claimed the gesture.</summary>
+        private void Claimed(IElement element, string type, RectTransform measured, BaseEventData data, Vector2 delta)
+        {
+            if (_onDragged != null && _onDragged(element, type, SpotIn(measured, data), delta)) _dragOwned = true;
         }
 
         /// <summary>
@@ -430,7 +486,71 @@ namespace Sideload.Input
 
         private void Pointer(IElement element, string type, RectTransform measured, BaseEventData data, int detail = 1)
         {
+            Remember(data);
             _onPointer?.Invoke(element, type, SpotIn(measured, data), Ray(data), ButtonOf(data), detail);
+        }
+
+        // ------------------------------------------------------------------ mousemove --
+
+        /// <summary>
+        /// Whether the page listens for `mousemove` anywhere. Set by the wiring pass, once per build.
+        ///
+        /// It is a switch rather than an always-on poll because that poll is the whole cost of the feature. uGUI has
+        /// no pointer-move event to hang this on - <see cref="EventTriggerType"/> has PointerEnter, PointerExit and
+        /// Drag and nothing between them - so the position has to be read per frame and compared. A page that never
+        /// asks pays nothing; one that asks pays one vector comparison a frame.
+        /// </summary>
+        internal bool WantsMove { get; set; }
+
+        /// <summary>
+        /// Raise `mousemove` on whatever the pointer is over, when it has actually moved.
+        ///
+        /// Only the innermost WIRED element is known here; the view re-targets from there to the deepest painted box
+        /// under the pointer, exactly as it does for a click. So a page that listens on its root still learns which
+        /// row the pointer is over without every box needing a hit target of its own.
+        /// </summary>
+        internal void TickMove()
+        {
+            if (!WantsMove || _hovered == null || !_sawPointer) return;
+
+            Vector3 now = UnityEngine.Input.mousePosition;
+            if ((now - _lastMouse).sqrMagnitude < 0.01f) return;
+            _lastMouse = now;
+
+            var ray = new PointerRay(now, _lastCamera);
+            _onPointer?.Invoke(_hovered, "mousemove", SpotIn(_hoveredRect, ray), ray, 0, 0);
+        }
+
+        /// <summary>The pointer entered a wired element. Innermost wins: uGUI raises PointerEnter on the child after
+        /// the parent, so the last one in is the one the pointer is really over.</summary>
+        private void Entered(IElement element, RectTransform measured, BaseEventData data)
+        {
+            Remember(data);
+            _hovered = element;
+            _hoveredRect = measured;
+        }
+
+        /// <summary>The pointer left a wired element. Only clears when it is still the one being tracked - leaving a
+        /// parent after entering its child must not forget the child.</summary>
+        private void Left(IElement element)
+        {
+            if (!ReferenceEquals(_hovered, element)) return;
+
+            _hovered = null;
+            _hoveredRect = null;
+        }
+
+        /// <summary>Keep the camera an event arrived through, so a position read outside an event can be converted the
+        /// same way. Null is a valid camera here - a Screen Space Overlay canvas reports none - which is why the fact
+        /// that an event was seen at all is tracked separately.</summary>
+        private void Remember(BaseEventData data)
+        {
+            var pointer = data?.TryCast<PointerEventData>();
+            if (pointer == null) return;
+
+            _lastCamera = pointer.pressEventCamera;
+            _lastMouse = pointer.position;
+            _sawPointer = true;
         }
 
         /// <summary>0 left, 1 middle, 2 right - the numbering the DOM uses, which is not Unity's enum order.</summary>
