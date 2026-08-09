@@ -1,0 +1,20 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>showcase</title>
+
+  <!-- Ask for the web's box model instead of the engine's older one: an undeclared box is a BLOCK and stacks
+       downwards, `display:flex` is a ROW. Without this line Tailwind's `flex` produces a column and every row on
+       the page comes out stacked. Anything built by a web toolchain wants this meta tag. -->
+  <meta name="sideload" content="web-defaults">
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- Vite reads THIS file and finds the entry through the script tag. What Sideload receives is the fragment the
+       plugin emits from it - the body's contents, app.css, app.js. Deleting the tag to make this look like the
+       output leaves Vite with nothing to build. -->
+  <script type="module" src="./src/main.tsx"></script>
+</body>
+</html>

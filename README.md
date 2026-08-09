@@ -90,13 +90,22 @@ DevTools, which re-reads the bundle from disk.
 
 ## Build an app
 
-Fastest way in, if you have Node:
+Start from the reference app if you want to see one that works before you write one:
+**[`examples/showcase`](examples/showcase)** is React 19, Tailwind v4, Vite and TypeScript in a folder you can
+copy, with the three lines that are not the web called out in its README and a build that fails on CSS this
+engine cannot use.
+
+Fastest way to an empty one, if you have Node:
 
 ```
 npx @doodesch/create-sideload-app my-app --template preact
 ```
 
-That writes the web bundle, the C# mod that registers it, a Vite build that puts the result straight into your
+**Not on npm yet** - that command 404s today. The scaffolder and the Vite plugin live in the DooDesch workspace
+(`Workspace/tools/create-sideload-app`, `Workspace/tools/sideload-vite`); run the scaffolder from a checkout of
+it, or copy `examples/showcase` and edit.
+
+It writes the web bundle, the C# mod that registers it, a Vite build that puts the result straight into your
 `Mods/` folder, and TypeScript types generated from this engine's own source. `preact` is the default because
 it loads in 37 ms against react-dom's 113 ms, measured against the script host - a framework is parsed on every
 page build here, so its size is a load-time cost rather than a download cost. `--template react` and

@@ -1,0 +1,41 @@
+/* Tailwind v4. One import, no config file, no PostCSS - `@tailwindcss/vite` does the scan.
+   The engine reads @layer, @theme, @property, oklch() and calc(), so this arrives as written. */
+@import "tailwindcss";
+
+/* The game's own palette, handed to Tailwind as colours. `bg-panel` and `text-muted` below are these. */
+/* Not `--color-base`: Tailwind builds a `text-<name>` utility for every colour, and `text-base` is already the
+   font-size utility. The colour would win and every `text-base` heading on the page would come out near-black. */
+@theme {
+  --color-deep: #0b0c10;
+  --color-canvas: #101218;
+  --color-panel: #161922;
+  --color-raised: #1d212c;
+  --color-sunken: #0d0f15;
+  --color-hairline: rgb(255 255 255 / 8%);
+  --color-ink: #ecedf1;
+  --color-muted: #8a8f9e;
+  --color-accent: #5e6ad2;
+  --color-accent-soft: #20223a;
+  --color-good: #4f9d69;
+  --color-warn: #c9912e;
+  --color-bad: #c84a54;
+
+  --font-ui: game-ui;
+}
+
+/* `game-ui` is the game's own typeface, resolved by the engine. There is no @font-face and no download; the name
+   is the whole API. Any other family name falls back to it. */
+html,
+body {
+  height: 100%;
+  font-family: var(--font-ui);
+  background: var(--color-canvas);
+  color: var(--color-ink);
+}
+
+/* The mount point needs the height too, or `h-full` inside it resolves against `auto` and the app grows past the
+   screen - which then scrolls as one long document instead of keeping the header in place. Same in a browser;
+   this is the line every React app forgets once. */
+#root {
+  height: 100%;
+}

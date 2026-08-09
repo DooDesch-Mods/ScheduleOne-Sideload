@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+
+    // DOM is here because @types/react needs it: every event type it declares is built on HTMLInputElement and
+    // friends, and without the browser library a controlled input does not type-check at all.
+    //
+    // It costs the page API's guard rails. `document` is now typed as a browser's, so a call the engine does not
+    // implement - insertAdjacentHTML, closest, matches - compiles and then does nothing at runtime. React touches
+    // the DOM for you, so the exposure is small, but it is real. A non-React app should drop DOM and keep them.
+    "lib": ["ES2023", "DOM"],
+
+    "strict": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+
+    // The page API, generated from the engine's own source. It declares `s1`, and nothing else knows the bridge
+    // exists - so it stays even with DOM in lib above.
+    "types": ["@doodesch/sideload-vite/types"],
+
+    "jsx": "react-jsx"
+  },
+  "include": ["src"]
+}

@@ -1,0 +1,54 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The mod half of the showcase: one class that registers the app and answers its calls.
+
+    It does NOT reference Sideload. `Sideload.Api/Sideload.cs` is a source shim - one file, pure reflection, every
+    call a no-op when Sideload is not installed - so this DLL loads and does nothing rather than throwing a
+    TypeLoadException on a machine without the framework. That is the whole reason the shim is source rather than a
+    reference, and why a host mod never has to check whether Sideload is there.
+
+    Two paths have to be right for this to build, and both default to a checkout of the Sideload repo beside this
+    folder. Point them somewhere else with -p:MelonLoaderPath=... if your layout differs.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>Showcase</RootNamespace>
+    <AssemblyName>Showcase</AssemblyName>
+    <Version Condition="'$(Version)' == ''">1.0.0</Version>
+
+    <!-- MelonLoader.dll and its friends. In this repo they come from the shared Workspace checkout; in yours they
+         are wherever MelonLoader put them, usually <game>/MelonLoader/net6. -->
+    <MelonLoaderPath Condition="'$(MelonLoaderPath)' == ''">$(MSBuildThisFileDirectory)../../../../Workspace/lib/il2cpp/melonloader</MelonLoaderPath>
+
+    <!-- The shim, taken from the Sideload repo this example lives in. Copy the file into your own project instead
+         and point this at your copy - it has no dependencies and is meant to be vendored. -->
+    <SideloadApiPath Condition="'$(SideloadApiPath)' == ''">$(MSBuildThisFileDirectory)../../../Sideload.Api/Sideload.cs</SideloadApiPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="MelonLoader">
+      <HintPath>$(MelonLoaderPath)/MelonLoader.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="$(SideloadApiPath)" Link="Sideload.Api.cs" />
+  </ItemGroup>
+
+  <!-- The built web bundle, embedded. This LogicalName prefix IS the bundlePrefix handed to Apps.Register, and the
+       two have to agree exactly - a typo there is an app that registers and then shows an empty panel.
+
+       `dist` is what `npm run build` writes, so the bundle in the DLL is always the one that was measured. -->
+  <ItemGroup>
+    <EmbeddedResource Include="$(MSBuildThisFileDirectory)../dist/*.*">
+      <LogicalName>Showcase.Assets.showcase.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+</Project>
