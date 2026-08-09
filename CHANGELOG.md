@@ -20,6 +20,18 @@ All notable changes to Sideload are documented here. This project adheres to
 - An invalid `flex` value is named in the log. It used to vanish in silence, leaving the box at its default with
   nothing pointing at the line that caused it.
 
+## [1.24.0] - 2026-08-09
+
+### Added
+
+- `align-content` moves the wrapped lines: `flex-end`, `center`, `space-between`, `space-around`, `space-evenly`.
+- `object-fit: fill` stretches the picture to its box, and `scale-down` leaves one alone that is already smaller.
+
+### Changed
+
+- `align-content: flex-start` and `object-fit: contain` are taken in silence. Both are what the engine already
+  did, and every use of them in the shipped apps was reported as unimplemented.
+
 ## [1.23.0] - 2026-08-09
 
 ### Changed

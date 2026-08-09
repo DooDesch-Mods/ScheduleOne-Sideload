@@ -117,6 +117,55 @@ namespace Sideload.Layout
         }
 
         /// <summary>
+        /// Move the wrapped lines to where `align-content` wants them.
+        ///
+        /// Only the OFFSET values, and they are all this needs to be: the lines already have the size their
+        /// content asked for, so `flex-end`, `center` and the three `space-*` values are arithmetic on where each
+        /// one starts. `stretch` is the one that is not - it would grow every line and so need every line's items
+        /// laid out again - and it is reported rather than approximated.
+        ///
+        /// Nothing happens without a definite cross size or with a single line: there is no leftover room to
+        /// distribute, which is also why an auto-height container is unaffected by any of this.
+        /// </summary>
+        private static float AlignLines(List<List<Item>> lines, List<float> starts, List<float> sizes,
+                                        AlignContentKind align, bool row,
+                                        float crossAvail, float used, float gap, float widest)
+        {
+            if (align == AlignContentKind.FlexStart || lines.Count < 2 || float.IsNaN(crossAvail)) return widest;
+
+            float free = crossAvail - used;
+            if (free <= 0.01f) return widest;
+
+            float lead = 0f, between = 0f;
+            switch (align)
+            {
+                case AlignContentKind.FlexEnd: lead = free; break;
+                case AlignContentKind.Center: lead = free / 2f; break;
+                case AlignContentKind.SpaceBetween: between = free / (lines.Count - 1); break;
+                case AlignContentKind.SpaceAround: between = free / lines.Count; lead = between / 2f; break;
+                case AlignContentKind.SpaceEvenly: between = free / (lines.Count + 1); lead = between; break;
+                default: return widest;
+            }
+
+            float moved = widest;
+            for (int i = 0; i < lines.Count; i++)
+            {
+                float shift = lead + between * i;
+                if (Math.Abs(shift) < 0.01f) continue;
+
+                foreach (Item item in lines[i])
+                {
+                    if (row) item.Node.Y += shift;
+                    else item.Node.X += shift;
+
+                    moved = Math.Max(moved, row ? item.Node.Y + item.Node.Height : item.Node.X + item.Node.Width);
+                }
+            }
+
+            return moved;
+        }
+
+        /// <summary>
         /// Place every <c>position: fixed</c> box against the VIEWPORT, wherever in the tree it was written.
         ///
         /// This runs after the page is otherwise laid out, and separately from the main pass, for one reason: a
@@ -309,8 +358,15 @@ namespace Sideload.Layout
             float crossCursor = 0f;
             float widest = 0f;
 
+            // Where each line ended up, so `align-content` can move them once every line's size is known. Sizing
+            // and placing happen in the same walk, and a line's size is not final until its items have been
+            // stretched - so the only honest moment to distribute the leftover room is after all of them.
+            var lineStarts = new List<float>(lines.Count);
+            var lineSizes = new List<float>(lines.Count);
+
             foreach (List<Item> line in lines)
             {
+                lineStarts.Add(crossCursor);
                 ResolveFlexibleLengths(line, mainAvail, mainGap, measure);
 
                 // Give every item its main size, then read back the cross size it needs.
@@ -386,8 +442,12 @@ namespace Sideload.Layout
                     lineExtent = Math.Max(lineExtent, (row ? item.Node.Y + item.Node.Height : item.Node.X + item.Node.Width));
 
                 widest = Math.Max(widest, lineExtent);
+                lineSizes.Add(lineCross);
                 crossCursor += lineCross + crossGap;
             }
+
+            widest = AlignLines(lines, lineStarts, lineSizes, s.AlignContent, row,
+                                crossAvail, crossCursor - crossGap, crossGap, widest);
 
             float usedCross = lines.Count == 0 ? 0f : Math.Max(widest, crossCursor - crossGap);
 

@@ -961,14 +961,32 @@ namespace Sideload.Paint
 
             var image = rect.gameObject.AddComponent<Image>();
             image.sprite = sprite;
-            image.preserveAspect = true;
             image.raycastTarget = false;
+
+            // `contain` keeps the aspect ratio inside the box, `fill` stretches to it, and `scale-down` is the
+            // smaller of contain and the picture's own size - which never overflows either, so none of the three
+            // needs the box to crop. `cover` and `none` do, and are refused in the cascade rather than here.
+            image.preserveAspect = s.ObjectFit != ObjectFitKind.Fill
+                                   && !(s.ObjectFit == ObjectFitKind.ScaleDown && FitsUnscaled(sprite, node, s));
 
             // `color` tints the picture, which is how a white glyph becomes any colour the stylesheet asks for -
             // the cheapest way to ship one image and use it on both a light and a dark bar.
             image.color = new Color(s.Color.R, s.Color.G, s.Color.B, s.Color.A * s.Opacity);
 
             ClipTo(image, BoxRenderer.ActiveClip);
+        }
+
+        /// <summary>Whether the picture is already smaller than the box it was given - the case where
+        /// `scale-down` means "leave it alone" rather than "shrink it to fit".</summary>
+        private static bool FitsUnscaled(Sprite sprite, LayoutNode node, ComputedStyle s)
+        {
+            if (sprite == null) return false;
+
+            Rect natural = sprite.rect;
+            float contentW = node.Width - s.Padding.Left.Resolve(node.Width) - s.Padding.Right.Resolve(node.Width);
+            float contentH = node.Height - s.Padding.Top.Resolve(node.Width) - s.Padding.Bottom.Resolve(node.Width);
+
+            return natural.width <= contentW && natural.height <= contentH;
         }
 
         private static Il2CppTMPro.TextMeshProUGUI PaintText(LayoutNode node, RectTransform box)

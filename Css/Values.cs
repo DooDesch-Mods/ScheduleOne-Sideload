@@ -173,6 +173,15 @@ namespace Sideload.Css
     /// typesetting and mean nothing in a font this game ships.</summary>
     internal enum TextTransformKind { None, Uppercase, Lowercase, Capitalize }
 
+    /// <summary>How an image fills the box it was given. `Cover` and `None` are absent because both crop, and
+    /// cropping needs a clip rectangle of the image's own rather than the ancestor's - see StyleApplier.</summary>
+    internal enum ObjectFitKind { Contain, Fill, ScaleDown }
+
+    /// <summary>Where the wrapped LINES of a flex container sit, as opposed to the items within one line.
+    /// `Stretch` is CSS's default and this engine's one divergence: growing a line means laying its items out
+    /// again, so lines here keep the size their content asked for and pack from the start.</summary>
+    internal enum AlignContentKind { FlexStart, FlexEnd, Center, SpaceBetween, SpaceAround, SpaceEvenly, Stretch }
+
     /// <summary>The easing curves worth having. `linear` for a value that must read as constant, the ease family for
     /// anything a person looks at - a UI that starts and stops abruptly reads as broken rather than as fast.</summary>
     internal enum EasingKind { Linear, EaseIn, EaseOut, EaseInOut }
