@@ -51,6 +51,7 @@ namespace Sideload.Css
     {
         private readonly Dictionary<IElement, ComputedStyle> _before = new Dictionary<IElement, ComputedStyle>();
         private readonly Dictionary<IElement, ComputedStyle> _after = new Dictionary<IElement, ComputedStyle>();
+        private readonly Dictionary<IElement, ComputedStyle> _placeholder = new Dictionary<IElement, ComputedStyle>();
 
         /// <summary>How many generated boxes this page has, across both kinds.</summary>
         internal int Count => _before.Count + _after.Count;
@@ -68,8 +69,13 @@ namespace Sideload.Css
                 ? style : null;
         }
 
-        private Dictionary<IElement, ComputedStyle> Table(PseudoElement which) =>
-            which == PseudoElement.Before ? _before : which == PseudoElement.After ? _after : null;
+        private Dictionary<IElement, ComputedStyle> Table(PseudoElement which) => which switch
+        {
+            PseudoElement.Before => _before,
+            PseudoElement.After => _after,
+            PseudoElement.Placeholder => _placeholder,
+            _ => null,
+        };
     }
 
     /// <summary>
@@ -190,6 +196,12 @@ namespace Sideload.Css
             generated?.Set(element, PseudoElement.After,
                            Generated(element, style, PseudoElement.After, matches, context));
 
+            // `::placeholder` is not a generated box and so is not asked for `content`: the hint text is drawn by
+            // the control whether or not anybody styles it, and this only says what it looks like when they do.
+            if (generated != null && Targets(element, PseudoElement.Placeholder, matches))
+                generated.Set(element, PseudoElement.Placeholder,
+                              ComputeFor(element, style, matches, context, PseudoElement.Placeholder));
+
             foreach (IElement child in element.Children)
                 Walk(child, style, matches, context, result, generated);
         }
@@ -207,15 +219,21 @@ namespace Sideload.Css
         private static ComputedStyle Generated(IElement element, ComputedStyle style, PseudoElement which,
                                                Dictionary<IElement, List<StyleRule>> matches, StyleContext context)
         {
-            if (!matches.TryGetValue(element, out List<StyleRule> rules)) return null;
-
-            bool targeted = false;
-            foreach (StyleRule rule in rules)
-                if (rule.Pseudo == which) { targeted = true; break; }
-            if (!targeted) return null;
+            if (!Targets(element, which, matches)) return null;
 
             ComputedStyle box = ComputeFor(element, style, matches, context, which);
             return box.Content == null ? null : box;
+        }
+
+        /// <summary>Whether any rule in the sheet is about this pseudo-element of this element.</summary>
+        private static bool Targets(IElement element, PseudoElement which,
+                                    Dictionary<IElement, List<StyleRule>> matches)
+        {
+            if (!matches.TryGetValue(element, out List<StyleRule> rules)) return false;
+
+            foreach (StyleRule rule in rules)
+                if (rule.Pseudo == which) return true;
+            return false;
         }
 
         private static ComputedStyle ComputeFor(IElement element, ComputedStyle parentStyle,

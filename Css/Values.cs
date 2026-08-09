@@ -143,7 +143,13 @@ namespace Sideload.Css
     /// single glyph, a paint-time overlay - and not one of them is a box that can be built from a style and
     /// dropped into the tree, which is all this enum buys.
     /// </summary>
-    internal enum PseudoElement { None, Before, After }
+    /// <summary>
+    /// The pseudo-elements that exist here.
+    ///
+    /// `Before` and `After` are boxes CSS generates. `Placeholder` is not a box at all - it is the hint text a
+    /// form control already draws, and this is how a page gets to say what it should look like.
+    /// </summary>
+    internal enum PseudoElement { None, Before, After, Placeholder }
 
     /// <summary>
     /// Which layout algorithm a box runs on its children.

@@ -57,6 +57,13 @@ namespace Sideload.Css
             ("vmin", c => Math.Min(c.ViewportWidth, c.ViewportHeight) * 0.01f),
             ("vmax", c => Math.Max(c.ViewportWidth, c.ViewportHeight) * 0.01f),
             ("rem",  c => c.RootFontSize),
+
+            // `lh` is one line box of THIS element, and `rlh` one of the root's. The engine has no declared line
+            // height most of the time, and its own spacing is 1.2 - the same number a browser's `normal` lands on
+            // for the fonts here, so a page sizing a control at `1lh` gets the line it meant.
+            ("rlh",  c => c.RootFontSize * 1.2f),
+            ("lh",   c => c.FontSize * 1.2f),
+
             ("em",   c => c.FontSize),
             // svh/lvh/dvh differ in a browser only because mobile chrome slides in and out. Nothing here does,
             // so all three are vh and a page written for a phone browser lands correctly rather than not at all.

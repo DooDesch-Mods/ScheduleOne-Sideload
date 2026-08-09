@@ -44,7 +44,7 @@ namespace Sideload.Dom
             LayoutNode before = Generated(element, generated, PseudoElement.Before);
             LayoutNode after = Generated(element, generated, PseudoElement.After);
 
-            if (IntrinsicControlSize(element, style, out LayoutNode control)) return control;
+            if (IntrinsicControlSize(element, style, generated, out LayoutNode control)) return control;
 
             if (IsInlineOnly(element, style))
             {
@@ -134,7 +134,8 @@ namespace Sideload.Dom
         /// It exists to be measured and for nothing else, which is why it may be a row of zeroes rather than the
         /// value: the width of a text field must not change while somebody types in it.
         /// </summary>
-        private static bool IntrinsicControlSize(IElement element, ComputedStyle style, out LayoutNode node)
+        private static bool IntrinsicControlSize(IElement element, ComputedStyle style, PseudoStyles generated,
+                                                 out LayoutNode node)
         {
             node = null;
 
@@ -180,7 +181,11 @@ namespace Sideload.Dom
                 text.Append('0', columns);
             }
 
-            node = new LayoutNode(measured, text.ToString()) { Tag = element };
+            node = new LayoutNode(measured, text.ToString())
+            {
+                Tag = element,
+                PlaceholderStyle = generated?.Get(element, PseudoElement.Placeholder),
+            };
             return true;
         }
 

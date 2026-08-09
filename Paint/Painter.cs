@@ -885,10 +885,17 @@ namespace Sideload.Paint
 
             RectTransform placeholderRect = UiFactory.Rect("input-placeholder", viewport);
             UiFactory.Stretch(placeholderRect);
+            // `::placeholder` when the page styled one, the field's own type faded when it did not. Faded rather
+            // than a colour of our own: a hint has to read as the same text the player is about to replace, and
+            // 45% is where every shell in the game already puts it.
+            ComputedStyle hint = node.PlaceholderStyle ?? s;
+
             var placeholder = placeholderRect.gameObject.AddComponent<TextMeshProUGUI>();
-            TmpMeasure.Apply(placeholder, s);
+            TmpMeasure.Apply(placeholder, hint);
             placeholder.text = element.GetAttribute("placeholder") ?? "";
-            placeholder.color = new Color(s.Color.R, s.Color.G, s.Color.B, s.Color.A * 0.45f);
+            placeholder.color = node.PlaceholderStyle != null
+                ? new Color(hint.Color.R, hint.Color.G, hint.Color.B, hint.Color.A)
+                : new Color(s.Color.R, s.Color.G, s.Color.B, s.Color.A * 0.45f);
             ClipTo(placeholder, clip);
 
             // The inline suggestion, drawn behind the caret in the field's own font.

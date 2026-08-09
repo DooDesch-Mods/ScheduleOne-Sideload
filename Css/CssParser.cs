@@ -757,6 +757,13 @@ namespace Sideload.Css
             {
                 case "before": pseudo = PseudoElement.Before; break;
                 case "after": pseudo = PseudoElement.After; break;
+
+                // Both spellings: `::placeholder` is the standard and `::-webkit-input-placeholder` is what a
+                // sheet written before 2017 says. Neither generates a box - see PseudoStyles.
+                case "placeholder":
+                case "-webkit-input-placeholder":
+                case "-moz-placeholder":
+                case "-ms-input-placeholder": pseudo = PseudoElement.Placeholder; break;
                 default: return;
             }
 
