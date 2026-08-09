@@ -756,12 +756,13 @@ namespace Sideload.Layout
         /// </summary>
         private static float MaxContentWidth(LayoutNode node, float fallbackWidth, IMeasureText measure)
         {
-            FlexLayout.LayoutBox(node, float.PositiveInfinity, float.NaN, measure);
-            float width = node.Width;
+            // Size only, and cached for the pass - a track sizing algorithm asks the same cell the same question
+            // several times over, and each of those asks lays out the cell's whole subtree.
+            float width = FlexLayout.MeasureOnly(node, float.PositiveInfinity, float.NaN, measure).Width;
             if (IsUsable(width)) return width;
 
-            FlexLayout.LayoutBox(node, fallbackWidth, float.NaN, measure);
-            return IsUsable(node.Width) ? node.Width : 0f;
+            width = FlexLayout.MeasureOnly(node, fallbackWidth, float.NaN, measure).Width;
+            return IsUsable(width) ? width : 0f;
         }
 
         /// <summary>
