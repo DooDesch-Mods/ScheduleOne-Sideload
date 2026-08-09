@@ -135,8 +135,8 @@ All notable changes to Sideload are documented here. This project adheres to
 
 ### Fixed
 
-- The rotate keys turn the phone again. `Q` and `E` have never worked in any release: Sideload looked the
-  action up by a name the game does not use, and silently found nothing.
+- The rotate keys turn the phone again. Schedule I's 0.4.6f11 input rework moved `RotateLeft`/`RotateRight` into
+  the new input system, and Sideload was still reading the button code they used to have.
 
 ## [1.14.2] - 2026-08-08
 
