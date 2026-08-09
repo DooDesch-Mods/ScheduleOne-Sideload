@@ -44,6 +44,8 @@ namespace Sideload.Dom
             LayoutNode before = Generated(element, generated, PseudoElement.Before);
             LayoutNode after = Generated(element, generated, PseudoElement.After);
 
+            if (IntrinsicControlSize(element, style, out LayoutNode control)) return control;
+
             if (IsInlineOnly(element, style))
             {
                 string text = CompileInline(element, styles, style);
@@ -111,6 +113,103 @@ namespace Sideload.Dom
             return style.Content.Length == 0
                 ? new LayoutNode(style)
                 : new LayoutNode(style, Escape(style.Content));
+        }
+
+        /// <summary>
+        /// A form control's own size, which nothing else can supply.
+        ///
+        /// An <c>&lt;input&gt;</c> has no children, so its box came out as padding around nothing: eight pixels of
+        /// `py-2` above and below one pixel of content, with the placeholder drawn outside the bottom edge. Every
+        /// text field on every page looked like that, and no stylesheet could fix it - there was no content to give
+        /// a height to.
+        ///
+        /// A browser gives a control an intrinsic size instead of measuring children it does not have: one line of
+        /// its own font tall, and as wide as its `size` attribute in characters (twenty by default, which is where
+        /// the familiar width of an unstyled text field comes from). This measures exactly that, with a string of
+        /// zeroes standing in for the characters - a digit is the widest ordinary glyph in a proportional face, so
+        /// it is the same conservative choice a browser's `ch` unit makes.
+        ///
+        /// The text is never drawn. The painter reaches <see cref="Paint.Painter"/>'s form-control branch before it
+        /// looks at whether the node is a text leaf, builds a real TMP_InputField, and never walks the node again.
+        /// It exists to be measured and for nothing else, which is why it may be a row of zeroes rather than the
+        /// value: the width of a text field must not change while somebody types in it.
+        /// </summary>
+        private static bool IntrinsicControlSize(IElement element, ComputedStyle style, out LayoutNode node)
+        {
+            node = null;
+
+            ControlKind kind = ControlKinds.Of(element);
+            if (kind == ControlKind.None) return false;
+
+            // `type="hidden"` is data the page carries between renders. A browser gives it no box at all, and this
+            // engine used to give it an empty text field - visible, focusable and in the way.
+            if (kind == ControlKind.Hidden) return true;
+
+            if (kind == ControlKind.Toggle)
+            {
+                node = new LayoutNode(Squared(style));
+                node.Tag = element;
+                return true;
+            }
+
+            // A button's label is its `value`, and it is a real run of text: it decides the width, it wraps, and
+            // the painter draws it like any other. `<input type="button">` with no value is a blank button, which
+            // is also what a browser shows.
+            if (kind == ControlKind.Button)
+            {
+                node = new LayoutNode(style, Escape(element.GetAttribute("value") ?? "")) { Tag = element };
+                return true;
+            }
+
+            bool textarea = string.Equals(element.LocalName, "textarea", StringComparison.OrdinalIgnoreCase);
+
+            // Anything written between the tags of a textarea is its value, not its layout - the control draws it.
+            int columns = Number(element, textarea ? "cols" : "size", 20);
+            int rows = textarea ? Number(element, "rows", 2) : 1;
+
+            ComputedStyle measured = style.Clone();
+
+            // A single-line control never wraps, whatever the page said about text. Without this a narrow field
+            // would fold its own twenty placeholder characters onto a second line and come out twice as tall.
+            measured.WhiteSpace = rows == 1 ? WhiteSpaceKind.NoWrap : style.WhiteSpace;
+
+            var text = new StringBuilder(columns * rows + rows);
+            for (int line = 0; line < rows; line++)
+            {
+                if (line > 0) text.Append('\n');
+                text.Append('0', columns);
+            }
+
+            node = new LayoutNode(measured, text.ToString()) { Tag = element };
+            return true;
+        }
+
+        /// <summary>
+        /// A checkbox's own size: a small square, sized off the font so it grows with the text beside it.
+        ///
+        /// Browsers use 13 CSS pixels flat, from a time when nobody scaled anything. Tying it to the font instead
+        /// keeps a checkbox next to 12px help text smaller than one next to a heading, which is what an author who
+        /// never styled it expects to see. A declared width or height still wins - `w-4 h-4` is the common way to
+        /// say it, and it has to mean what it says.
+        /// </summary>
+        private static ComputedStyle Squared(ComputedStyle style)
+        {
+            ComputedStyle box = style.Clone();
+
+            float side = MathF.Round(MathF.Max(11f, style.FontSize * 0.85f));
+            if (!box.Width.IsDefinite) box.Width = Len.Px(side);
+            if (!box.Height.IsDefinite) box.Height = Len.Px(side);
+
+            // Never squeezed by a row it does not fit into: a checkbox that has given up half its width reads as a
+            // rendering fault rather than as a tight layout.
+            box.FlexShrink = 0f;
+            return box;
+        }
+
+        private static int Number(IElement element, string attribute, int fallback)
+        {
+            string raw = element.GetAttribute(attribute);
+            return int.TryParse(raw, out int value) && value > 0 ? value : fallback;
         }
 
         /// <summary>

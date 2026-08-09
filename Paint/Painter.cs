@@ -192,6 +192,12 @@ namespace Sideload.Paint
                 return;
             }
 
+            if (IsToggle(node))
+            {
+                PaintToggle(node, rt);
+                return;
+            }
+
             if (IsImage(node))
             {
                 PaintImage(node, rt);
@@ -609,14 +615,74 @@ namespace Sideload.Paint
         }
 #endif
 
+        /// <summary>A field with a caret. A checkbox is an input too and is emphatically not one of these.</summary>
         private static bool IsFormControl(LayoutNode node, out bool multiline)
         {
             multiline = false;
             if (node.Tag is not AngleSharp.Dom.IElement element) return false;
+            if (Dom.ControlKinds.Of(element) != Dom.ControlKind.Text) return false;
 
-            string tag = element.LocalName;
-            if (string.Equals(tag, "textarea", StringComparison.OrdinalIgnoreCase)) { multiline = true; return true; }
-            return string.Equals(tag, "input", StringComparison.OrdinalIgnoreCase);
+            multiline = string.Equals(element.LocalName, "textarea", StringComparison.OrdinalIgnoreCase);
+            return true;
+        }
+
+        private static bool IsToggle(LayoutNode node) =>
+            node.Tag is AngleSharp.Dom.IElement element && Dom.ControlKinds.Of(element) == Dom.ControlKind.Toggle;
+
+        /// <summary>
+        /// A checkbox or a radio: the box, and the mark inside it when it is on.
+        ///
+        /// The mark is a glyph in the page's own font rather than a sprite, because there is no sprite to ship and
+        /// a checkbox has to work at any size the CSS gives it. The colour follows the text, so a checkbox in a
+        /// muted row reads as muted without anyone styling its tick.
+        ///
+        /// A page that styled nothing still gets something to look at. There is no user-agent stylesheet here, so
+        /// an unstyled checkbox would be an invisible transparent square - present, clickable and impossible to
+        /// see, which is exactly how it looked before this existed. The fallback below is only used when the page
+        /// gave it neither a background nor a border, so any real styling wins outright.
+        /// </summary>
+        private static void PaintToggle(LayoutNode node, RectTransform rt)
+        {
+            var element = (AngleSharp.Dom.IElement)node.Tag;
+            bool on = Dom.ControlKinds.IsChecked(element);
+            bool round = string.Equals(element.GetAttribute("type"), "radio", StringComparison.OrdinalIgnoreCase);
+
+            ComputedStyle s = node.Style;
+            bool unstyled = s.BackgroundColor.IsTransparent
+                            && s.BorderWidth.Left.Resolve(0f) <= 0f && s.BorderWidth.Top.Resolve(0f) <= 0f;
+
+            if (unstyled)
+            {
+                ComputedStyle chrome = s.Clone();
+                chrome.BorderWidth = Edges.All(Len.Px(1f));
+                chrome.BorderColor = new RgbaColor(s.Color.R, s.Color.G, s.Color.B, s.Color.A * 0.55f);
+                chrome.BorderRadius = round
+                    ? Corners.All(node.Width * 0.5f)
+                    : Corners.All(MathF.Max(2f, node.Width * 0.2f));
+                if (on) chrome.BackgroundColor = s.Color;
+
+                BoxRenderer.Paint(rt, ToVisual(chrome, node.Width, node.Height), node.Width, node.Height);
+            }
+
+            if (!on) return;
+
+            // Drawn on top of the fill, so it has to contrast with it rather than with the page. Against the
+            // engine's own fill that means the background colour; against a fill the page chose, the text colour
+            // is the only thing the page has told us about, and it is right far more often than white.
+            var mark = UiFactory.Rect("toggle-mark", rt);
+            UiFactory.Stretch(mark);
+
+            var glyph = mark.gameObject.AddComponent<Il2CppTMPro.TextMeshProUGUI>();
+            TmpMeasure.Apply(glyph, s);
+            glyph.raycastTarget = false;
+            glyph.text = round ? "●" : "✓";
+            glyph.fontSize = MathF.Max(8f, node.Height * (round ? 0.55f : 0.8f));
+            glyph.alignment = Il2CppTMPro.TextAlignmentOptions.Center;
+            glyph.color = unstyled
+                ? new Color(0f, 0f, 0f, 1f)
+                : new Color(s.Color.R, s.Color.G, s.Color.B, s.Color.A);
+
+            ClipTo(glyph, BoxRenderer.ActiveClip);
         }
 
         /// <summary>

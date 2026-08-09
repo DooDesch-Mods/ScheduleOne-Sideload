@@ -20,6 +20,11 @@ namespace Sideload.Devtools
                 bundlePrefix: "Sideload.Assets.selftest",
                 host: typeof(Core).Assembly);
 
+            // Both orientations, because turning is one of the things this app exists to prove. An app that
+            // declares only landscape refuses `s1.setOrientation('portrait')` and says so in the log, which reads
+            // like a broken rotate button to anyone testing a bundle through this app's override folder.
+            Registry.DeclareOrientations(Id, "landscape,portrait");
+
             // The other half of the bridge. A real mod registers its own handlers the same way; these two exist so the
             // page can prove the round trip works without depending on any game system.
             Script.Bridge.Handle(Id, "host.clock", (app, arg) =>

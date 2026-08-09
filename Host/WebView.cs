@@ -1186,10 +1186,13 @@ namespace Sideload.Host
 
                 bool disabled = element.HasAttribute("disabled");
 
-                // Form controls already own a Selectable; their handlers have to share its GameObject, otherwise a
-                // child hit target eats the click before the field can take focus.
-                bool isFormControl = element.LocalName.Equals("input", StringComparison.OrdinalIgnoreCase)
-                                     || element.LocalName.Equals("textarea", StringComparison.OrdinalIgnoreCase);
+                // A TEXT field owns a Selectable, and its handlers have to share that GameObject or a child hit
+                // target eats the click before the field can take focus.
+                //
+                // A checkbox owns nothing of the sort. Sharing a GameObject that has neither a Selectable nor a
+                // Graphic leaves it with nothing to raycast against, so every click on a checkbox sailed past it
+                // into the scroll area behind - the box was drawn, and it was not there.
+                bool isFormControl = Dom.ControlKinds.Of(element) == Dom.ControlKind.Text;
 
                 _interaction.Attach(box.Rect, element, disabled, ownGameObject: isFormControl,
                                     draggable: draggable.Contains(element), wheel: wheeled.Contains(element));
@@ -1354,8 +1357,23 @@ namespace Sideload.Host
 
             Input.PointerSpot page = ray.Valid ? Input.Interaction.SpotIn(_root, ray) : default;
 
+            // A checkbox changes BEFORE the click event, which is why a handler reading `el.checked` sees the new
+            // state and not the old one. HTML calls this the activation behaviour, and without it a controlled
+            // React checkbox never moved: the page was told about a click on a box that still said what it said.
+            //
+            // `change` follows the click, once, and `input` with it - both are what a page listens for, and React
+            // wires `onChange` to the second of them.
+            bool flipped = type == "click" && Dom.ControlKinds.Of(target) == Dom.ControlKind.Toggle;
+            if (flipped) Dom.ControlKinds.Toggle(target);
+
             _script.Dispatch(target, type, spot: at, button: button, detail: detail,
                              clientX: page.OffsetX, clientY: page.OffsetY);
+
+            if (!flipped) return;
+
+            _script.Dispatch(target, "input");
+            _script.Dispatch(target, "change");
+            QueueRebuild();
         }
 
         /// <summary>
