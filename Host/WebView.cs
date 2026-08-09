@@ -1246,12 +1246,51 @@ namespace Sideload.Host
             _script?.Dispatch(element, entered ? "mouseenter" : "mouseleave", bubbles: false);
         }
 
-        private void OnClicked(IElement element, Input.PointerSpot spot)
+        /// <summary>
+        /// A click, dispatched from the element that was actually under the pointer.
+        ///
+        /// The element handed in is the one whose hit target CAUGHT the click, and only a fraction of the page has
+        /// one - a box gets a hit target if a state rule targets it, if it is a control, if it is in the top layer,
+        /// or if the script listens to it. So a page that puts one listener on its root and lets events bubble, which
+        /// is what every virtual-DOM renderer does, got every click reported as a click on the root: the handler ran,
+        /// `e.target` named the root, and there was no way to tell which row had been pressed.
+        ///
+        /// Re-targeting downwards fixes that without giving every box a hit target - which would be hundreds of extra
+        /// transparent quads and would stop most lists scrolling. The walk stays INSIDE the caught element's subtree,
+        /// so nothing that already worked can start resolving somewhere else.
+        /// </summary>
+        private void OnClicked(IElement element, Input.PointerSpot spot, Input.PointerRay ray)
         {
             if (element == null) return;
+
+            IElement target = DeepestUnder(element, ray) ?? element;
+
+            // The caret follows the field, not the deepest box inside it.
             if (_inputs.ContainsKey(element)) _focused = element;
 
-            _script?.Dispatch(element, "click", spot: spot);
+            // Offsets belong to the element the event reports, so `e.offsetX` is measured in the box a page will look
+            // at. Falls back to the caught element's spot when the re-target found nothing new.
+            Input.PointerSpot at = ReferenceEquals(target, element) || !ray.Valid
+                ? spot
+                : Input.Interaction.SpotIn(_painted[target].Rect, ray);
+
+            _script?.Dispatch(target, "click", spot: at);
+        }
+
+        /// <summary>
+        /// The deepest painted descendant of <paramref name="root"/> that covers the pointer, or null.
+        ///
+        /// The walk itself is <see cref="Dom.HitPath"/>, which knows nothing about Unity and is tested headlessly.
+        /// What only this side can answer is whether a given box covers the point, and it is asked of the live
+        /// RectTransform rather than of the layout numbers: scroll offsets, the portrait rotation and the canvas
+        /// scale all live in those transforms, and the layout tree knows about none of them.
+        /// </summary>
+        private IElement DeepestUnder(IElement root, Input.PointerRay ray)
+        {
+            if (!ray.Valid || _painted == null) return null;
+
+            return Dom.HitPath.Deepest(root, element =>
+                _painted.TryGetValue(element, out Painter.PaintedBox box) && Input.Interaction.Covers(box.Rect, ray));
         }
 
         /// <summary>

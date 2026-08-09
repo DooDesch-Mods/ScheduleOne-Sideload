@@ -3,6 +3,22 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.17.0] - 2026-08-09
+
+### Added
+
+- React runs. `createRoot(...).render(...)` draws, `onClick` fires, `useState` updates and a keyed list reorders -
+  react-dom 18 unchanged.
+- A click reports the element it landed on, not the box that caught it. That is what lets a page put one listener
+  on its root and read `e.target`.
+- DOM constructors: `Node`, `Element`, `HTMLElement`, `HTMLInputElement` and the rest, so `instanceof` answers.
+- `new Event(type)` and `new CustomEvent(type, { detail })`, which `el.dispatchEvent(evt)` takes.
+
+### Fixed
+
+- react-dom drew an empty container and reported nothing. One missing global, `HTMLIFrameElement`, threw inside
+  its scheduler where nothing was listening.
+
 ## [1.16.0] - 2026-08-09
 
 ### Added
