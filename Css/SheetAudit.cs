@@ -48,6 +48,11 @@ namespace Sideload.Css
                         if (value == null) continue;
                     }
 
+                    // `inherit` is the cascade's business - it names the parent's value and there is no parent
+                    // here. Asking the same question the cascade asks keeps the two answers the same: a property
+                    // that can be carried down loses nothing, and one that cannot falls through and is reported.
+                    if (StyleApplier.IsInheritKeyword(value) && StyleApplier.Inherit(scratch, null, property)) continue;
+
                     if (!StyleApplier.Apply(scratch, property, value))
                         Diagnostics.Report(DiagnosticKind.UnknownProperty, property);
                 }

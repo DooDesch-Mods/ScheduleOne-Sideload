@@ -240,6 +240,10 @@ namespace Sideload.Css
                 case "user-select":
                 case "-webkit-user-select":
                 case "-webkit-tap-highlight-color":
+                case "text-size-adjust":
+                case "-webkit-text-size-adjust":
+                case "print-color-adjust":
+                case "-webkit-print-color-adjust":
                 case "-webkit-font-smoothing":
                 case "-moz-osx-font-smoothing":
                 case "text-rendering":
@@ -253,6 +257,76 @@ namespace Sideload.Css
                     if (Is(value, "none") || Is(value, "hidden")) s.BorderWidth = Edges.Zero;
                     else if (!Is(value, "solid"))
                         Diagnostics.Report(DiagnosticKind.ValueIgnored, "border-style", value);
+                    break;
+
+                // --------------------------------------------- already what this renderer does --
+                //
+                // Each of these has exactly one value that describes the engine's own behaviour, and that value is
+                // taken in silence; anything else is a real difference and says so. The distinction matters because
+                // a preflight sheet - Tailwind's, Normalize's, anyone's - is made almost entirely of the agreeing
+                // half. Reported wholesale they were fifty complaints about nothing, and a report that names
+                // declarations nothing was lost to is a report an author learns to skip past.
+
+                case "box-sizing":
+                    // Every box here measures border-box, always: padding and border come out of the declared size
+                    // (FlexLayout). `content-box` would need a second box model and is the only real loss.
+                    if (!Is(value, "border-box")) Diagnostics.Report(DiagnosticKind.ValueIgnored, property, value);
+                    break;
+
+                case "appearance":
+                case "-webkit-appearance":
+                    // There is no native control chrome to strip. A checkbox here is boxes and text this engine
+                    // drew itself, so `none` describes what already happens.
+                    if (!Is(value, "none")) Diagnostics.Report(DiagnosticKind.ValueIgnored, property, value);
+                    break;
+
+                case "resize":
+                    // Nothing has a resize handle to take away.
+                    if (!Is(value, "none")) Diagnostics.Report(DiagnosticKind.ValueIgnored, property, value);
+                    break;
+
+                case "font-feature-settings":
+                case "font-variation-settings":
+                case "font-variant-numeric":
+                    // `normal` is the initial value, and it is the whole of what a preflight writes. TextMeshPro
+                    // exposes no OpenType feature or variation axes, so a real setting is a real loss.
+                    if (!Is(value, "normal")) Diagnostics.Report(DiagnosticKind.ValueIgnored, property, value);
+                    break;
+
+                case "vertical-align":
+                    // There are no inline boxes to align against a baseline: every child is a flex item, and what
+                    // moves it up or down is `align-items`. `baseline` is the initial value, so it asks for nothing.
+                    if (!Is(value, "baseline")) Diagnostics.Report(DiagnosticKind.ValueIgnored, property, value);
+                    break;
+
+                case "list-style":
+                case "list-style-type":
+                case "list-style-image":
+                case "list-style-position":
+                    // No marker is drawn, so `none` is agreement and a bullet or a number is not.
+                    if (!Is(value, "none")) Diagnostics.Report(DiagnosticKind.ValueIgnored, property, value);
+                    break;
+
+                case "outline":
+                case "outline-style":
+                case "outline-width":
+                case "outline-color":
+                case "outline-offset":
+                    // No outline is drawn. A focus ring written as `outline: none` - which is most of them, right
+                    // before a box-shadow ring that this engine does draw - loses nothing.
+                    if (!Is(value, "none") && !Is(value, "0") && !Is(value, "0px"))
+                        Diagnostics.Report(DiagnosticKind.ValueIgnored, property, value);
+                    break;
+
+                case "text-indent":
+                    if (!Is(value, "0") && !Is(value, "0px"))
+                        Diagnostics.Report(DiagnosticKind.ValueIgnored, property, value);
+                    break;
+
+                case "text-decoration":
+                case "text-decoration-line":
+                case "-webkit-text-decoration":
+                    ApplyTextDecoration(s, property, value);
                     break;
 
                 case "text-transform":
@@ -309,8 +383,18 @@ namespace Sideload.Css
 
                 // ------------------------------------------------------------------ text --
                 case "color": if (Colour(value, out RgbaColor col)) s.Color = col; break;
-                case "font-family": s.FontFamily = FirstFamily(value); break;
-                case "font-size": if (Px(value, out float fs)) s.FontSize = fs; break;
+                case "font-family": s.FontFamily = FontFamilies.Resolve(value); break;
+                case "font-size":
+                    // A percentage is measured against the PARENT's font size, which is what the length context
+                    // already carries - `em` means the same thing and is resolved from the same number.
+                    if (Is(value, "smaller")) s.FontSize = Context.FontSize * 0.8333f;
+                    else if (Is(value, "larger")) s.FontSize = Context.FontSize * 1.2f;
+                    else if (Percent(value, out float fp)) s.FontSize = Context.FontSize * fp;
+                    else if (Px(value, out float fs)) s.FontSize = fs;
+                    else Diagnostics.Report(DiagnosticKind.ValueRejected, property, value);
+                    break;
+
+                case "font": ApplyFontShorthand(s, value); break;
                 case "font-weight": s.FontWeight = ParseWeight(value, s.FontWeight); break;
                 case "font-style": s.FontStyle = Is(value, "italic") || Is(value, "oblique") ? FontStyleKind.Italic : FontStyleKind.Normal; break;
                 case "line-height": ApplyLineHeight(s, value); break;
@@ -408,6 +492,189 @@ namespace Sideload.Css
         ///
         /// Custom properties are always "supported": they are storage for var(), not something to implement.
         /// </summary>
+        /// <summary>
+        /// The `inherit` keyword: take this property's value from the parent, whatever it is.
+        ///
+        /// It cannot live in <see cref="Apply"/>, which sees one style and no ancestry, so the cascade calls this
+        /// first and only falls through when the answer is false - and then the ordinary path reports it, which is
+        /// what an unhandled property should do.
+        ///
+        /// The list below is <see cref="ComputedStyle.CreateFrom"/>'s, read the other way round. For an inherited
+        /// property `inherit` usually asks for what has already been copied down, and copying it AGAIN is the whole
+        /// point: it undoes a declaration that landed earlier in this element's own cascade, which is the one case
+        /// where the two differ - `.a { color: red }` followed by `.a { color: inherit }` must end up at the
+        /// parent's colour, not at red.
+        ///
+        /// Properties this engine deliberately ignores answer true as well. `font-feature-settings: inherit` asks
+        /// to carry down a setting that was never stored; nothing is lost, so nothing is reported. Tailwind's
+        /// preflight writes six of those on every form control.
+        /// </summary>
+        /// <summary>
+        /// The `font` shorthand: `[style] [variant] [weight] [stretch] size[/line-height] family`.
+        ///
+        /// Read left to right, because the grammar is: everything before the SIZE is optional and unordered, the
+        /// size is the first length, and everything after it is the family. That makes the size the anchor - find
+        /// it and both halves fall out - which is what makes this eighteen lines instead of a parser.
+        ///
+        /// A preflight writes it once, on form controls, as `font: inherit`; that never reaches here because the
+        /// cascade takes the keyword first. What does reach here is a page setting its whole type in one line, and
+        /// before this the entire declaration - family, size and weight together - was dropped as unknown.
+        ///
+        /// The system keywords (`caption`, `menu`, `status-bar`, ...) name a font the host operating system
+        /// chooses. There is no such font here, so they are reported rather than guessed at.
+        /// </summary>
+        private static void ApplyFontShorthand(ComputedStyle s, string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return;
+
+            if (Is(value, "caption") || Is(value, "icon") || Is(value, "menu")
+                || Is(value, "message-box") || Is(value, "small-caption") || Is(value, "status-bar"))
+            {
+                Diagnostics.Report(DiagnosticKind.ValueIgnored, "font", value);
+                return;
+            }
+
+            string[] words = value.Trim().Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+
+            int size = -1;
+            for (int i = 0; i < words.Length && size < 0; i++)
+            {
+                string head = words[i].Split('/')[0];
+                if (TryPx(head, out _) || head.EndsWith("%", StringComparison.Ordinal)) size = i;
+            }
+
+            if (size < 0) { Diagnostics.Report(DiagnosticKind.ValueRejected, "font", value); return; }
+
+            for (int i = 0; i < size; i++)
+            {
+                if (Is(words[i], "normal")) continue;
+                if (Is(words[i], "italic") || Is(words[i], "oblique")) { s.FontStyle = FontStyleKind.Italic; continue; }
+
+                int weight = ParseWeight(words[i], -1);
+                if (weight > 0) s.FontWeight = weight;
+                // `small-caps`, `condensed` and the rest of the optional slots have no counterpart; the shorthand
+                // still carries a size and a family, and losing those to one unreadable word would be the worse
+                // reading of it.
+                else Diagnostics.Report(DiagnosticKind.ValueIgnored, "font", words[i]);
+            }
+
+            string[] sizeAndLine = words[size].Split('/');
+            Apply(s, "font-size", sizeAndLine[0]);
+            if (sizeAndLine.Length > 1) Apply(s, "line-height", sizeAndLine[1]);
+
+            if (size + 1 < words.Length)
+                s.FontFamily = FontFamilies.Resolve(string.Join(" ", words, size + 1, words.Length - size - 1));
+        }
+
+        internal static bool IsInheritKeyword(string value) =>
+            value != null && value.Trim().Equals("inherit", StringComparison.OrdinalIgnoreCase);
+
+        internal static bool Inherit(ComputedStyle s, ComputedStyle parent, string property)
+        {
+            if (string.IsNullOrEmpty(property)) return false;
+
+            // What the ROOT inherits is the initial value of everything, which is what a fresh style holds. Standing
+            // one in for a missing parent keeps the switch below free of a null check per case, and it is also what
+            // lets the sheet audit - which has no element and therefore no ancestry - ask the same question.
+            parent ??= new ComputedStyle();
+
+            switch (property.Trim().ToLowerInvariant())
+            {
+                case "color": s.Color = parent.Color; return true;
+
+                // The shorthand carries all five at once, which is exactly how a preflight hands a form control the
+                // page's type: `button, input, select { font: inherit }`.
+                case "font":
+                    s.FontFamily = parent.FontFamily;
+                    s.FontSize = parent.FontSize;
+                    s.FontWeight = parent.FontWeight;
+                    s.FontStyle = parent.FontStyle;
+                    s.LineHeight = parent.LineHeight;
+                    return true;
+
+                case "font-family": s.FontFamily = parent.FontFamily; return true;
+                case "font-size": s.FontSize = parent.FontSize; return true;
+                case "font-weight": s.FontWeight = parent.FontWeight; return true;
+                case "font-style": s.FontStyle = parent.FontStyle; return true;
+                case "line-height": s.LineHeight = parent.LineHeight; return true;
+                case "letter-spacing": s.LetterSpacing = parent.LetterSpacing; return true;
+                case "text-align": s.TextAlign = parent.TextAlign; return true;
+                case "text-transform": s.TextTransform = parent.TextTransform; return true;
+                case "text-decoration":
+                case "text-decoration-line":
+                case "-webkit-text-decoration": s.TextDecoration = parent.TextDecoration; return true;
+                case "white-space": s.WhiteSpace = parent.WhiteSpace; return true;
+                case "overflow-wrap":
+                case "word-wrap": s.OverflowWrap = parent.OverflowWrap; return true;
+                case "word-break": s.WordBreak = parent.WordBreak; return true;
+                case "pointer-events": s.PointerEventsNone = parent.PointerEventsNone; return true;
+                case "caret-color": s.CaretColor = parent.CaretColor; return true;
+
+                // Not inherited in CSS, but `inherit` names the parent's value all the same, and these are the ones
+                // a real sheet asks it of - a border that follows the text colour, a control that takes the box's.
+                case "border-color": s.BorderColor = parent.BorderColor; return true;
+                case "background-color": s.BackgroundColor = parent.BackgroundColor; return true;
+                case "opacity": s.Opacity = parent.Opacity; return true;
+
+                // Read and deliberately without effect, so carrying one down loses nothing either.
+                case "font-feature-settings":
+                case "font-variation-settings":
+                case "font-variant-numeric":
+                case "vertical-align":
+                case "appearance":
+                case "-webkit-appearance":
+                case "list-style":
+                case "list-style-type":
+                case "outline":
+                case "outline-color":
+                case "text-indent":
+                case "tab-size":
+                case "cursor": return true;
+
+                default: return false;
+            }
+        }
+
+        /// <summary>
+        /// `text-decoration`, and the shorthand it usually arrives as.
+        ///
+        /// TextMeshPro draws an underline and a strike as font-style flags, so those two are exact. The rest of the
+        /// shorthand - a decoration COLOUR, a style like `dotted`, a thickness - has no equivalent: TMP's line takes
+        /// the text's own colour and the font's own thickness. Those parts are reported by the word that was
+        /// written, so `underline dotted` says `dotted` rather than pretending the whole declaration was lost.
+        /// </summary>
+        private static void ApplyTextDecoration(ComputedStyle s, string property, string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return;
+
+            var lines = TextDecorationKind.None;
+            bool sawLine = false;
+
+            foreach (string word in value.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (Is(word, "none")) { sawLine = true; continue; }
+                if (Is(word, "underline")) { lines |= TextDecorationKind.Underline; sawLine = true; continue; }
+                if (Is(word, "line-through")) { lines |= TextDecorationKind.LineThrough; sawLine = true; continue; }
+
+                // `overline` has no TMP flag, and the two decoration keywords that are neither a line nor a style -
+                // `blink` and `grammar-error` - have nothing here either.
+                if (Is(word, "overline") || Is(word, "blink") || Is(word, "spelling-error")
+                    || Is(word, "grammar-error"))
+                {
+                    Diagnostics.Report(DiagnosticKind.ValueIgnored, property, word);
+                    sawLine = true;
+                    continue;
+                }
+
+                // `solid` is what TMP draws; the other line styles and any colour or thickness are not.
+                if (Is(word, "solid") || Is(word, "auto") || Is(word, "from-font")) continue;
+
+                Diagnostics.Report(DiagnosticKind.ValueIgnored, property, word);
+            }
+
+            if (sawLine) s.TextDecoration = lines;
+        }
+
         internal static bool Supports(string property)
         {
             if (string.IsNullOrEmpty(property)) return true;
@@ -502,6 +769,23 @@ namespace Sideload.Css
             if (GridParser.TryLine(value, out line)) return true;
             if (!GridParser.NamesAnArea(value)) Diagnostics.Report(DiagnosticKind.ValueRejected, _applying, value);
             return false;
+        }
+
+        /// <summary>A percentage, as a fraction: `80%` comes back as 0.8. Silent - the caller decides what a
+        /// refusal means, and for most properties a percentage is a perfectly good length elsewhere.</summary>
+        private static bool Percent(string value, out float fraction)
+        {
+            fraction = 0f;
+            if (string.IsNullOrWhiteSpace(value)) return false;
+
+            string trimmed = value.Trim();
+            if (!trimmed.EndsWith("%", StringComparison.Ordinal)) return false;
+            if (!float.TryParse(trimmed.Substring(0, trimmed.Length - 1).Trim(),
+                                System.Globalization.NumberStyles.Float,
+                                System.Globalization.CultureInfo.InvariantCulture, out float percent)) return false;
+
+            fraction = percent / 100f;
+            return true;
         }
 
         /// <summary>A px-only length. A percentage parses fine and is still refused here, so it is reported with
@@ -1116,13 +1400,6 @@ namespace Sideload.Css
             if (l.Unit != LenUnit.Px) return false;
             px = l.Value;
             return true;
-        }
-
-        private static string FirstFamily(string value)
-        {
-            string[] p = ValueParser.SplitTopLevel(value, commaSeparated: true);
-            if (p.Length == 0) return "game-ui";
-            return p[0].Trim().Trim('"', '\'');
         }
 
         private static string FirstToken(string s)
