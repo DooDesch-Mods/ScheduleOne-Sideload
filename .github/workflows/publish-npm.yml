@@ -1,0 +1,92 @@
+# Publishes the two toolchain packages under tools/ to npm.
+#
+# NO TOKEN. Authentication is npm's trusted publishing: GitHub Actions mints a short-lived OIDC token for this
+# workflow in this repository, and npm accepts it because the package's settings on npmjs.com name exactly this
+# repository and this file. That is not a preference - npm is closing the alternative. Granular access tokens that
+# bypass 2FA lost the sensitive management operations on 2026-07-31 and lose publishing itself in January 2027:
+# https://github.blog/changelog/2026-07-31-restricting-npm-bypass-2fa-granular-access-tokens/
+#
+# ONE-TIME SETUP, per package, on npmjs.com -> the package -> Settings -> Trusted publisher:
+#   GitHub organisation   DooDesch-Mods
+#   Repository            ScheduleOne-Sideload
+#   Workflow filename     publish-npm.yml
+#   Allowed actions       npm publish
+# The page is on the package, so the package has to exist: the FIRST publish of each is done by hand, signed in
+# with 2FA. Every one after that runs here.
+#
+# The packages version independently of the mod, so this has its own tag namespace: `tools-v1.0.0`. A tag that
+# carries a version neither package has left is a no-op with a log line, not a failure - the tag is a request to
+# publish whatever is new, and pushing it twice must not break.
+name: Publish npm packages
+
+on:
+  push:
+    tags:
+      - "tools-v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write   # mints the OIDC token npm authenticates with; without it publishing asks for a password
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    strategy:
+      # One package must not take the other down with it, and a failure has to name which one.
+      fail-fast: false
+      matrix:
+        package:
+          - tools/sideload-vite
+          - tools/create-sideload-app
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # 22.14 and npm 11.5.1 are the floor for OIDC publishing. Pinned rather than "latest" so a runner image
+      # that moves backwards cannot turn this into an authentication error nobody can read.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Use an npm that can publish with OIDC
+        run: npm install -g npm@latest
+
+      - name: Skip a version that is already on npm
+        id: check
+        working-directory: ${{ matrix.package }}
+        run: |
+          name=$(node -p "require('./package.json').name")
+          version=$(node -p "require('./package.json').version")
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+          if npm view "$name@$version" version >/dev/null 2>&1; then
+            echo "published=yes" >> "$GITHUB_OUTPUT"
+            echo "$name@$version is already on npm - nothing to do."
+          else
+            echo "published=no" >> "$GITHUB_OUTPUT"
+          fi
+
+      # `npm ci` rather than `install`: the lockfile is what was tested, and a publish is the worst moment to
+      # find out that a transitive dependency moved.
+      - name: Install
+        if: steps.check.outputs.published == 'no'
+        working-directory: ${{ matrix.package }}
+        run: npm ci || npm install
+
+      - name: Check
+        if: steps.check.outputs.published == 'no'
+        working-directory: ${{ matrix.package }}
+        run: npm run check --if-present
+
+      - name: Publish
+        if: steps.check.outputs.published == 'no'
+        working-directory: ${{ matrix.package }}
+        run: npm publish
+
+      - name: Say what went out
+        if: steps.check.outputs.published == 'no'
+        run: echo "published ${{ steps.check.outputs.name }}@${{ steps.check.outputs.version }}"
