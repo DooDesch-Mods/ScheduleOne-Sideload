@@ -14,9 +14,14 @@ All notable changes to Sideload are documented here. This project adheres to
 - An input's `type` is read at last: a checkbox and a radio are a box with a state, `hidden` is no box at all, and
   `button` draws its `value` as a label.
 - Clicking a checkbox flips it, clears its radio group and raises `input` and `change` - which is what React
-  listens for, so a controlled checkbox finally moves.
+  listens for, so a controlled checkbox finally moves. Clicking its label works too.
 - `sideloadwheel [notches] [appId]` turns the wheel over a page through the real raycast and names what took the
   notch. A screenshot cannot tell scrolling from cropping. Debug builds only.
+
+### Changed
+
+- The log names only what is lost. A React and Tailwind build reported 128 dead declarations and now reports 28,
+  and most of the difference was the report being wrong.
 
 ### Fixed
 
@@ -24,10 +29,10 @@ All notable changes to Sideload are documented here. This project adheres to
   phone, over the game world, out of reach.
 - A page whose script listens for the wheel still scrolls. React registers one on its root container, which took
   scrolling away from every React app.
-- The log names only what is lost. A React and Tailwind build reported 128 dead declarations and now reports 28,
-  and most of the difference was the report being wrong.
 - A text field is as tall as a line of its own text. It used to be padding around one pixel of nothing, with the
   placeholder hanging out of the bottom.
+- A page that says `overflow-x: hidden` still scrolls downwards. It used to be cropped at the first screenful,
+  with everything below it reachable by nothing.
 - `scrollToEnd()` works on a box that already had a scroll area. The position restore that follows a rebuild put it
   straight back where it was.
 
