@@ -76,21 +76,41 @@ namespace Sideload.Paint
 
         /// <summary>
         /// A canvas strips vertex channels it was not told to keep, so the per-box parameters would silently arrive as
-        /// zeroes. Call once for the canvas a view lives under.
+        /// zeroes. Call for the box being painted.
+        ///
+        /// EVERY canvas between the box and the root, not only the root. A nested Canvas BATCHES its own subtree, and
+        /// it strips there - asking the root alone leaves the extra data at zero on the way through. The failure is
+        /// silent and reads as a missing feature rather than a broken one: COLOR is never stripped, so fills and
+        /// gradients still draw, while TEXCOORD1/2/3, NORMAL and TANGENT arrive as zeroes and every corner radius,
+        /// border and shadow disappears. Which is exactly "the box is there, it is square, and it has no border".
+        ///
+        /// The cheap guard first, because this runs per box: once the chain has been walked, the nearest canvas and
+        /// the root both carry the flags and the common case is two comparisons.
         /// </summary>
         internal static void EnsureCanvasChannels(Transform anyChild)
         {
             if (anyChild == null) return;
 
-            Canvas canvas = anyChild.GetComponentInParent<Canvas>();
-            if (canvas == null) return;
+            Canvas nearest = anyChild.GetComponentInParent<Canvas>();
+            if (nearest == null) return;
 
-            Canvas root = canvas.rootCanvas != null ? canvas.rootCanvas : canvas;
-            if ((root.additionalShaderChannels & RequiredChannels) == RequiredChannels) return;
+            Canvas root = nearest.rootCanvas != null ? nearest.rootCanvas : nearest;
 
-            root.additionalShaderChannels |= RequiredChannels;
-            Core.Log?.Msg($"enabled extra vertex channels on canvas '{root.name}'.");
+
+            if (Has(nearest) && Has(root)) return;
+
+            for (Transform t = anyChild; t != null; t = t.parent)
+            {
+                var canvas = t.GetComponent<Canvas>();
+                if (canvas == null || Has(canvas)) continue;
+
+                canvas.additionalShaderChannels |= RequiredChannels;
+                Core.Log?.Msg($"enabled extra vertex channels on canvas '{canvas.name}'.");
+            }
         }
+
+        private static bool Has(Canvas canvas) =>
+            (canvas.additionalShaderChannels & RequiredChannels) == RequiredChannels;
 
         /// <summary>
         /// Draw <paramref name="visual"/> into <paramref name="rt"/>, whose rect is <paramref name="width"/> x

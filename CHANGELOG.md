@@ -3,6 +3,13 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.28.0] - 2026-08-09
+
+### Fixed
+
+- Boxes have their borders, corners and shadows back next to a mod that draws in the main menu. Only the fill was
+  drawn, and no stylesheet could bring the rest back.
+
 ## [1.27.0] - 2026-08-09
 
 ### Fixed

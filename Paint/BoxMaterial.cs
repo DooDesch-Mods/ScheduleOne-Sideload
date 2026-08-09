@@ -15,6 +15,7 @@ namespace Sideload.Paint
 
         private static bool _tried;
         private static Material _material;
+        private static Shader _shader;
 
         /// <summary>True once the SDF shader is loaded and usable.</summary>
         internal static bool Available => Get() != null;
@@ -22,7 +23,22 @@ namespace Sideload.Paint
         /// <summary>The shared material, or null when the shader is unavailable.</summary>
         internal static Material Get()
         {
-            if (_tried) return _material;
+            // A Unity object destroyed with its scene compares equal to null without being a null reference, and
+            // that is exactly what happened to this one: a material created while the MENU was up went away when
+            // the game scene loaded. Every box painted afterwards found a null material and fell back to a flat
+            // uGUI Image - fill only, no corner radius, no border, no shadow - on a page whose CSS asked for all
+            // three, with nothing in the log to say so.
+            //
+            // It needed a mod that draws before the world does to show up at all: SideHustle mounts a Sideload
+            // surface in the menu, so the material was born in the wrong scene and the phone lost its borders for
+            // the rest of the session. Without such a mod the first box is painted in the game scene and nothing
+            // is ever wrong.
+            //
+            // Rebuilt from the shader rather than reloaded from the bundle: an AssetBundle can only be loaded once
+            // per process, and the shader itself is marked below so it outlives every scene.
+            if (_material != null) return _material;
+            if (_tried) return _shader != null ? Keep(new Material(_shader) { name = "SideloadBox" }) : null;
+
             _tried = true;
 
             try
@@ -64,7 +80,8 @@ namespace Sideload.Paint
                     return null;
                 }
 
-                _material = new Material(shader) { name = "SideloadBox" };
+                _shader = Keep(shader);
+                _material = Keep(new Material(shader) { name = "SideloadBox" });
                 Core.Log?.Msg($"UI shader loaded: {shader.name}");
             }
             catch (Exception e)
@@ -74,6 +91,18 @@ namespace Sideload.Paint
             }
 
             return _material;
+        }
+
+        /// <summary>
+        /// Take an object out of the scene's ownership so unloading a scene cannot destroy it.
+        ///
+        /// `HideAndDontSave` is the flag for a runtime asset with no scene of its own; without it Unity treats a
+        /// material created during the menu as belonging to the menu.
+        /// </summary>
+        private static T Keep<T>(T asset) where T : UnityEngine.Object
+        {
+            if (asset != null) asset.hideFlags = HideFlags.HideAndDontSave;
+            return asset;
         }
 
         /// <summary>
