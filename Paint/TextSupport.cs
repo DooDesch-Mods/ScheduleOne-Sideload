@@ -330,7 +330,7 @@ namespace Sideload.Paint
                 Vector2 size = _probe.GetPreferredValues(text, width, Unbounded);
 
                 float measuredHeight = size.y;
-                float measuredWidth = size.x;
+                float measuredWidth = size.x + TrailingSpace(text, width);
 
                 // Never hand back more than we were given: the layout engine treats the result as a fitted box, and a
                 // wider answer would push the parent open.
@@ -342,6 +342,29 @@ namespace Sideload.Paint
                 Core.Log?.Warning("text measure failed: " + e.Message);
                 return new Size(0f, style.ResolvedLineHeight);
             }
+        }
+
+        /// <summary>
+        /// How much wider the run is because it ENDS in a space.
+        ///
+        /// TextMeshPro counts a leading space and drops a trailing one - right when the run is the whole paragraph,
+        /// where a trailing space is nothing but the newline the author's editor left behind, and wrong when the run
+        /// is one piece of a line. "A paragraph with " followed by a bold "bold" came out as "withbold", because the
+        /// space that separates them belonged to the piece that would not carry it.
+        ///
+        /// Measured rather than assumed: a space is not a fixed fraction of the font size in a proportional face,
+        /// and the answer has to be the one THIS font gives at THIS size. The sentinel is what makes the space stop
+        /// being trailing; subtracting the sentinel on its own leaves the space.
+        /// </summary>
+        private float TrailingSpace(string text, float width)
+        {
+            if (string.IsNullOrEmpty(text)) return 0f;
+
+            char last = text[text.Length - 1];
+            if (last != ' ' && last != ' ') return 0f;
+
+            return Math.Max(0f, _probe.GetPreferredValues(text + "|", width, Unbounded).x
+                                - _probe.GetPreferredValues(text.TrimEnd(' ', ' ') + "|", width, Unbounded).x);
         }
 
         /// <summary>

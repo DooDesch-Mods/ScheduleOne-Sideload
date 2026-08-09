@@ -4,17 +4,18 @@
   <meta charset="utf-8">
   <title>showcase</title>
 
-  <!-- Ask for the web's box model instead of the engine's older one: an undeclared box is a BLOCK and stacks
-       downwards, `display:flex` is a ROW. Without this line Tailwind's `flex` produces a column and every row on
-       the page comes out stacked. Anything built by a web toolchain wants this meta tag. -->
-  <meta name="sideload" content="web-defaults">
+  <!-- No `<meta name="sideload" content="web-defaults">` here, and that is the interesting part.
+       The engine stacks an undeclared box downwards, which IS block flow, and `@doodesch/sideload-vite` lowers
+       Tailwind's `.flex` to `display: flex; flex-direction: row` so a row is a row. Both halves come out right.
+       Asking for web-defaults on top would make every undeclared box a row as well, which is not what a browser
+       does with a `<div>`. Reach for that tag on a hand-written page that skips the toolchain. -->
 </head>
 <body>
   <div id="root"></div>
 
   <!-- Vite reads THIS file and finds the entry through the script tag. What Sideload receives is the fragment the
-       plugin emits from it - the body's contents, app.css, app.js. Deleting the tag to make this look like the
-       output leaves Vite with nothing to build. -->
+       plugin emits from it - the body's contents, app.css, app.js, and any `<meta name="sideload">` from up
+       there. Deleting the tag to make this look like the output leaves Vite with nothing to build. -->
   <script type="module" src="./src/main.tsx"></script>
 </body>
 </html>

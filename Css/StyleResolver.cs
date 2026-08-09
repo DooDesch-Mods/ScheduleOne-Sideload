@@ -104,6 +104,7 @@ namespace Sideload.Css
             context ??= new StyleContext();
 
             ComputedStyle.DefaultDirection = context.WebDefaults ? FlexDirection.Row : FlexDirection.Column;
+            ComputedStyle.WebDefaults = context.WebDefaults;
 
             Dictionary<IElement, List<StyleRule>> matches = MatchRules(document, sheet, context.Orientation);
 

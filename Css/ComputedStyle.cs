@@ -25,6 +25,16 @@ namespace Sideload.Css
         /// box they did not think to declare.
         /// </summary>
         internal static FlexDirection DefaultDirection = FlexDirection.Column;
+
+        /// <summary>
+        /// Whether the page asked for the web's model rather than this engine's, with
+        /// `&lt;meta name="sideload" content="web-defaults"&gt;`. Set by the cascade alongside
+        /// <see cref="DefaultDirection"/>, which is the other half of the same answer.
+        ///
+        /// Static for the same reason: it is a property of the PAGE, every box on it agrees, and threading it
+        /// through the tree would put a copy of one bool on every node.
+        /// </summary>
+        internal static bool WebDefaults;
         internal FlexWrap FlexWrap = FlexWrap.NoWrap;
         internal float FlexGrow = 0f;
         internal float FlexShrink = 1f;

@@ -46,7 +46,7 @@ namespace Sideload.Dom
 
             if (IntrinsicControlSize(element, style, generated, out LayoutNode control)) return control;
 
-            if (IsInlineOnly(element, style))
+            if (IsInlineOnly(element, style, styles, out bool inlineRun))
             {
                 string text = CompileInline(element, styles, style);
                 if (before == null && after == null)
@@ -63,7 +63,12 @@ namespace Sideload.Dom
                 return folded;
             }
 
-            var node = new LayoutNode(style) { Tag = element };
+            // An inline run that could not fold because one of its pieces is a box: the pieces become real boxes
+            // and the element becomes the line they sit on. That is an anonymous inline formatting context, which
+            // this engine has no layout mode for - a wrapping row with the items on their baseline is as close as
+            // flexbox gets, and it is close enough that a badge in a sentence sits where a badge in a sentence
+            // sits. The difference is that it wraps by ITEM rather than by word.
+            var node = new LayoutNode(inlineRun ? InlineContext(style) : style) { Tag = element };
             if (before != null) node.Add(before);
 
             foreach (INode child in element.ChildNodes)
@@ -73,7 +78,15 @@ namespace Sideload.Dom
                     // Text sitting directly among element children becomes its own leaf; it inherits the parent's
                     // style, which is exactly what an anonymous box does in CSS. This one IS a whole block, so the
                     // edge whitespace goes - unless the style preserves it, where the edges are content.
-                    string raw = Preserves(style) ? child.TextContent : Normalise(child.TextContent).Trim();
+                    //
+                    // On a LINE the edges are not the fragment's, they are the line's. Trimming each piece there
+                    // deletes exactly the space between a word and the tag after it, and the sentence comes out as
+                    // "a paragraph with**bold**,*italic*and a badge" - the same mistake CompileInline was fixed for
+                    // once already, one level up. Only the two ends of the line are trimmed, and that happens below.
+                    string raw = Preserves(style) ? child.TextContent
+                               : inlineRun ? Normalise(child.TextContent)
+                               : Normalise(child.TextContent).Trim();
+
                     if (raw.Length == 0) continue;
                     node.Add(new LayoutNode(style, Transform(raw, style)) { Tag = element });
                     continue;
@@ -85,6 +98,8 @@ namespace Sideload.Dom
                     if (built != null) node.Add(built);
                 }
             }
+
+            if (inlineRun) TrimLine(node);
 
             if (after != null) node.Add(after);
             return node;
@@ -278,10 +293,16 @@ namespace Sideload.Dom
         /// highlighted line, a terminal row where every part is a colour - came out as one full-width box per span,
         /// stacked down the screen instead of laid along the line.
         /// </summary>
-        private static bool IsInlineOnly(IElement element, ComputedStyle style)
+        /// <summary><paramref name="inlineRun"/> says every child is inline but one of them is a box, so the run
+        /// has to be laid out rather than folded.</summary>
+        private static bool IsInlineOnly(IElement element, ComputedStyle style,
+                                         Dictionary<IElement, ComputedStyle> styles, out bool inlineRun)
         {
+            inlineRun = false;
+
             bool preserves = Preserves(style);
             bool sawDirectText = false;
+            bool sawBox = false;
 
             foreach (INode child in element.ChildNodes)
             {
@@ -296,7 +317,20 @@ namespace Sideload.Dom
                         continue;
 
                     case NodeType.Element:
-                        if (!InlineTags.Contains(((IElement)child).LocalName)) return false;
+                        var inline = (IElement)child;
+                        if (!InlineTags.Contains(inline.LocalName)) return false;
+
+                        // An inline child that is a BOX cannot survive the fold. The fold turns the whole subtree
+                        // into one TextMeshPro string, which carries weight, slant and colour and nothing else -
+                        // so a `<span class="badge">` inside a sentence lost its background, its padding, its
+                        // radius and its hit target, and the page had no way to notice.
+                        //
+                        // Unconditional, and that is a deliberate behaviour change. Refusing the fold means
+                        // laying the run out as boxes on a line, which wraps by item rather than by word - a
+                        // worse line break in exchange for a badge that is a badge. The alternative is leaving a
+                        // rendering in place that is already wrong, to protect the way it is wrong.
+                        if (styles != null && styles.TryGetValue(inline, out ComputedStyle boxed) && IsBox(boxed))
+                            sawBox = true;
                         continue;
 
                     case NodeType.Comment:
@@ -307,7 +341,80 @@ namespace Sideload.Dom
                 }
             }
 
-            return sawDirectText || preserves;
+            if (!sawDirectText && !preserves) return false;
+
+            inlineRun = sawBox;
+            return !sawBox;
+        }
+
+        /// <summary>
+        /// Take the whitespace off the two ENDS of a line, and nowhere else.
+        ///
+        /// The markup is indented, so the first fragment of an inline run usually begins with the newline and the
+        /// spaces the author wrote before the tag - which would open the sentence with a gap - and the last one
+        /// ends the same way. Everything between them is the space between two words and stays.
+        /// </summary>
+        private static readonly char[] Blanks = { ' ', ' ', '\n', '\t' };
+
+        private static void TrimLine(LayoutNode line)
+        {
+            for (int i = 0; i < line.Children.Count; i++)
+            {
+                if (!line.Children[i].IsTextLeaf) break;
+                line.Children[i].Text = line.Children[i].Text.TrimStart(Blanks);
+                if (line.Children[i].Text.Length > 0) break;
+            }
+
+            for (int i = line.Children.Count - 1; i >= 0; i--)
+            {
+                if (!line.Children[i].IsTextLeaf) break;
+                line.Children[i].Text = line.Children[i].Text.TrimEnd(Blanks);
+                if (line.Children[i].Text.Length > 0) break;
+            }
+
+            line.Children.RemoveAll(child => child.IsTextLeaf && child.Text.Length == 0);
+        }
+
+        /// <summary>
+        /// The style of a line that holds boxes: a wrapping row with its items on the baseline.
+        ///
+        /// Only the three properties that make it a line, and only where the page said nothing about them - an
+        /// author who wrote `flex-direction: column` on a paragraph meant it.
+        /// </summary>
+        private static ComputedStyle InlineContext(ComputedStyle style)
+        {
+            ComputedStyle line = style.Clone();
+
+            line.FlexDirection = FlexDirection.Row;
+            line.FlexWrap = FlexWrap.Wrap;
+            if (line.AlignItems == AlignKind.Stretch) line.AlignItems = AlignKind.Baseline;
+
+            return line;
+        }
+
+        /// <summary>
+        /// Whether this style paints or measures anything of its own - anything the fold would throw away.
+        ///
+        /// Deliberately not "did the page write any declaration at all": a colour, a weight or a slant survives
+        /// the fold perfectly well, and refusing to fold for those would break every ordinary paragraph with a
+        /// bold word in it. What cannot survive is a BOX - something with a surface, an inset or a size.
+        /// </summary>
+        private static bool IsBox(ComputedStyle s)
+        {
+            if (s == null) return false;
+
+            return !s.BackgroundColor.IsTransparent
+                   || s.HasGradient
+                   || s.HasShadow
+                   || s.HasTransform
+                   || s.Width.IsDefinite || s.Height.IsDefinite
+                   || Any(s.Padding) || Any(s.Margin) || Any(s.BorderWidth)
+                   || s.BorderRadius.TopLeft > 0f || s.BorderRadius.TopRight > 0f
+                   || s.BorderRadius.BottomRight > 0f || s.BorderRadius.BottomLeft > 0f;
+
+            static bool Any(Edges e) =>
+                e.Top.Resolve(0f) > 0f || e.Right.Resolve(0f) > 0f
+                || e.Bottom.Resolve(0f) > 0f || e.Left.Resolve(0f) > 0f;
         }
 
         private static string CompileInline(IElement element, Dictionary<IElement, ComputedStyle> styles, ComputedStyle inherited)

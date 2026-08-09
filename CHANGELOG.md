@@ -3,6 +3,15 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.27.0] - 2026-08-09
+
+### Fixed
+
+- A styled `<span>` inside a sentence keeps its background, padding and corners. The whole sentence used to
+  collapse into one run of text, and a badge in the middle of it came out as coloured words.
+- The space before a bold or coloured word is there. "A paragraph with" and a bold "bold" were printed as
+  "withbold", because the piece that carried the space was measured without it.
+
 ## [1.26.0] - 2026-08-09
 
 ### Added

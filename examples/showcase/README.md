@@ -28,11 +28,12 @@ not from a copy of this folder on its own. Until it is published, point the depe
 | Data | A filtered and sorted list that re-renders on every keystroke |
 | Bridge | `s1.call` to the mod, per-app storage, a timer, rotating the phone |
 
-## Three lines that are not the web
+## Two lines that are not the web, and one tag you do not need
 
-**`<meta name="sideload" content="web-defaults">`** in `index.html`. It asks for the web's box model: an
-undeclared box is a block and stacks downwards, `display: flex` is a row. Without it Tailwind's `flex` produces a
-column and every row on the page comes out stacked. Anything built by a web toolchain wants this tag.
+**The box model comes out right without asking.** The engine stacks an undeclared box downwards, which is block
+flow, and the Vite plugin lowers Tailwind's `.flex` to `display: flex; flex-direction: row`, so a row is a row.
+There is a `<meta name="sideload" content="web-defaults">` for pages that skip the toolchain; using it here would
+make every undeclared box a row as well, which is not what a browser does with a `<div>`.
 
 **`#root { height: 100% }`** in `src/index.css`. `h-full` inside the mount point resolves against `auto`
 otherwise, the app grows past the screen, and the whole document scrolls instead of the header staying put. A
