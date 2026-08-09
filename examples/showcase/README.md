@@ -14,10 +14,9 @@ npm run dev
 `dev` rebuilds on every save and copies the bundle into `Mods/showcase/`, where the running game picks it up
 about 250 ms later. No restart, no rebuild of the mod.
 
-**`@doodesch/sideload-vite` is not on npm yet.** `package.json` reaches it through a relative path into the
-DooDesch workspace, which is where it lives today, so `npm install` works from a checkout of that workspace and
-not from a copy of this folder on its own. Until it is published, point the dependency at your own copy of
-`Workspace/tools/sideload-vite`.
+**`@doodesch/sideload-vite` is not on npm yet.** `package.json` reaches it through a relative path to
+`../../tools/sideload-vite`, so `npm install` works from a checkout of this repository and not from a copy of
+this folder on its own.
 
 ## What it shows
 

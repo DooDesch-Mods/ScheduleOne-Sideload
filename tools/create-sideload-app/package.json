@@ -1,0 +1,37 @@
+{
+  "name": "@doodesch/create-sideload-app",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Scaffold a Sideload app: Preact, React or plain TypeScript, plus the mod that registers it.",
+  "license": "MIT",
+  "bin": {
+    "create-sideload-app": "index.mjs"
+  },
+  "files": [
+    "index.mjs",
+    "README.md"
+  ],
+  "scripts": {
+    "check": "node verify.mjs"
+  },
+  "keywords": [
+    "sideload",
+    "schedule-i",
+    "melonloader",
+    "scaffold",
+    "modding"
+  ],
+  "homepage": "https://github.com/DooDesch-Mods/ScheduleOne-Sideload#readme",
+  "bugs": {
+    "url": "https://support.doodesch.de/sideload"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DooDesch-Mods/ScheduleOne-Sideload.git",
+    "directory": "tools/create-sideload-app"
+  },
+  "author": "DooDesch",
+  "publishConfig": {
+    "access": "public"
+  }
+}

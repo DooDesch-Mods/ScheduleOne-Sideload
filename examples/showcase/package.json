@@ -12,7 +12,7 @@
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
-    "@doodesch/sideload-vite": "file:../../../Workspace/tools/sideload-vite",
+    "@doodesch/sideload-vite": "file:../../tools/sideload-vite",
     "@tailwindcss/vite": "^4.1.14",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
