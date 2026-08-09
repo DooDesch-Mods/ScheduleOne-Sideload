@@ -201,6 +201,31 @@ namespace Sideload.Css
                 case "overflow": s.OverflowX = s.OverflowY = ParseOverflow(value, s.OverflowX); break;
                 case "transform-origin": ApplyTransformOrigin(s, value); break;
 
+                // Accepted and deliberately without effect, because they have no effect to have here. Every one
+                // of these is a hint to a browser about work this renderer does not do - compositor layers, touch
+                // scrolling, tap highlights, subpixel smoothing, a scrollbar that is never drawn. Reporting them
+                // as lost would be false: nothing was lost, there was nothing to lose. And a report that names
+                // properties which are fine is a report an author learns to skip past.
+                case "will-change":
+                case "touch-action":
+                case "user-select":
+                case "-webkit-user-select":
+                case "-webkit-tap-highlight-color":
+                case "-webkit-font-smoothing":
+                case "-moz-osx-font-smoothing":
+                case "text-rendering":
+                case "scrollbar-width":
+                case "-ms-overflow-style":
+                    break;
+
+                case "border-style":
+                    // `none` and `hidden` make the used width zero, which is what CSS says and what this engine
+                    // can honour exactly. `solid` is what it draws anyway. The rest are drawn solid and say so.
+                    if (Is(value, "none") || Is(value, "hidden")) s.BorderWidth = Edges.Zero;
+                    else if (!Is(value, "solid"))
+                        Diagnostics.Report(DiagnosticKind.ValueIgnored, "border-style", value);
+                    break;
+
                 case "text-transform":
                     if (Is(value, "none")) s.TextTransform = TextTransformKind.None;
                     else if (Is(value, "uppercase")) s.TextTransform = TextTransformKind.Uppercase;
@@ -232,7 +257,6 @@ namespace Sideload.Css
                 case "border-left": ApplyBorder(s, value, Side.Left); break;
                 case "border-width": if (Edges_(value, out Edges bw)) s.BorderWidth = bw; break;
                 case "border-color": if (Colour(value, out RgbaColor bc)) s.BorderColor = bc; break;
-                case "border-style": break;   // only `solid` is drawable; the value carries no other information here
                 case "border-top-width": if (Length(value, out Len btw)) s.BorderWidth.Top = btw; break;
                 case "border-right-width": if (Length(value, out Len brw)) s.BorderWidth.Right = brw; break;
                 case "border-bottom-width": if (Length(value, out Len bbw)) s.BorderWidth.Bottom = bbw; break;

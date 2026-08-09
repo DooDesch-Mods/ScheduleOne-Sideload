@@ -102,6 +102,11 @@ namespace Sideload.Css
             }
         }
 
+        /// <summary>The two numbers a breakpoint is measured against, for a report that has to name them. There is
+        /// one screen here and it turns, so "the viewport" is a pair rather than a value.</summary>
+        internal static string ViewportDescription =>
+            $"{LongEdgePx:0}x{ShortEdgePx:0} css px, or {ShortEdgePx:0}x{LongEdgePx:0} turned";
+
         internal static float WidthPx(Orientation orientation) =>
             orientation == Orientation.Landscape ? LongEdgePx : ShortEdgePx;
 
@@ -416,10 +421,15 @@ namespace Sideload.Css
                     MediaCondition condition = ParseMediaPrelude(prelude);
                     MediaCondition combined = MediaCondition.And(scope.Media, condition);
 
-                    // Unreadable is one reason to skip; the other is a breakpoint no orientation of this screen can
-                    // ever reach, which is a block that would only ever cost memory.
-                    if (condition == null || combined.Impossible)
+                    // Two different failures, and they read as one only if you already know the engine. A prelude
+                    // this parser cannot follow is a gap; a breakpoint wider than the phone will ever be is a
+                    // number the author should change. Reporting both as "skipped" sent people looking for a
+                    // missing feature when the answer was 1024 on a 733px screen.
+                    if (condition == null)
                         Model.Diagnostics.Report(Model.DiagnosticKind.AtRuleSkipped, prelude.Trim());
+                    else if (combined.Impossible)
+                        Model.Diagnostics.Report(Model.DiagnosticKind.MediaUnreachable, prelude.Trim(),
+                                                 MediaCondition.ViewportDescription);
                     else
                         ParseContents(src, bodyStart, blockEnd, scope.WithMedia(combined), state);
                     break;
