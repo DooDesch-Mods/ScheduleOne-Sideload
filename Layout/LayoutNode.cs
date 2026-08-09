@@ -68,6 +68,14 @@ namespace Sideload.Layout
         /// <summary>Whatever the caller wants to associate - the DOM element for the painter, nothing for tests.</summary>
         internal object Tag;
 
+        /// <summary>
+        /// `::placeholder` on a form control, or null when the page never styled one.
+        ///
+        /// Carried on the node rather than looked up later because the painter has no cascade to ask: the hint
+        /// text is not a box, so it never became a LayoutNode, and this is the only way its style reaches paint.
+        /// </summary>
+        internal Css.ComputedStyle PlaceholderStyle;
+
         // --- results, relative to the PARENT's padding box, top-left origin, y growing downwards ---
         internal float X, Y, Width, Height;
 

@@ -3,6 +3,15 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.26.0] - 2026-08-09
+
+### Added
+
+- `::placeholder` styles the hint text in a field. Without a rule it stays the field's own type, faded, exactly as
+  before.
+- The `lh` and `rlh` units, which is one line box tall - `min-height: 1lh` is how a stock Tailwind build sizes a
+  one-line control.
+
 ## [1.25.0] - 2026-08-09
 
 ### Added
