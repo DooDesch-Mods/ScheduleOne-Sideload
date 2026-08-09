@@ -138,7 +138,7 @@ namespace Sideload.Css
                 }
                 catch (Exception e)
                 {
-                    Model.Diagnostics.Report(Model.DiagnosticKind.SelectorRejected, rule.BaseSelector, e.Message);
+                    SelectorReport.Rejected(rule.BaseSelector, e.Message);
                 }
             }
             return result;
@@ -161,7 +161,7 @@ namespace Sideload.Css
                 try { hits = document.QuerySelectorAll(rule.BaseSelector); }
                 catch (Exception e)
                 {
-                    Model.Diagnostics.Report(Model.DiagnosticKind.SelectorRejected, rule.Selector, e.Message);
+                    SelectorReport.Rejected(rule.Selector, e.Message);
                     continue;
                 }
 
@@ -288,6 +288,8 @@ namespace Sideload.Css
 
                 string sized = Substituted(entry.Declaration.Value, style);
                 if (sized == null) continue;
+
+                if (StyleApplier.IsInheritKeyword(sized) && StyleApplier.Inherit(style, parentStyle, entry.Declaration.Property)) continue;
                 StyleApplier.Apply(style, entry.Declaration.Property, sized);
             }
 
@@ -314,6 +316,10 @@ namespace Sideload.Css
                 }
 
                 if (IsContent(declaration.Property)) value = SubstituteAttributes(value, element);
+
+                // `inherit` needs the parent, which StyleApplier never sees. Handled here and only here; a property
+                // it cannot carry down falls through to the ordinary path, which reports it like any other value.
+                if (StyleApplier.IsInheritKeyword(value) && StyleApplier.Inherit(style, parentStyle, declaration.Property)) continue;
 
                 StyleApplier.Apply(style, declaration.Property, value);
             }

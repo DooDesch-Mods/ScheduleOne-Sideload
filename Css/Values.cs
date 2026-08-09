@@ -173,6 +173,13 @@ namespace Sideload.Css
     /// typesetting and mean nothing in a font this game ships.</summary>
     internal enum TextTransformKind { None, Uppercase, Lowercase, Capitalize }
 
+    /// <summary>`appearance`. `Auto` lets a form control draw its own widget; `None` strips it, as on the web.</summary>
+    internal enum AppearanceKind { Auto, None }
+
+    /// <summary>The lines `text-decoration` can draw. Flags, because CSS lets a run carry more than one.</summary>
+    [Flags]
+    internal enum TextDecorationKind { None = 0, Underline = 1, LineThrough = 2 }
+
     /// <summary>How an image fills the box it was given. `Cover` and `None` are absent because both crop, and
     /// cropping needs a clip rectangle of the image's own rather than the ancestor's - see StyleApplier.</summary>
     internal enum ObjectFitKind { Contain, Fill, ScaleDown }

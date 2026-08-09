@@ -95,10 +95,6 @@ namespace Sideload.Css
                         Report(property, value + "  (a percentage resolves against zero, so translate(-50%) becomes 0)");
                     break;
 
-                case "font-family":
-                    // Only the first family is kept; the rest of the stack is never tried.
-                    if (Contains(value, ",")) Report(property, value + "  (only the first family counts)");
-                    break;
 
                 // --- grid: the parts of it that are their own feature ----------------------------------
                 //

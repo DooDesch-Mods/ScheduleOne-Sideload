@@ -611,6 +611,7 @@ namespace Sideload.Host
             long tCascade = split.ElapsedMilliseconds;
 
             IElement body = _document.Body ?? _document.DocumentElement;
+            DocumentScroll.Propagate(body, styles);
             LayoutNode tree = DomBuilder.Build(body, styles, generated);
             if (tree == null) { ShowError("the document has no renderable content"); return; }
 
@@ -672,6 +673,11 @@ namespace Sideload.Host
                 Dictionary<IElement, ScrollMark> scroll = CaptureScroll();
                 _survivors = RescueControls();
 
+                // Held across the render because ApplyPin, which runs inside it, consumes the request - and
+                // RestoreScroll comes AFTER and puts every box back where it was, pin included. A box that already
+                // had a scroll area therefore had its pin overwritten by the restore, every time.
+                IElement pinned = _pinToEnd;
+
                 for (int i = _root.childCount - 1; i >= 0; i--)
                 {
                     GameObject child = _root.GetChild(i).gameObject;
@@ -688,6 +694,9 @@ namespace Sideload.Host
                 });
 
                 RestoreScroll(scroll);
+
+                _pinToEnd = pinned;
+                ApplyPin();
             }
             catch (Exception e)
             {
@@ -795,7 +804,14 @@ namespace Sideload.Host
             if (_painted.TryGetValue(_pinToEnd, out Painter.PaintedBox box) && box.Rect != null)
             {
                 var scroll = box.Rect.GetComponentInChildren<ScrollRect>();
-                if (scroll != null) scroll.verticalNormalizedPosition = 0f;
+                if (scroll != null)
+                {
+                    // The RectTransforms were created this frame and the canvas has not laid them out yet, so the
+                    // ScrollRect's own viewport still measures nothing and clamps the normalised position straight
+                    // back to where it was. Forcing the update first is what makes the number mean something.
+                    Canvas.ForceUpdateCanvases();
+                    scroll.verticalNormalizedPosition = 0f;
+                }
             }
 
             _pinToEnd = null;
@@ -1113,7 +1129,11 @@ namespace Sideload.Host
         {
             HashSet<IElement> stateful = StyleResolver.StatefulElements(_document, _sheet, _context.Orientation);
 
-            foreach (IElement control in _document.QuerySelectorAll("button, a, input, textarea"))
+            // `label` is on this list because a label IS interactive: clicking it activates the control it labels,
+            // and without a hit target of its own the click landed on the scroll area behind it and stopped there.
+            // Wrapping a checkbox and its words in a label is the ordinary way to write one, so this is most of
+            // them.
+            foreach (IElement control in _document.QuerySelectorAll("button, a, input, textarea, label"))
                 stateful.Add(control);
 
             // A top-layer box is modal by nature, so it takes the pointer whether or not anything listens to it.
@@ -1170,10 +1190,13 @@ namespace Sideload.Host
 
                 bool disabled = element.HasAttribute("disabled");
 
-                // Form controls already own a Selectable; their handlers have to share its GameObject, otherwise a
-                // child hit target eats the click before the field can take focus.
-                bool isFormControl = element.LocalName.Equals("input", StringComparison.OrdinalIgnoreCase)
-                                     || element.LocalName.Equals("textarea", StringComparison.OrdinalIgnoreCase);
+                // A TEXT field owns a Selectable, and its handlers have to share that GameObject or a child hit
+                // target eats the click before the field can take focus.
+                //
+                // A checkbox owns nothing of the sort. Sharing a GameObject that has neither a Selectable nor a
+                // Graphic leaves it with nothing to raycast against, so every click on a checkbox sailed past it
+                // into the scroll area behind - the box was drawn, and it was not there.
+                bool isFormControl = Dom.ControlKinds.Of(element) == Dom.ControlKind.Text;
 
                 _interaction.Attach(box.Rect, element, disabled, ownGameObject: isFormControl,
                                     draggable: draggable.Contains(element), wheel: wheeled.Contains(element));
@@ -1338,8 +1361,34 @@ namespace Sideload.Host
 
             Input.PointerSpot page = ray.Valid ? Input.Interaction.SpotIn(_root, ray) : default;
 
-            _script.Dispatch(target, type, spot: at, button: button, detail: detail,
-                             clientX: page.OffsetX, clientY: page.OffsetY);
+            // A checkbox changes BEFORE the click event, which is why a handler reading `el.checked` sees the new
+            // state and not the old one. HTML calls this the activation behaviour, and without it a controlled
+            // React checkbox never moved: the page was told about a click on a box that still said what it said.
+            //
+            // Which is also why the previous state is kept. `preventDefault()` on the click CANCELS the activation,
+            // and a cancelled activation has to be undone rather than never done - a radio group has already lost
+            // its old selection by the time the handler runs.
+            IElement toggle = type == "click" ? Dom.ControlKinds.ActivatedBy(target) : null;
+            List<IElement> wasOn = toggle != null ? Dom.ControlKinds.Snapshot(toggle) : null;
+            if (toggle != null) Dom.ControlKinds.Toggle(toggle);
+
+            Script.JsEvent raised = _script.Dispatch(target, type, spot: at, button: button, detail: detail,
+                                                     clientX: page.OffsetX, clientY: page.OffsetY);
+
+            if (toggle == null) return;
+
+            if (raised != null && raised.DefaultPrevented)
+            {
+                Dom.ControlKinds.Restore(toggle, wasOn);
+                QueueRebuild();
+                return;
+            }
+
+            // On the CONTROL, not on whatever was clicked - a click on a label activates the box, and the box is
+            // what the page is listening to. React wires `onChange` to `input`.
+            _script.Dispatch(toggle, "input");
+            _script.Dispatch(toggle, "change");
+            QueueRebuild();
         }
 
         /// <summary>
@@ -1414,11 +1463,12 @@ namespace Sideload.Host
             _script?.Dispatch(element, type, spot: spot, deltaX: delta.x, deltaY: delta.y);
         }
 
-        private void OnWheel(IElement element, float notches)
+        /// <summary>True when the page called <c>preventDefault()</c>, so the notch must not also scroll the box.</summary>
+        private bool OnWheel(IElement element, float notches)
         {
-            if (element == null) return;
+            if (element == null) return false;
 
-            _script?.Dispatch(element, "wheel", wheelDelta: notches);
+            return _script?.Dispatch(element, "wheel", wheelDelta: notches)?.DefaultPrevented ?? false;
         }
 
         /// <summary>A painted input field reports every keystroke. The value is mirrored onto the element so that
@@ -1472,6 +1522,14 @@ namespace Sideload.Host
         /// <summary>The most recently mounted view - what the debug harness pokes at.</summary>
         internal static WebView Newest => _live.Count > 0 ? _live[_live.Count - 1] : null;
 
+        /// <summary>The mounted view for one app id, because several pages stand at once.</summary>
+        internal static WebView Find(string appId)
+        {
+            for (int i = _live.Count - 1; i >= 0; i--)
+                if (string.Equals(_live[i]._appId, appId, StringComparison.OrdinalIgnoreCase)) return _live[i];
+            return null;
+        }
+
         /// <summary>Debug-only: click the first element matching a CSS selector, through the real pointer path rather
         /// than by calling its handler.</summary>
         internal void DebugClick(string selector)
@@ -1489,6 +1547,19 @@ namespace Sideload.Host
             Vector3 world = box.Rect.TransformPoint(box.Rect.rect.center);
 
             Devtools.ClickProbe.ClickAt(RectTransformUtility.WorldToScreenPoint(camera, world), selector);
+        }
+
+        /// <summary>Debug-only: turn the wheel over the middle of the page, through the real pointer path. Positive
+        /// notches scroll toward the top, which is the sign a mouse reports.</summary>
+        internal void DebugWheel(float notches)
+        {
+            if (_root == null) return;
+
+            Canvas canvas = _root.GetComponentInParent<Canvas>();
+            Camera camera = canvas != null && canvas.renderMode != RenderMode.ScreenSpaceOverlay ? canvas.worldCamera : null;
+            Vector3 world = _root.TransformPoint(_root.rect.center);
+
+            Devtools.ClickProbe.WheelAt(RectTransformUtility.WorldToScreenPoint(camera, world), notches, _appId);
         }
 
         /// <summary>Debug-only: run a snippet against the page's own engine, so the harness can set up a state that

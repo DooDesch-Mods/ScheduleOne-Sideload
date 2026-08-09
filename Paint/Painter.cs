@@ -87,7 +87,14 @@ namespace Sideload.Paint
             _reuse = reuse;
             _bundle = bundle;
             _appId = appId ?? "";
-            BoxRenderer.ActiveClip = null;
+
+            // The viewport is a clip, and it is the one clip that is never optional: a page taller or wider than the
+            // screen has to stop AT the screen. Nothing else enforces that here - every graphic is opted out of the
+            // phone's own RectMask2D (see ClipTo), because that mask collapses the moment a scroll area moves - so
+            // without this the page simply drew on across the bezel and over the game. A page that overflows now
+            // scrolls (WebView gives the document the viewport's scrollport) and, whatever it does, ends at the edge.
+            Rect? viewport = ClipRectInCanvasSpace(0f, 0f, viewSize.x, viewSize.y);
+            BoxRenderer.ActiveClip = viewport;
             BoxRenderer.BeginPass(host.GetInstanceID());
 
             var topLayer = new List<LayoutNode>();
@@ -106,7 +113,9 @@ namespace Sideload.Paint
                 //   * UNDER THE VIEW ROOT, so no ancestor's `overflow` crops it and no scroll area carries it off
                 //     screen - and, because uGUI raycasts front-most first, so a backdrop over the page actually
                 //     swallows the clicks meant for what is behind it.
-                //   * With the clip stack back at nothing, which the walk above restores on its way out.
+                //   * With the clip stack back at the viewport, which the walk above restores on its way out. Back at
+                //     the viewport and not at nothing: an overlay is exempt from the page's scroll areas, not from
+                //     the screen.
                 //
                 // The list grows while it is being walked: a fixed box nested inside another one appends to it and is
                 // picked up by the same loop, which is why this is an index loop and not a foreach.
@@ -116,7 +125,7 @@ namespace Sideload.Paint
                 // whatever they asked for. Half of an ordering is worse than none. Two fixed boxes therefore paint in
                 // the order they were collected - which follows each parent's stacking order, because that is the
                 // order the walk above visited them in.
-                BoxRenderer.ActiveClip = null;
+                BoxRenderer.ActiveClip = viewport;
                 for (int i = 0; i < topLayer.Count; i++)
                     PaintNode(topLayer[i], host, 0, painted, 0f, 0f, hoisted: true);
             }
@@ -180,6 +189,12 @@ namespace Sideload.Paint
             if (IsFormControl(node, out bool multiline))
             {
                 PaintInput(node, rt, multiline, absX, absY);
+                return;
+            }
+
+            if (IsToggle(node))
+            {
+                PaintToggle(node, rt);
                 return;
             }
 
@@ -453,7 +468,14 @@ namespace Sideload.Paint
             BoxRenderer.ActiveClip = box.Clip;
             try
             {
-                BoxRenderer.Paint(box.Rect, ToVisual(style, box.Node.Width, box.Node.Height), box.Node.Width, box.Node.Height);
+                // A native control draws itself. Handing this one the element's own computed style would paint a
+                // checkbox as what its CSS says it is - transparent and borderless - which is how a checkbox used
+                // to vanish the moment the pointer touched it.
+                BoxVisual visual = IsToggle(box.Node)
+                    ? ToggleVisual(box.Node, style, out _)
+                    : ToVisual(style, box.Node.Width, box.Node.Height);
+
+                BoxRenderer.Paint(box.Rect, visual, box.Node.Width, box.Node.Height);
             }
             finally { BoxRenderer.ActiveClip = outer; }
 
@@ -478,8 +500,10 @@ namespace Sideload.Paint
 
             float w = box.Node.Width, h = box.Node.Height;
 
-            BoxVisual visual = ToVisual(to, w, h);
-            BoxVisual before = ToVisual(from, w, h);
+            // Same reasoning as Repaint: a native control draws itself, at both ends of the line.
+            bool toggle = IsToggle(box.Node);
+            BoxVisual visual = toggle ? ToggleVisual(box.Node, to, out _) : ToVisual(to, w, h);
+            BoxVisual before = toggle ? ToggleVisual(box.Node, from, out _) : ToVisual(from, w, h);
 
             visual.FillTL = Color.Lerp(before.FillTL, visual.FillTL, t);
             visual.FillTR = Color.Lerp(before.FillTR, visual.FillTR, t);
@@ -600,14 +624,139 @@ namespace Sideload.Paint
         }
 #endif
 
+        /// <summary>A field with a caret. A checkbox is an input too and is emphatically not one of these.</summary>
         private static bool IsFormControl(LayoutNode node, out bool multiline)
         {
             multiline = false;
             if (node.Tag is not AngleSharp.Dom.IElement element) return false;
+            if (Dom.ControlKinds.Of(element) != Dom.ControlKind.Text) return false;
 
-            string tag = element.LocalName;
-            if (string.Equals(tag, "textarea", StringComparison.OrdinalIgnoreCase)) { multiline = true; return true; }
-            return string.Equals(tag, "input", StringComparison.OrdinalIgnoreCase);
+            multiline = string.Equals(element.LocalName, "textarea", StringComparison.OrdinalIgnoreCase);
+            return true;
+        }
+
+        private static bool IsToggle(LayoutNode node) =>
+            node.Tag is AngleSharp.Dom.IElement element && Dom.ControlKinds.Of(element) == Dom.ControlKind.Toggle;
+
+        /// <summary>
+        /// A checkbox or a radio: the box, and the mark inside it when it is on.
+        ///
+        /// The mark is a glyph in the page's own font rather than a sprite, because there is no sprite to ship and
+        /// a checkbox has to work at any size the CSS gives it. The colour follows the text, so a checkbox in a
+        /// muted row reads as muted without anyone styling its tick.
+        ///
+        /// A page that styled nothing still gets something to look at. There is no user-agent stylesheet here, so
+        /// an unstyled checkbox would be an invisible transparent square - present, clickable and impossible to
+        /// see, which is exactly how it looked before this existed. The fallback below is only used when the page
+        /// gave it neither a background nor a border, so any real styling wins outright.
+        /// </summary>
+        /// <summary>
+        /// What a checkbox or a radio LOOKS like, in one place, so that every path which draws a box can draw this
+        /// one - the first paint, a hover restyle, the frame of a transition.
+        ///
+        /// It has to be a function rather than something the painter does once, and that is the whole lesson here.
+        /// The chrome used to be painted inside the toggle branch of the build walk, and everything else that ever
+        /// repaints a box - <see cref="Repaint"/> on hover, on active, on focus - went through
+        /// <see cref="ToVisual"/> with the element's own computed style, which for a checkbox is transparent and
+        /// borderless. So the box was drawn, and the first time the pointer crossed it, it was erased.
+        ///
+        /// <paramref name="native"/> says the engine supplied the appearance because the page did not. A page that
+        /// gave the box a background or a border of its own gets exactly that and nothing added; a page that said
+        /// `appearance: none` is asking for no widget at all and gets none.
+        /// </summary>
+        private static BoxVisual ToggleVisual(LayoutNode node, ComputedStyle s, out bool native)
+        {
+            bool round = node.Tag is AngleSharp.Dom.IElement element
+                         && string.Equals(element.GetAttribute("type"), "radio", StringComparison.OrdinalIgnoreCase);
+
+            native = s.Appearance != AppearanceKind.None
+                     && s.BackgroundColor.IsTransparent
+                     && s.BorderWidth.Left.Resolve(0f) <= 0f && s.BorderWidth.Top.Resolve(0f) <= 0f;
+
+            if (!native) return ToVisual(s, node.Width, node.Height);
+
+            bool on = node.Tag is AngleSharp.Dom.IElement box && Dom.ControlKinds.IsChecked(box);
+
+            ComputedStyle chrome = s.Clone();
+            chrome.BorderWidth = Edges.All(Len.Px(1f));
+            chrome.BorderColor = new RgbaColor(s.Color.R, s.Color.G, s.Color.B, s.Color.A * 0.5f);
+            chrome.BorderRadius = round
+                ? Corners.All(node.Width * 0.5f)
+                : Corners.All(MathF.Max(2f, node.Width * 0.2f));
+
+            // An off checkbox needs a FILL, not just an outline. A one-pixel hairline at half alpha over a dark
+            // panel is invisible at thirteen pixels square - the box was there, was clickable, and could not be
+            // found. Browsers fill theirs too, which is why an unchecked box reads as a box rather than a gap.
+            chrome.BackgroundColor = on
+                ? s.Color
+                : new RgbaColor(s.Color.R, s.Color.G, s.Color.B, s.Color.A * 0.16f);
+
+            return ToVisual(chrome, node.Width, node.Height);
+        }
+
+        /// <summary>
+        /// One stroke of a control's mark: a rounded bar of solid colour, centred on the control and turned.
+        ///
+        /// Placed against the CENTRE rather than the top-left, because a rotation turns a rect about its pivot and
+        /// the arithmetic for a tick is far easier to read as "this far from the middle, this long, at this angle"
+        /// than as four corners.
+        /// </summary>
+        private static void Mark(RectTransform parent, Vector2 offset, float length, float thickness,
+                                 float degrees, float radius, Color colour)
+        {
+            RectTransform bar = UiFactory.Rect("toggle-mark", parent);
+            bar.anchorMin = bar.anchorMax = bar.pivot = new Vector2(0.5f, 0.5f);
+            bar.sizeDelta = new Vector2(length, thickness);
+            bar.anchoredPosition = offset;
+            bar.localRotation = Quaternion.Euler(0f, 0f, degrees);
+
+            var visual = new BoxVisual
+            {
+                FillTL = colour, FillTR = colour, FillBR = colour, FillBL = colour,
+                RadiusTL = radius, RadiusTR = radius, RadiusBR = radius, RadiusBL = radius,
+            };
+
+            BoxRenderer.Paint(bar, visual, length, thickness);
+        }
+
+        private static void PaintToggle(LayoutNode node, RectTransform rt)
+        {
+            var element = (AngleSharp.Dom.IElement)node.Tag;
+            bool on = Dom.ControlKinds.IsChecked(element);
+            bool round = string.Equals(element.GetAttribute("type"), "radio", StringComparison.OrdinalIgnoreCase);
+
+            ComputedStyle s = node.Style;
+
+            BoxRenderer.Paint(rt, ToggleVisual(node, s, out bool unstyled), node.Width, node.Height);
+
+            if (!on) return;
+
+            // DRAWN, not typed. A tick is U+2713 and a radio's dot is U+25CF, and the game's font atlas has
+            // neither - TextMeshPro answers a missing glyph with a hollow rectangle, so a "ticked" checkbox came
+            // out holding a little box. Two rotated bars and a circle need no font at all and scale with the
+            // control, which a glyph at a fixed point size does not.
+            //
+            // The mark sits on the fill, so it takes its contrast from there: against the engine's own fill - the
+            // text colour - that is the panel behind it, and against a fill the page chose, the text colour is the
+            // only thing the page has told us about and is right far more often than white.
+            float side = MathF.Min(node.Width, node.Height);
+            Color ink = unstyled
+                ? new Color(0f, 0f, 0f, 0.85f)
+                : new Color(s.Color.R, s.Color.G, s.Color.B, s.Color.A);
+
+            if (round)
+            {
+                Mark(rt, Vector2.zero, side * 0.42f, side * 0.42f, 0f, side * 0.21f, ink);
+                return;
+            }
+
+            // A tick is two bars meeting at a right angle: a short one down to the left foot and a long one back up
+            // to the right. Fractions of the box rather than pixels, so it holds its shape at thirteen and at
+            // forty. Y points UP here and a positive angle turns anticlockwise, which is why the short arm is the
+            // negative one - it is the stroke going DOWN.
+            float thick = MathF.Max(1.5f, side * 0.15f);
+            Mark(rt, new Vector2(-side * 0.175f, -side * 0.11f), side * 0.36f, thick, -45f, thick * 0.5f, ink);
+            Mark(rt, new Vector2(side * 0.11f, side * 0.045f), side * 0.60f, thick, 45f, thick * 0.5f, ink);
         }
 
         /// <summary>

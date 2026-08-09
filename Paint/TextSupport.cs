@@ -464,7 +464,13 @@ namespace Sideload.Paint
                 _ => middle ? TextAlignmentOptions.Left : TextAlignmentOptions.TopLeft,
             };
 
-            tmp.fontStyle = FontStyles.Normal;
+            // Bold and italic are picked as a FONT ASSET above, not as a style flag, so the flags carry only what
+            // TMP draws on top of the glyphs: the underline and the strike.
+            FontStyles lines = FontStyles.Normal;
+            if ((s.TextDecoration & TextDecorationKind.Underline) != 0) lines |= FontStyles.Underline;
+            if ((s.TextDecoration & TextDecorationKind.LineThrough) != 0) lines |= FontStyles.Strikethrough;
+
+            tmp.fontStyle = lines;
         }
 
         /// <summary>

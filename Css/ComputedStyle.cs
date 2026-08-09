@@ -136,6 +136,25 @@ namespace Sideload.Css
 
         internal TextTransformKind TextTransform = TextTransformKind.None;
 
+        /// <summary>
+        /// `appearance`. Not inherited, and only a form control reads it.
+        ///
+        /// It is the one property that means something here despite there being no native widgets to strip: a
+        /// checkbox HAS an appearance this engine draws for it, because there is no user-agent stylesheet to put
+        /// one in the cascade. `appearance: none` is how a page says it will draw its own.
+        /// </summary>
+        internal AppearanceKind Appearance = AppearanceKind.Auto;
+
+        /// <summary>
+        /// `text-decoration-line` - the underline or strike on a run of text.
+        ///
+        /// Inherited here, which CSS does NOT say: there the property sits on one box and PROPAGATES to the inline
+        /// boxes inside it, and the difference shows only when a descendant tries to take the line off again, which
+        /// CSS forbids. Inheriting gets the propagation for nothing, and this renderer has no inline boxes for the
+        /// spec's version to act on anyway - a decorated run is one TextMeshPro component with a style flag.
+        /// </summary>
+        internal TextDecorationKind TextDecoration = TextDecorationKind.None;
+
         /// <summary>Where the wrapped lines sit. Not inherited, like every other flex property.</summary>
         internal AlignContentKind AlignContent = AlignContentKind.FlexStart;
 
@@ -261,6 +280,7 @@ namespace Sideload.Css
             s.LineHeight = parent.LineHeight;
             s.PointerEventsNone = parent.PointerEventsNone;
             s.TextTransform = parent.TextTransform;
+            s.TextDecoration = parent.TextDecoration;
             s.LetterSpacing = parent.LetterSpacing;
             s.MonoAdvance = parent.MonoAdvance;
             s.SmoothScroll = parent.SmoothScroll;

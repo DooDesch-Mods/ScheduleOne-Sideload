@@ -3,6 +3,39 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.25.0] - 2026-08-09
+
+### Added
+
+- `text-decoration` draws an underline or a strike, the `font` shorthand sets the whole type in one line, and
+  `inherit` works on every property the cascade can carry down.
+- A font stack is read the way a browser reads it: `Inter, game-comic` reaches the comic face instead of falling
+  back to the UI font on the first name it does not have.
+- An input's `type` is read at last: a checkbox and a radio are a box with a state, `hidden` is no box at all, and
+  `button` draws its `value` as a label.
+- Clicking a checkbox flips it, clears its radio group and raises `input` and `change` - which is what React
+  listens for, so a controlled checkbox finally moves. Clicking its label works too.
+- `sideloadwheel [notches] [appId]` turns the wheel over a page through the real raycast and names what took the
+  notch. A screenshot cannot tell scrolling from cropping. Debug builds only.
+
+### Changed
+
+- The log names only what is lost. A React and Tailwind build reported 128 dead declarations and now reports 28,
+  and most of the difference was the report being wrong.
+
+### Fixed
+
+- A page taller than the phone scrolls instead of drawing past it. The lower half used to be painted outside the
+  phone, over the game world, out of reach.
+- A page whose script listens for the wheel still scrolls. React registers one on its root container, which took
+  scrolling away from every React app.
+- A text field is as tall as a line of its own text. It used to be padding around one pixel of nothing, with the
+  placeholder hanging out of the bottom.
+- A page that says `overflow-x: hidden` still scrolls downwards. It used to be cropped at the first screenful,
+  with everything below it reachable by nothing.
+- `scrollToEnd()` works on a box that already had a scroll area. The position restore that follows a rebuild put it
+  straight back where it was.
+
 ## [1.19.0] - 2026-08-09
 
 ### Added
