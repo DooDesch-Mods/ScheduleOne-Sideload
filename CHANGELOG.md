@@ -20,6 +20,23 @@ All notable changes to Sideload are documented here. This project adheres to
 - An invalid `flex` value is named in the log. It used to vanish in silence, leaving the box at its default with
   nothing pointing at the line that caused it.
 
+## [1.20.0] - 2026-08-09
+
+### Added
+
+- Eleven more events fire: `mousedown`, `mouseup`, `mouseover`, `mouseout`, `dblclick`, `contextmenu`, `focus`,
+  `blur`, `focusin`, `focusout` and `change`.
+- `change` fires when a field gives the caret back with a different value than it took, so a page can save once
+  instead of on every keystroke.
+- An event carries `clientX`, `clientY`, `button` and `detail` - which button, how many clicks, and where in the
+  page it landed.
+
+### Changed
+
+- A right click raises `contextmenu` instead of `click`. It still raises `back` at the document as well.
+- `mouseenter` and `mouseleave` do not bubble and `mouseover` and `mouseout` do, as in a browser. One rule, one
+  place.
+
 ## [1.18.0] - 2026-08-09
 
 ### Changed

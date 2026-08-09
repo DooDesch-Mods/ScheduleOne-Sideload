@@ -7,7 +7,7 @@
 > objects and TextMeshPro text. No browser, no native code, no subprocess. The in game phone is the first
 > place it mounts, not the foundation.
 
-![Version](https://img.shields.io/badge/version-1.18.0-blue)
+![Version](https://img.shields.io/badge/version-1.20.0-blue)
 ![Game](https://img.shields.io/badge/game-Schedule%20I-purple)
 ![MelonLoader](https://img.shields.io/badge/MelonLoader-0.7.3+-green)
 ![Type](https://img.shields.io/badge/type-framework-orange)
@@ -366,8 +366,11 @@ Honest limits, because a browser sets different expectations:
   it, `s1.setOrientation(v)` turns it, and the choice is remembered per app without you storing anything.
   A page whose SHAPE changes with the orientation also gets `orientationchange` (`e.value` is the new one),
   because which of two panes the player should land on is a question a stylesheet cannot answer.
-- **Events:** `click`, `input`, `keydown`, `dragstart` / `drag` / `dragend`, `wheel`, `mouseenter` /
-  `mouseleave`, `back` and `orientationchange`. Others are not dispatched, however plausible the name; a
+- **Events:** `click`, `dblclick`, `contextmenu`, `mousedown` / `mouseup`, `mouseenter` / `mouseleave`,
+  `mouseover` / `mouseout`, `wheel`, `input`, `change`, `keydown`, `focus` / `blur`, `focusin` / `focusout`,
+  `dragstart` / `drag` / `dragend`, `back` and `orientationchange`. A pointer event carries `clientX`/`clientY`,
+  `button` and `detail`. `mousemove` is not among them: uGUI only reports movement during a drag. Others are not
+  dispatched, however plausible the name; a
   listener on one of those is reported in the log rather than sitting there looking alive. Both phases work:
   `addEventListener(type, fn, true)` runs on the way down, `stopPropagation` ends the walk and
   `stopImmediatePropagation` also ends the current element. Right-click and

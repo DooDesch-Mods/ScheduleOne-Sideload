@@ -24,6 +24,10 @@ namespace Sideload.Input
         private readonly Dictionary<IElement, StateFlags> _forced = new Dictionary<IElement, StateFlags>();
         private readonly Action<IElement> _onStateChanged;
         private readonly Action<IElement, PointerSpot, PointerRay> _onClicked;
+
+        /// <summary>Every other pointer event, by name: mousedown, mouseup, mouseover, mouseout, dblclick,
+        /// contextmenu. One callback rather than six, because the view does the same thing with all of them.</summary>
+        private readonly Action<IElement, string, PointerSpot, PointerRay, int, int> _onPointer;
         private readonly Action<IElement, string, PointerSpot, Vector2> _onDragged;
         private readonly Action<IElement, float> _onWheel;
         private readonly Action<IElement, bool> _onHover;
@@ -48,7 +52,8 @@ namespace Sideload.Input
                              Action<IElement, string, PointerSpot, Vector2> onDragged = null,
                              Action<IElement, float> onWheel = null,
                              Action<IElement, bool> onHover = null,
-                             RectTransform pageRoot = null)
+                             RectTransform pageRoot = null,
+                             Action<IElement, string, PointerSpot, PointerRay, int, int> onPointer = null)
         {
             _onStateChanged = onStateChanged;
             _onClicked = onClicked;
@@ -56,6 +61,7 @@ namespace Sideload.Input
             _onWheel = onWheel;
             _onHover = onHover;
             _pageRoot = pageRoot;
+            _onPointer = onPointer;
         }
 
 
@@ -172,27 +178,41 @@ namespace Sideload.Input
                 handlerHost = hitRect.gameObject;
             }
 
+            // The element's OWN rect, not the hit target's - they are stretched to match, and the element's is the
+            // one whose size a page reasons about.
+            RectTransform measuredRect = rect;
+
             var trigger = handlerHost.AddComponent<EventTrigger>();
-            Add(trigger, EventTriggerType.PointerEnter, () =>
+            AddWithData(trigger, EventTriggerType.PointerEnter, data =>
             {
                 Set(element, StateFlags.Hover, true);
                 // The page hears about it too. :hover alone can only repaint, so anything that has to APPEAR on
                 // hover - a tooltip above all - was not buildable without this.
                 _onHover?.Invoke(element, true);
+
+                // The bubbling twin. A list that highlights whichever row the pointer is over listens once on the
+                // list for `mouseover`; with only `mouseenter` it would need a listener per row.
+                Pointer(element, "mouseover", measuredRect, data);
             });
-            Add(trigger, EventTriggerType.PointerExit, () =>
+            AddWithData(trigger, EventTriggerType.PointerExit, data =>
             {
                 // Leaving the element also ends any press that started on it - otherwise :active would stick.
                 Set(element, StateFlags.Hover, false);
                 Set(element, StateFlags.Active, false);
                 _onHover?.Invoke(element, false);
+                Pointer(element, "mouseout", measuredRect, data);
             });
-            Add(trigger, EventTriggerType.PointerDown, () =>
+            AddWithData(trigger, EventTriggerType.PointerDown, data =>
             {
                 _dragged = false;
                 Set(element, StateFlags.Active, true);
+                Pointer(element, "mousedown", measuredRect, data);
             });
-            Add(trigger, EventTriggerType.PointerUp, () => Set(element, StateFlags.Active, false));
+            AddWithData(trigger, EventTriggerType.PointerUp, data =>
+            {
+                Set(element, StateFlags.Active, false);
+                Pointer(element, "mouseup", measuredRect, data);
+            });
 
             // PointerClick rather than PointerUp: uGUI only raises it when press and release landed on the same
             // target, which is what "click" means everywhere else and what lets a player slide off a button to
@@ -201,19 +221,29 @@ namespace Sideload.Input
             // This one keeps the event data instead of discarding it, so the page can be told WHERE it was clicked.
             // The rect measured against is the element's own, not the hit target's - they are stretched to match,
             // and the element's is the one whose size the page reasons about.
-            RectTransform measured = rect;
             AddWithData(trigger, EventTriggerType.PointerClick, data =>
             {
                 // A pan that ends on the element it started on is still a click as far as uGUI is concerned. The page
                 // asked to handle the drag itself, so it gets the drag and not a click on top of it.
                 if (draggable && _dragged) return;
 
+                // The right button raises `contextmenu`, not `click` - which is what a browser does, and what a page
+                // that wants its own menu on right-click has to be able to tell apart. Escape and right-click also
+                // still raise `back` at the document; the two are different questions and a page may answer both.
+                if (ButtonOf(data) == 2)
+                {
+                    Pointer(element, "contextmenu", measuredRect, data);
+                    return;
+                }
+
                 // The screen point travels with the event, because the element that CAUGHT the click is not
                 // necessarily the one that was clicked - see WebView.OnClicked.
-                _onClicked?.Invoke(element, SpotIn(measured, data), Ray(data));
+                _onClicked?.Invoke(element, SpotIn(measuredRect, data), Ray(data));
+
+                if (IsSecondClick(element)) Pointer(element, "dblclick", measuredRect, data, detail: 2);
             });
 
-            if (draggable) AttachDragging(trigger, element, measured);
+            if (draggable) AttachDragging(trigger, element, measuredRect);
             if (wheel) AddWithData(trigger, EventTriggerType.Scroll, data => Wheel(element, data));
 
             PassScrollingThrough(trigger, handlerHost.transform, forwardDrag: !draggable, forwardWheel: !wheel);
@@ -376,6 +406,48 @@ namespace Sideload.Input
             Rect r = rect.rect;
             return new PointerSpot(local.x - r.xMin, r.yMax - local.y, r.width, r.height);
         }
+
+        private void Pointer(IElement element, string type, RectTransform measured, BaseEventData data, int detail = 1)
+        {
+            _onPointer?.Invoke(element, type, SpotIn(measured, data), Ray(data), ButtonOf(data), detail);
+        }
+
+        /// <summary>0 left, 1 middle, 2 right - the numbering the DOM uses, which is not Unity's enum order.</summary>
+        private static int ButtonOf(BaseEventData data)
+        {
+            var pointer = data?.TryCast<PointerEventData>();
+            if (pointer == null) return 0;
+
+            return pointer.button switch
+            {
+                PointerEventData.InputButton.Right => 2,
+                PointerEventData.InputButton.Middle => 1,
+                _ => 0,
+            };
+        }
+
+        /// <summary>
+        /// Whether this click is the second of a pair on the same element, within the window a double-click gets.
+        ///
+        /// Kept here rather than left to uGUI because `PointerEventData.clickCount` counts clicks on the GAME OBJECT,
+        /// and this page rebuilds its objects on every change - so the count resets under any page that reacts to
+        /// the first click, which is every page that would want a double.
+        /// </summary>
+        private bool IsSecondClick(IElement element)
+        {
+            float now = Time.unscaledTime;
+            bool second = ReferenceEquals(element, _lastClicked) && now - _lastClickAt <= DoubleClickSeconds;
+
+            _lastClicked = second ? null : element;   // a third click starts a new pair, it does not extend this one
+            _lastClickAt = now;
+            return second;
+        }
+
+        /// <summary>Windows' own default, and the one every browser on it follows.</summary>
+        private const float DoubleClickSeconds = 0.5f;
+
+        private IElement _lastClicked;
+        private float _lastClickAt;
 
         /// <summary>
         /// Where the pointer was, in screen coordinates, with the camera the event came through.
