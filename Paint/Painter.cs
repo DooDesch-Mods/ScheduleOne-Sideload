@@ -694,6 +694,31 @@ namespace Sideload.Paint
             return ToVisual(chrome, node.Width, node.Height);
         }
 
+        /// <summary>
+        /// One stroke of a control's mark: a rounded bar of solid colour, centred on the control and turned.
+        ///
+        /// Placed against the CENTRE rather than the top-left, because a rotation turns a rect about its pivot and
+        /// the arithmetic for a tick is far easier to read as "this far from the middle, this long, at this angle"
+        /// than as four corners.
+        /// </summary>
+        private static void Mark(RectTransform parent, Vector2 offset, float length, float thickness,
+                                 float degrees, float radius, Color colour)
+        {
+            RectTransform bar = UiFactory.Rect("toggle-mark", parent);
+            bar.anchorMin = bar.anchorMax = bar.pivot = new Vector2(0.5f, 0.5f);
+            bar.sizeDelta = new Vector2(length, thickness);
+            bar.anchoredPosition = offset;
+            bar.localRotation = Quaternion.Euler(0f, 0f, degrees);
+
+            var visual = new BoxVisual
+            {
+                FillTL = colour, FillTR = colour, FillBR = colour, FillBL = colour,
+                RadiusTL = radius, RadiusTR = radius, RadiusBR = radius, RadiusBL = radius,
+            };
+
+            BoxRenderer.Paint(bar, visual, length, thickness);
+        }
+
         private static void PaintToggle(LayoutNode node, RectTransform rt)
         {
             var element = (AngleSharp.Dom.IElement)node.Tag;
@@ -706,23 +731,32 @@ namespace Sideload.Paint
 
             if (!on) return;
 
-            // Drawn on top of the fill, so it has to contrast with it rather than with the page. Against the
-            // engine's own fill that means the background colour; against a fill the page chose, the text colour
-            // is the only thing the page has told us about, and it is right far more often than white.
-            var mark = UiFactory.Rect("toggle-mark", rt);
-            UiFactory.Stretch(mark);
-
-            var glyph = mark.gameObject.AddComponent<Il2CppTMPro.TextMeshProUGUI>();
-            TmpMeasure.Apply(glyph, s);
-            glyph.raycastTarget = false;
-            glyph.text = round ? "●" : "✓";
-            glyph.fontSize = MathF.Max(8f, node.Height * (round ? 0.55f : 0.8f));
-            glyph.alignment = Il2CppTMPro.TextAlignmentOptions.Center;
-            glyph.color = unstyled
-                ? new Color(0f, 0f, 0f, 1f)
+            // DRAWN, not typed. A tick is U+2713 and a radio's dot is U+25CF, and the game's font atlas has
+            // neither - TextMeshPro answers a missing glyph with a hollow rectangle, so a "ticked" checkbox came
+            // out holding a little box. Two rotated bars and a circle need no font at all and scale with the
+            // control, which a glyph at a fixed point size does not.
+            //
+            // The mark sits on the fill, so it takes its contrast from there: against the engine's own fill - the
+            // text colour - that is the panel behind it, and against a fill the page chose, the text colour is the
+            // only thing the page has told us about and is right far more often than white.
+            float side = MathF.Min(node.Width, node.Height);
+            Color ink = unstyled
+                ? new Color(0f, 0f, 0f, 0.85f)
                 : new Color(s.Color.R, s.Color.G, s.Color.B, s.Color.A);
 
-            ClipTo(glyph, BoxRenderer.ActiveClip);
+            if (round)
+            {
+                Mark(rt, Vector2.zero, side * 0.42f, side * 0.42f, 0f, side * 0.21f, ink);
+                return;
+            }
+
+            // A tick is two bars meeting at a right angle: a short one down to the left foot and a long one back up
+            // to the right. Fractions of the box rather than pixels, so it holds its shape at thirteen and at
+            // forty. Y points UP here and a positive angle turns anticlockwise, which is why the short arm is the
+            // negative one - it is the stroke going DOWN.
+            float thick = MathF.Max(1.5f, side * 0.15f);
+            Mark(rt, new Vector2(-side * 0.175f, -side * 0.11f), side * 0.36f, thick, -45f, thick * 0.5f, ink);
+            Mark(rt, new Vector2(side * 0.11f, side * 0.045f), side * 0.60f, thick, 45f, thick * 0.5f, ink);
         }
 
         /// <summary>
