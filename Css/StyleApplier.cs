@@ -199,6 +199,24 @@ namespace Sideload.Css
                     break;
 
                 case "overflow": s.OverflowX = s.OverflowY = ParseOverflow(value, s.OverflowX); break;
+                case "transform-origin": ApplyTransformOrigin(s, value); break;
+
+                case "text-transform":
+                    if (Is(value, "none")) s.TextTransform = TextTransformKind.None;
+                    else if (Is(value, "uppercase")) s.TextTransform = TextTransformKind.Uppercase;
+                    else if (Is(value, "lowercase")) s.TextTransform = TextTransformKind.Lowercase;
+                    else if (Is(value, "capitalize")) s.TextTransform = TextTransformKind.Capitalize;
+                    else Diagnostics.Report(DiagnosticKind.ValueRejected, "text-transform", value);
+                    break;
+
+                case "pointer-events":
+                    // Only the two that mean anything without an SVG. `all`, `stroke`, `fill` and the rest are
+                    // painting-order words for shapes this renderer does not draw.
+                    if (Is(value, "none")) s.PointerEventsNone = true;
+                    else if (Is(value, "auto") || Is(value, "all")) s.PointerEventsNone = false;
+                    else Diagnostics.Report(DiagnosticKind.ValueRejected, "pointer-events", value);
+                    break;
+
                 case "overflow-x": s.OverflowX = ParseOverflow(value, s.OverflowX); break;
                 case "overflow-y": s.OverflowY = ParseOverflow(value, s.OverflowY); break;
 
@@ -837,6 +855,41 @@ namespace Sideload.Css
             }
 
             return lengths >= 2;   // offset-x and offset-y are mandatory in CSS
+        }
+
+        /// <summary>
+        /// `transform-origin`, the one- or two-value form. A third value is a Z origin, which is meaningless on a
+        /// flat UI, so it is read and dropped rather than refused - a page written for the web often carries one.
+        /// </summary>
+        private static void ApplyTransformOrigin(ComputedStyle s, string value)
+        {
+            string[] parts = (value ?? "").Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 0) return;
+
+            // One value sets the horizontal origin and centres the vertical, which is what CSS says - not "both
+            // axes get the same number", which is the reading that looks right and puts `transform-origin: 0`
+            // in the top-left instead of the left edge.
+            if (!TryOrigin(parts[0], horizontal: true, out Len x)) { Reject(s, value); return; }
+
+            Len y = Len.Percent(50f);
+            if (parts.Length > 1 && !TryOrigin(parts[1], horizontal: false, out y)) { Reject(s, value); return; }
+
+            s.TransformOriginX = x;
+            s.TransformOriginY = y;
+        }
+
+        private static void Reject(ComputedStyle s, string value) =>
+            Diagnostics.Report(DiagnosticKind.ValueRejected, "transform-origin", value);
+
+        private static bool TryOrigin(string part, bool horizontal, out Len len)
+        {
+            len = Len.Percent(50f);
+
+            if (Is(part, "center")) return true;
+            if (Is(part, horizontal ? "left" : "top")) { len = Len.Percent(0f); return true; }
+            if (Is(part, horizontal ? "right" : "bottom")) { len = Len.Percent(100f); return true; }
+
+            return ValueParser.TryLength(part, Context, out len) && len.IsDefinite;
         }
 
         private static void ApplyLineHeight(ComputedStyle s, string value)

@@ -20,6 +20,22 @@ All notable changes to Sideload are documented here. This project adheres to
 - An invalid `flex` value is named in the log. It used to vanish in silence, leaving the box at its default with
   nothing pointing at the line that caused it.
 
+## [1.22.0] - 2026-08-09
+
+### Added
+
+- `line-height` reaches the text. It was read and then used only to size an empty box, so nine of the fourteen
+  shipped apps set a line height that never appeared.
+- `pointer-events: none` lets the pointer through to whatever is behind. A scrim that only dims, a label over a
+  map. Inherited, so one rule covers a whole overlay.
+- `text-transform` with `uppercase`, `lowercase` and `capitalize`.
+- `transform-origin`, in the keyword and length forms.
+
+### Fixed
+
+- `scale` and `rotate` turn a box around its centre. They turned it around its top-left corner, which is not what
+  any browser does and not what any page that scales was drawn against.
+
 ## [1.21.0] - 2026-08-09
 
 ### Changed

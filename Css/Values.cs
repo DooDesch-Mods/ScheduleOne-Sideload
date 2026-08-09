@@ -169,6 +169,10 @@ namespace Sideload.Css
     internal enum PositionKind { Static, Relative, Absolute, Fixed }
     internal enum OverflowKind { Visible, Hidden, Scroll, Auto }
 
+    /// <summary>`text-transform`. `full-width` and `full-size-kana` are absent on purpose - they are Japanese
+    /// typesetting and mean nothing in a font this game ships.</summary>
+    internal enum TextTransformKind { None, Uppercase, Lowercase, Capitalize }
+
     /// <summary>The easing curves worth having. `linear` for a value that must read as constant, the ease family for
     /// anything a person looks at - a UI that starts and stops abruptly reads as broken rather than as fast.</summary>
     internal enum EasingKind { Linear, EaseIn, EaseOut, EaseInOut }

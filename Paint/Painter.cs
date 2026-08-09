@@ -508,7 +508,48 @@ namespace Sideload.Paint
         private static void ApplyTransform(RectTransform rt, ComputedStyle style)
         {
             if (rt == null || style == null) return;
+
+            PivotAt(rt, style);
             Place(rt, style.TranslateX, style.TranslateY, style.ScaleX, style.ScaleY, style.RotateDeg);
+        }
+
+        /// <summary>
+        /// Turn the box around its `transform-origin` instead of around its top-left corner.
+        ///
+        /// Every box is placed from its top-left here, which means its pivot is there - and uGUI scales and
+        /// rotates around the pivot. So before this a `scale(1.1)` grew out of the corner and a `rotate(4deg)`
+        /// swung around it, while CSS says both happen around the centre. That was not a missing feature but a
+        /// wrong default, and it was wrong in every shipped app that scales anything.
+        ///
+        /// Only touched when the box actually transforms. Moving the pivot means moving the anchored position to
+        /// compensate, and doing that to every box on the page would be a lot of arithmetic to arrive back where
+        /// it started - with one rounding error per box.
+        /// </summary>
+        private static void PivotAt(RectTransform rt, ComputedStyle style)
+        {
+            bool transforms = style.ScaleX != 1f || style.ScaleY != 1f || style.RotateDeg != 0f;
+            if (!transforms) return;
+
+            Rect rect = rt.rect;
+            float w = rect.width, h = rect.height;
+            if (w <= 0f || h <= 0f) return;
+
+            float px = Mathf.Clamp01(style.TransformOriginX.Resolve(w) / w);
+            float py = Mathf.Clamp01(style.TransformOriginY.Resolve(h) / h);
+
+            // CSS measures the origin down from the top; a uGUI pivot is measured up from the bottom.
+            var pivot = new Vector2(px, 1f - py);
+            if (rt.pivot == pivot) return;
+
+            // The pivot IS the anchored position, so moving it moves the box. Put the top-left corner back where
+            // the layout put it: with the anchor at the parent's top-left, that corner sits at
+            // (anchoredPosition.x - px*w, anchoredPosition.y + (1-py)*h).
+            Vector2 anchored = rt.anchoredPosition;
+            float left = anchored.x - rt.pivot.x * w;
+            float top = anchored.y + (1f - rt.pivot.y) * h;
+
+            rt.pivot = pivot;
+            rt.anchoredPosition = new Vector2(left + pivot.x * w, top - (1f - pivot.y) * h);
         }
 
         private static void ApplyTransform(RectTransform rt, ComputedStyle from, ComputedStyle to, float t)

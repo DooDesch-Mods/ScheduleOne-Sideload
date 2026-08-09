@@ -83,13 +83,6 @@ namespace Sideload.Css
                     if (IsAny(value, "justify")) Report(property, value);
                     break;
 
-                case "line-height":
-                    // Parsed, inherited, and used only to measure an empty box. Normal text keeps TMP's own
-                    // spacing, so the number an author writes here is not the number on the screen - and which
-                    // number that is changes nothing, which is why this reports the property rather than the value.
-                    // A stylesheet with eight line heights was eight identical lines of log before that.
-                    ReportProperty(property);
-                    break;
 
                 case "box-shadow":
                     // An `inset` keyword drops the entire declaration; a fourth length (spread) is eaten; a

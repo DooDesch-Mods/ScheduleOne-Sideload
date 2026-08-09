@@ -73,7 +73,7 @@ namespace Sideload.Dom
                     // edge whitespace goes - unless the style preserves it, where the edges are content.
                     string raw = Preserves(style) ? child.TextContent : Normalise(child.TextContent).Trim();
                     if (raw.Length == 0) continue;
-                    node.Add(new LayoutNode(style, raw) { Tag = element });
+                    node.Add(new LayoutNode(style, Transform(raw, style)) { Tag = element });
                     continue;
                 }
 
@@ -239,7 +239,7 @@ namespace Sideload.Dom
                 if (child.NodeType == NodeType.Text)
                 {
                     string text = child.TextContent;
-                    sb.Append(Escape(Preserves(inherited) ? text : Normalise(text)));
+                    sb.Append(Escape(Transform(Preserves(inherited) ? text : Normalise(text), inherited)));
                     continue;
                 }
 
@@ -298,6 +298,40 @@ namespace Sideload.Dom
             }
 
             return sb.ToString();
+        }
+
+        /// <summary>
+        /// `text-transform`, applied to a FRAGMENT rather than to the compiled line.
+        ///
+        /// That distinction is the whole of it: an inline run is compiled into one TextMeshPro string carrying
+        /// rich-text tags, and upper-casing that string would upper-case `&lt;color=#7ee787&gt;` along with the
+        /// words. Done per fragment it also gets the CSS meaning right, where each element transforms its own
+        /// text and a nested span may ask for something else.
+        /// </summary>
+        internal static string Transform(string text, ComputedStyle style)
+        {
+            if (string.IsNullOrEmpty(text) || style == null) return text;
+
+            switch (style.TextTransform)
+            {
+                case TextTransformKind.Uppercase: return text.ToUpperInvariant();
+                case TextTransformKind.Lowercase: return text.ToLowerInvariant();
+
+                case TextTransformKind.Capitalize:
+                {
+                    var sb = new StringBuilder(text.Length);
+                    bool startOfWord = true;
+
+                    foreach (char c in text)
+                    {
+                        sb.Append(startOfWord ? char.ToUpperInvariant(c) : c);
+                        startOfWord = !char.IsLetterOrDigit(c);
+                    }
+                    return sb.ToString();
+                }
+
+                default: return text;
+            }
         }
 
         /// <summary>A literal '&lt;' in page text must not be read as a rich-text tag.</summary>
