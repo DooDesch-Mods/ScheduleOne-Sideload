@@ -29,7 +29,7 @@ namespace Sideload.Input
         /// contextmenu. One callback rather than six, because the view does the same thing with all of them.</summary>
         private readonly Action<IElement, string, PointerSpot, PointerRay, int, int> _onPointer;
         private readonly Action<IElement, string, PointerSpot, Vector2> _onDragged;
-        private readonly Action<IElement, float> _onWheel;
+        private readonly Func<IElement, float, bool> _onWheel;
         private readonly Action<IElement, bool> _onHover;
 
         /// <summary>The page root, used as the fixed frame a drag is measured against - see <see cref="RootPoint"/>.</summary>
@@ -50,7 +50,7 @@ namespace Sideload.Input
         internal Interaction(Action<IElement> onStateChanged,
                              Action<IElement, PointerSpot, PointerRay> onClicked,
                              Action<IElement, string, PointerSpot, Vector2> onDragged = null,
-                             Action<IElement, float> onWheel = null,
+                             Func<IElement, float, bool> onWheel = null,
                              Action<IElement, bool> onHover = null,
                              RectTransform pageRoot = null,
                              Action<IElement, string, PointerSpot, PointerRay, int, int> onPointer = null)
@@ -244,9 +244,26 @@ namespace Sideload.Input
             });
 
             if (draggable) AttachDragging(trigger, element, measuredRect);
-            if (wheel) AddWithData(trigger, EventTriggerType.Scroll, data => Wheel(element, data));
 
-            PassScrollingThrough(trigger, handlerHost.transform, forwardDrag: !draggable, forwardWheel: !wheel);
+            ScrollRect around = PassScrollingThrough(trigger, handlerHost.transform,
+                                                     forwardDrag: !draggable, forwardWheel: !wheel);
+
+            // A wheel LISTENER reports the notch; it does not swallow it. Browsers made these listeners passive by
+            // default for exactly this reason, and the page still gets its say through `preventDefault()`.
+            //
+            // Without this, one line of React took the whole page's scrolling away: `createRoot` registers a wheel
+            // listener on the container as part of its event delegation, so the root box counted as "the page
+            // handles the wheel" and every notch stopped there. Nothing on screen said so - the page simply did not
+            // move, which reads as a renderer that crops rather than scrolls.
+            if (wheel)
+                AddWithData(trigger, EventTriggerType.Scroll, data =>
+                {
+                    if (Wheel(element, data) || around == null) return;
+
+                    var pointer = data.TryCast<PointerEventData>();
+                    if (pointer == null) return;
+                    if (!SmoothScroll.Wheel(around, pointer)) around.OnScroll(pointer);
+                });
         }
 
         /// <summary>
@@ -285,14 +302,15 @@ namespace Sideload.Input
 
         /// <summary>
         /// One wheel notch, reported the way the DOM reports it: positive is scrolling AWAY from the reader, which is
-        /// the opposite sign to Unity's.
+        /// the opposite sign to Unity's. True when the page called <c>preventDefault()</c> and the notch must not
+        /// also scroll whatever it is over.
         /// </summary>
-        private void Wheel(IElement element, BaseEventData data)
+        private bool Wheel(IElement element, BaseEventData data)
         {
             var pointer = data.TryCast<PointerEventData>();
-            if (pointer == null) return;
+            if (pointer == null) return false;
 
-            _onWheel?.Invoke(element, -pointer.scrollDelta.y);
+            return _onWheel != null && _onWheel(element, -pointer.scrollDelta.y);
         }
 
         /// <summary>
@@ -327,13 +345,14 @@ namespace Sideload.Input
         /// any list whose rows could be clicked could not be scrolled at all, which is most lists.
         ///
         /// Forwarding is what bubbling would have done anyway. The ScrollRect is found once, when the element is
-        /// wired, because the hierarchy above a box does not change while the page stands.
+        /// wired, because the hierarchy above a box does not change while the page stands. It is handed back so that
+        /// an element with its own wheel listener can forward to the same one after the page has had its say.
         /// </summary>
-        private static void PassScrollingThrough(EventTrigger trigger, Transform host,
-                                                 bool forwardDrag = true, bool forwardWheel = true)
+        private static ScrollRect PassScrollingThrough(EventTrigger trigger, Transform host,
+                                                       bool forwardDrag = true, bool forwardWheel = true)
         {
             ScrollRect scroll = host == null ? null : host.GetComponentInParent<ScrollRect>();
-            if (scroll == null) return;
+            if (scroll == null) return null;
 
             if (forwardWheel)
                 AddWithData(trigger, EventTriggerType.Scroll, data =>
@@ -346,7 +365,7 @@ namespace Sideload.Input
                     if (!SmoothScroll.Wheel(scroll, pointer)) scroll.OnScroll(pointer);
                 });
 
-            if (!forwardDrag) return;
+            if (!forwardDrag) return scroll;
 
             AddWithData(trigger, EventTriggerType.BeginDrag, data =>
             {
@@ -370,6 +389,8 @@ namespace Sideload.Input
                 var pointer = data.TryCast<PointerEventData>();
                 if (pointer != null) scroll.OnEndDrag(pointer);
             });
+
+            return scroll;
         }
 
         /// <summary>

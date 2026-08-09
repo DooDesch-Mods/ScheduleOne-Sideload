@@ -64,6 +64,9 @@
          file its README tells modders to take. It is something this project SHIPS, not something it compiles:
          built into Sideload.dll it would be a second, dead copy of a type the host already provides. -->
     <Compile Remove="Sideload.Api/**/*.cs" />
+    <!-- examples/ holds host mods of their own: separate csproj files, a separate assembly, and a MelonInfo of
+         their own. Compiled in here they would be a second MelonMod inside Sideload.dll. -->
+    <Compile Remove="examples/**/*.cs" />
   </ItemGroup>
 
   <!-- Generates DooDesch.ModVersion.Current from this project's own version property, so MelonInfo carries the

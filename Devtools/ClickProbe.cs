@@ -57,6 +57,44 @@ namespace Sideload.Devtools
             return handled;
         }
 
+        /// <summary>
+        /// Turn the wheel at a screen position and report which object took it.
+        ///
+        /// The same reasoning as <see cref="ClickAt"/>, for the interaction nobody can check from a screenshot: a
+        /// page that scrolls and a page that is merely cropped look identical in one frame. This runs the real
+        /// raycast and the real <c>IScrollHandler</c> dispatch, so a green answer means the player's wheel does the
+        /// same thing - and a red one names the object that swallowed it.
+        /// </summary>
+        internal static GameObject WheelAt(Vector2 screenPosition, float notches, string what)
+        {
+            EventSystem system = EventSystem.current;
+            if (system == null)
+            {
+                Core.Log?.Warning("[Sideload/probe] no EventSystem - nothing can be scrolled.");
+                return null;
+            }
+
+            var data = new PointerEventData(system) { position = screenPosition, scrollDelta = new Vector2(0f, notches) };
+
+            var hits = new Il2CppSystem.Collections.Generic.List<RaycastResult>();
+            system.RaycastAll(data, hits);
+
+            if (hits.Count == 0)
+            {
+                Core.Log?.Warning($"[Sideload/probe] {what}: wheel at {screenPosition} hit nothing.");
+                return null;
+            }
+
+            RaycastResult top = hits[0];
+            data.pointerCurrentRaycast = top;
+
+            GameObject handled = ExecuteEvents.ExecuteHierarchy(top.gameObject, data, ExecuteEvents.scrollHandler);
+
+            Core.Log?.Msg($"[Sideload/probe] {what}: wheel {notches:0.#} hit '{Path(top.gameObject)}' " +
+                          $"({hits.Count} candidate(s)), scroll handled by '{Path(handled)}'.");
+            return handled;
+        }
+
         private static string Path(GameObject go)
         {
             if (go == null) return "<none>";

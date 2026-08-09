@@ -3,6 +3,22 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.25.0] - 2026-08-09
+
+### Added
+
+- `sideloadwheel [notches] [appId]` turns the wheel over a page through the real raycast and names what took the
+  notch. A screenshot cannot tell scrolling from cropping. Debug builds only.
+
+### Fixed
+
+- A page taller than the phone scrolls instead of drawing past it. The lower half used to be painted outside the
+  phone, over the game world, out of reach.
+- A page whose script listens for the wheel still scrolls. React registers one on its root container, which took
+  scrolling away from every React app.
+- `scrollToEnd()` works on a box that already had a scroll area. The position restore that follows a rebuild put it
+  straight back where it was.
+
 ## [1.19.0] - 2026-08-09
 
 ### Added

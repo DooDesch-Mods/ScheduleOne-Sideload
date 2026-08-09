@@ -611,6 +611,7 @@ namespace Sideload.Host
             long tCascade = split.ElapsedMilliseconds;
 
             IElement body = _document.Body ?? _document.DocumentElement;
+            DocumentScroll.Propagate(body, styles);
             LayoutNode tree = DomBuilder.Build(body, styles, generated);
             if (tree == null) { ShowError("the document has no renderable content"); return; }
 
@@ -672,6 +673,11 @@ namespace Sideload.Host
                 Dictionary<IElement, ScrollMark> scroll = CaptureScroll();
                 _survivors = RescueControls();
 
+                // Held across the render because ApplyPin, which runs inside it, consumes the request - and
+                // RestoreScroll comes AFTER and puts every box back where it was, pin included. A box that already
+                // had a scroll area therefore had its pin overwritten by the restore, every time.
+                IElement pinned = _pinToEnd;
+
                 for (int i = _root.childCount - 1; i >= 0; i--)
                 {
                     GameObject child = _root.GetChild(i).gameObject;
@@ -688,6 +694,9 @@ namespace Sideload.Host
                 });
 
                 RestoreScroll(scroll);
+
+                _pinToEnd = pinned;
+                ApplyPin();
             }
             catch (Exception e)
             {
@@ -795,7 +804,14 @@ namespace Sideload.Host
             if (_painted.TryGetValue(_pinToEnd, out Painter.PaintedBox box) && box.Rect != null)
             {
                 var scroll = box.Rect.GetComponentInChildren<ScrollRect>();
-                if (scroll != null) scroll.verticalNormalizedPosition = 0f;
+                if (scroll != null)
+                {
+                    // The RectTransforms were created this frame and the canvas has not laid them out yet, so the
+                    // ScrollRect's own viewport still measures nothing and clamps the normalised position straight
+                    // back to where it was. Forcing the update first is what makes the number mean something.
+                    Canvas.ForceUpdateCanvases();
+                    scroll.verticalNormalizedPosition = 0f;
+                }
             }
 
             _pinToEnd = null;
@@ -1414,11 +1430,12 @@ namespace Sideload.Host
             _script?.Dispatch(element, type, spot: spot, deltaX: delta.x, deltaY: delta.y);
         }
 
-        private void OnWheel(IElement element, float notches)
+        /// <summary>True when the page called <c>preventDefault()</c>, so the notch must not also scroll the box.</summary>
+        private bool OnWheel(IElement element, float notches)
         {
-            if (element == null) return;
+            if (element == null) return false;
 
-            _script?.Dispatch(element, "wheel", wheelDelta: notches);
+            return _script?.Dispatch(element, "wheel", wheelDelta: notches)?.DefaultPrevented ?? false;
         }
 
         /// <summary>A painted input field reports every keystroke. The value is mirrored onto the element so that
@@ -1472,6 +1489,14 @@ namespace Sideload.Host
         /// <summary>The most recently mounted view - what the debug harness pokes at.</summary>
         internal static WebView Newest => _live.Count > 0 ? _live[_live.Count - 1] : null;
 
+        /// <summary>The mounted view for one app id, because several pages stand at once.</summary>
+        internal static WebView Find(string appId)
+        {
+            for (int i = _live.Count - 1; i >= 0; i--)
+                if (string.Equals(_live[i]._appId, appId, StringComparison.OrdinalIgnoreCase)) return _live[i];
+            return null;
+        }
+
         /// <summary>Debug-only: click the first element matching a CSS selector, through the real pointer path rather
         /// than by calling its handler.</summary>
         internal void DebugClick(string selector)
@@ -1489,6 +1514,19 @@ namespace Sideload.Host
             Vector3 world = box.Rect.TransformPoint(box.Rect.rect.center);
 
             Devtools.ClickProbe.ClickAt(RectTransformUtility.WorldToScreenPoint(camera, world), selector);
+        }
+
+        /// <summary>Debug-only: turn the wheel over the middle of the page, through the real pointer path. Positive
+        /// notches scroll toward the top, which is the sign a mouse reports.</summary>
+        internal void DebugWheel(float notches)
+        {
+            if (_root == null) return;
+
+            Canvas canvas = _root.GetComponentInParent<Canvas>();
+            Camera camera = canvas != null && canvas.renderMode != RenderMode.ScreenSpaceOverlay ? canvas.worldCamera : null;
+            Vector3 world = _root.TransformPoint(_root.rect.center);
+
+            Devtools.ClickProbe.WheelAt(RectTransformUtility.WorldToScreenPoint(camera, world), notches, _appId);
         }
 
         /// <summary>Debug-only: run a snippet against the page's own engine, so the harness can set up a state that

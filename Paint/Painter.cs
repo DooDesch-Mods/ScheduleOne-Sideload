@@ -87,7 +87,14 @@ namespace Sideload.Paint
             _reuse = reuse;
             _bundle = bundle;
             _appId = appId ?? "";
-            BoxRenderer.ActiveClip = null;
+
+            // The viewport is a clip, and it is the one clip that is never optional: a page taller or wider than the
+            // screen has to stop AT the screen. Nothing else enforces that here - every graphic is opted out of the
+            // phone's own RectMask2D (see ClipTo), because that mask collapses the moment a scroll area moves - so
+            // without this the page simply drew on across the bezel and over the game. A page that overflows now
+            // scrolls (WebView gives the document the viewport's scrollport) and, whatever it does, ends at the edge.
+            Rect? viewport = ClipRectInCanvasSpace(0f, 0f, viewSize.x, viewSize.y);
+            BoxRenderer.ActiveClip = viewport;
             BoxRenderer.BeginPass(host.GetInstanceID());
 
             var topLayer = new List<LayoutNode>();
@@ -106,7 +113,9 @@ namespace Sideload.Paint
                 //   * UNDER THE VIEW ROOT, so no ancestor's `overflow` crops it and no scroll area carries it off
                 //     screen - and, because uGUI raycasts front-most first, so a backdrop over the page actually
                 //     swallows the clicks meant for what is behind it.
-                //   * With the clip stack back at nothing, which the walk above restores on its way out.
+                //   * With the clip stack back at the viewport, which the walk above restores on its way out. Back at
+                //     the viewport and not at nothing: an overlay is exempt from the page's scroll areas, not from
+                //     the screen.
                 //
                 // The list grows while it is being walked: a fixed box nested inside another one appends to it and is
                 // picked up by the same loop, which is why this is an index loop and not a foreach.
@@ -116,7 +125,7 @@ namespace Sideload.Paint
                 // whatever they asked for. Half of an ordering is worse than none. Two fixed boxes therefore paint in
                 // the order they were collected - which follows each parent's stacking order, because that is the
                 // order the walk above visited them in.
-                BoxRenderer.ActiveClip = null;
+                BoxRenderer.ActiveClip = viewport;
                 for (int i = 0; i < topLayer.Count; i++)
                     PaintNode(topLayer[i], host, 0, painted, 0f, 0f, hoisted: true);
             }
