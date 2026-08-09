@@ -38,6 +38,10 @@ namespace Sideload.Css
             "border-top-left-radius", "border-top-right-radius",
             "border-bottom-right-radius", "border-bottom-left-radius",
             "box-shadow",
+
+            // An outline is drawn outside the box and takes no room, which is exactly what makes it safe here -
+            // and it is the one property a focus ring is written with, so it changes on every tab press.
+            "outline", "outline-width", "outline-color", "outline-style", "outline-offset",
         };
 
         /// <summary>

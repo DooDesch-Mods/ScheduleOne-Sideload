@@ -23,9 +23,8 @@ namespace Sideload.Script
     /// </summary>
     internal sealed class ScriptHost
     {
-        /// <summary>A single handler may not run longer than this. Long enough for any honest page update, short
-        /// enough that a mistake shows up as one hitched frame instead of a hung game.</summary>
-        private static readonly TimeSpan Budget = TimeSpan.FromMilliseconds(250);
+        /// <summary>How long script may run in one go. Two limits, not one - see <see cref="TimeBudget"/>.</summary>
+        private readonly TimeBudget _budget = new TimeBudget();
 
         /// <summary>
         /// Every console call and every uncaught script error, mirrored to whoever is listening: (appId, level, the
@@ -86,7 +85,7 @@ namespace Sideload.Script
 
             Engine = new Engine(options =>
             {
-                options.TimeoutInterval(Budget);
+                options.Constraints.Constraints.Add(_budget);
                 options.MaxStatements(2_000_000);
                 options.LimitRecursion(256);
                 options.Strict = false;
@@ -301,17 +300,23 @@ namespace Sideload.Script
 
             try
             {
-                if (source.Length >= PrepareFrom)
+                // On the load ceiling, not the handler one: a framework evaluates its modules AND performs its first
+                // render inside this single call, and a page that legitimately needs half a second to appear must not
+                // be killed by the limit that exists to catch a runaway click handler.
+                _budget.During(Engine, TimeBudget.Load, () =>
                 {
-                    if (!_prepared.TryGetValue(source, out Prepared<Esprima.Ast.Script> script))
-                        _prepared[source] = script = Engine.PrepareScript(source, fileName);
+                    if (source.Length >= PrepareFrom)
+                    {
+                        if (!_prepared.TryGetValue(source, out Prepared<Esprima.Ast.Script> script))
+                            _prepared[source] = script = Engine.PrepareScript(source, fileName);
 
-                    Engine.Execute(script);
-                }
-                else
-                {
-                    Engine.Execute(source, fileName);
-                }
+                        Engine.Execute(script);
+                    }
+                    else
+                    {
+                        Engine.Execute(source, fileName);
+                    }
+                });
 
                 Model.Platform.Msg($"{fileName} executed ({source.Length} chars).");
             }
@@ -398,7 +403,7 @@ namespace Sideload.Script
         private static readonly HashSet<string> Dispatchable = new(StringComparer.OrdinalIgnoreCase)
         {
             "click", "dblclick", "contextmenu", "mousedown", "mouseup",
-            "mouseenter", "mouseleave", "mouseover", "mouseout",
+            "mouseenter", "mouseleave", "mouseover", "mouseout", "mousemove",
             "wheel", "input", "change", "keydown",
             "focus", "blur", "focusin", "focusout",
             "dragstart", "drag", "dragend", "orientationchange", "back",
@@ -726,6 +731,8 @@ namespace Sideload.Script
             _promises = new Promises(Engine, message => Fault("unhandled promise rejection: " + message));
             _fetch = new FetchApi(Engine, _appId, _promises, line => Fault(line));
             _fetch.Install();
+
+            WebApis.Install(Engine);
 
             Engine.SetValue("setTimeout", new Func<JsValue, double, int>((fn, ms) => AddTimer(fn, ms, repeating: false)));
             Engine.SetValue("setInterval", new Func<JsValue, double, int>((fn, ms) => AddTimer(fn, ms, repeating: true)));

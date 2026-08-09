@@ -120,7 +120,7 @@ namespace Sideload.Script
 
             call.Url = parsed;
 
-            try { ReadInit(init, call); }
+            try { ReadInit(_engine, init, call); }
             catch (Exception e)
             {
                 Later(() => deferred.Reject("the second argument to fetch is not usable: " + e.Message));
@@ -164,7 +164,7 @@ namespace Sideload.Script
 
         /// <summary>Read the `init` object: method, headers, body, and a per-call timeout. Anything else a browser
         /// accepts (mode, credentials, cache, signal) has no meaning here and is ignored rather than rejected.</summary>
-        private static void ReadInit(JsValue init, FetchCall call)
+        private static void ReadInit(Engine engine, JsValue init, FetchCall call)
         {
             if (init == null || init.IsUndefined() || init.IsNull() || !init.IsObject()) return;
 
@@ -174,10 +174,17 @@ namespace Sideload.Script
             if (!method.IsUndefined() && !method.IsNull()) call.Method = method.ToString();
 
             JsValue body = options.Get("body");
-            if (!body.IsUndefined() && !body.IsNull()) call.Body = body.ToString();
+            bool form = false;
+            if (!body.IsUndefined() && !body.IsNull())
+            {
+                call.Body = body.ToString();
+                form = WebApis.IsFormData(engine, body);
+            }
 
             JsValue timeout = options.Get("timeout");
             if (timeout.IsNumber()) call.TimeoutMs = (int)timeout.AsNumber();
+
+            bool typed = false;
 
             JsValue headers = options.Get("headers");
             if (headers.IsObject())
@@ -188,9 +195,17 @@ namespace Sideload.Script
                     JsValue value = map.Get(pair.Key);
                     if (value.IsUndefined() || value.IsNull()) continue;
 
-                    call.Headers.Add(new KeyValuePair<string, string>(pair.Key.ToString(), value.ToString()));
+                    string name = pair.Key.ToString();
+                    typed |= string.Equals(name, "content-type", StringComparison.OrdinalIgnoreCase);
+                    call.Headers.Add(new KeyValuePair<string, string>(name, value.ToString()));
                 }
             }
+
+            // A browser types the body of a form submission itself, and the page never writes this header. A server
+            // told nothing reads `a=1&b=2` as one opaque string and every field arrives empty - which reads as a bug
+            // in the page rather than a missing header.
+            if (form && !typed)
+                call.Headers.Add(new KeyValuePair<string, string>("Content-Type", "application/x-www-form-urlencoded"));
         }
 
         private static string Trim(string url) =>

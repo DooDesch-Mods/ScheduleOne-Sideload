@@ -162,6 +162,15 @@ namespace Sideload.Css
     internal enum FlexWrap { NoWrap, Wrap, WrapReverse }
     internal enum Justify { FlexStart, FlexEnd, Center, SpaceBetween, SpaceAround, SpaceEvenly }
     internal enum AlignKind { Auto, FlexStart, FlexEnd, Center, Stretch, Baseline }
+
+    /// <summary>
+    /// `vertical-align`, which only means anything to a box ON A LINE - an icon next to words, a badge in a sentence.
+    ///
+    /// A browser ignores it on a block, and so does this: the value is carried here and read only where an inline run
+    /// is built, which is the one place it has something to align against. Anywhere else it is a declaration that
+    /// would have done nothing in a browser either, so nothing is lost by it doing nothing here.
+    /// </summary>
+    internal enum VerticalAlignKind { Baseline, Top, Middle, Bottom }
     /// <summary>
     /// <c>Relative</c> stays IN the flow: it takes its normal room, siblings are placed as if it had not moved, and
     /// only the painted rectangle is shifted by the insets. Being in the flow is the whole difference from

@@ -332,6 +332,10 @@ namespace Sideload.Host
                 HoldTyping();
             }
 
+            // Returns on its first line unless the page listens for `mousemove`, which is why it can sit in the
+            // per-frame path at all - uGUI has no pointer-move event to hang it on.
+            _interaction?.TickMove();
+
             // A resize lays the page out too, so it subsumes whatever rebuild was pending.
             if (_resizeQueued)
             {
@@ -1174,6 +1178,16 @@ namespace Sideload.Host
                     stateful.Add(scrolled);
                     wheeled.Add(scrolled);
                 }
+
+                // The pointer's position has to be polled for this - see Interaction.TickMove - so the poll is only
+                // switched on for a page that asked. Hit targets come from the same set as every other listener.
+                bool moves = false;
+                foreach (IElement moved in _script.ElementsListeningFor("mousemove"))
+                {
+                    stateful.Add(moved);
+                    moves = true;
+                }
+                _interaction.WantsMove = moves;
             }
 
             int wired = 0;
@@ -1198,8 +1212,14 @@ namespace Sideload.Host
                 // into the scroll area behind - the box was drawn, and it was not there.
                 bool isFormControl = Dom.ControlKinds.Of(element) == Dom.ControlKind.Text;
 
+                // `touch-action: none` - the stylesheet already said this box handles its own gesture, so it does
+                // not have to fight for it once per press.
+                bool owns = styles != null && styles.TryGetValue(element, out ComputedStyle gesture)
+                            && gesture.TouchActionNone;
+
                 _interaction.Attach(box.Rect, element, disabled, ownGameObject: isFormControl,
-                                    draggable: draggable.Contains(element), wheel: wheeled.Contains(element));
+                                    draggable: draggable.Contains(element), wheel: wheeled.Contains(element),
+                                    ownsGesture: owns);
                 wired++;
             }
 
@@ -1455,12 +1475,16 @@ namespace Sideload.Host
         /// A drag on an element whose page asked for it. The three phases are separate event types rather than one
         /// event with a phase field, so a page can listen for the end of a gesture without also being woken sixty
         /// times a second while it runs.
+        ///
+        /// True when the page called <c>preventDefault()</c>, so the gesture must not also scroll the area the
+        /// element sits in - the same bargain the wheel makes.
         /// </summary>
-        private void OnDragged(IElement element, string type, Input.PointerSpot spot, UnityEngine.Vector2 delta)
+        private bool OnDragged(IElement element, string type, Input.PointerSpot spot, UnityEngine.Vector2 delta)
         {
-            if (element == null) return;
+            if (element == null) return false;
 
-            _script?.Dispatch(element, type, spot: spot, deltaX: delta.x, deltaY: delta.y);
+            return _script?.Dispatch(element, type, spot: spot, deltaX: delta.x, deltaY: delta.y)?.DefaultPrevented
+                   ?? false;
         }
 
         /// <summary>True when the page called <c>preventDefault()</c>, so the notch must not also scroll the box.</summary>

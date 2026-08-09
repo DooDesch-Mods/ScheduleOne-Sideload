@@ -42,6 +42,9 @@ namespace Sideload.Css
         internal Justify JustifyContent = Justify.FlexStart;
         internal AlignKind AlignItems = AlignKind.Stretch;
         internal AlignKind AlignSelf = AlignKind.Auto;
+
+        /// <summary>`vertical-align`. Read where an inline run is built and nowhere else - see the enum.</summary>
+        internal VerticalAlignKind VerticalAlign = VerticalAlignKind.Baseline;
         internal Len RowGap = Len.Zero;
         internal Len ColumnGap = Len.Zero;
 
@@ -106,6 +109,23 @@ namespace Sideload.Css
 
         internal Edges BorderWidth = Edges.Zero;
         internal RgbaColor BorderColor = RgbaColor.Transparent;
+
+        /// <summary>
+        /// `outline` - a ring drawn OUTSIDE the border box, taking no room.
+        ///
+        /// Not the same thing as a border, and the difference is the whole reason it exists: a focus ring must not
+        /// move the thing it marks. Every framework's keyboard-focus style is written with it, and until this was
+        /// drawn, a page tabbed through with nothing at all to show where the caret had gone.
+        ///
+        /// Zero width means no ring, which is what `outline: none` and the initial value both come to.
+        /// </summary>
+        internal float OutlineWidth;
+
+        internal RgbaColor OutlineColor = RgbaColor.Transparent;
+
+        /// <summary>The gap between the border box and the ring. May be negative, which draws the ring inside the
+        /// box - what `outline-offset: -2px` is for.</summary>
+        internal float OutlineOffset;
         internal Corners BorderRadius;
 
         internal bool HasShadow;
@@ -143,6 +163,15 @@ namespace Sideload.Css
         /// <summary>`pointer-events: none` - the box is there to be looked at, not touched. Inherited, as CSS has
         /// it, so a whole overlay opts out with one rule on its root.</summary>
         internal bool PointerEventsNone;
+
+        /// <summary>
+        /// `touch-action: none` - this box handles the drag itself, and no scroll area above it may have it.
+        ///
+        /// The same declaration a web page uses to make a map pan instead of scrolling the article it sits in, and
+        /// it means exactly that here. Not inherited: CSS does not inherit it either, and a page that claimed the
+        /// gesture for a container would take it from every list inside that container.
+        /// </summary>
+        internal bool TouchActionNone;
 
         internal TextTransformKind TextTransform = TextTransformKind.None;
 
@@ -193,6 +222,16 @@ namespace Sideload.Css
         /// can line up under a heading, which is the difference between a terminal and a list of words.
         /// </summary>
         internal float MonoAdvance = 0f;
+
+        /// <summary>
+        /// `tab-size` - how many character widths a tab advances to. CSS's initial value is 8; a code block usually
+        /// says 2 or 4.
+        ///
+        /// Only preserved whitespace ever sees a tab: everywhere else the parser has already folded it into a single
+        /// space, which is what CSS says too. TextMeshPro's own tab stop is a fixed distance and knows nothing about
+        /// the property, so the tabs are expanded to spaces before the text is handed over.
+        /// </summary>
+        internal int TabSize = 8;
 
         /// <summary>False for `-s1-scroll: instant`. A wheel notch is eased by default; a box that follows the
         /// pointer - a map, a canvas - wants the jump, because there smoothing is lag.</summary>
@@ -293,6 +332,7 @@ namespace Sideload.Css
             s.TextDecoration = parent.TextDecoration;
             s.LetterSpacing = parent.LetterSpacing;
             s.MonoAdvance = parent.MonoAdvance;
+            s.TabSize = parent.TabSize;
             s.SmoothScroll = parent.SmoothScroll;
             s.CaretColor = parent.CaretColor;
             s.GhostColor = parent.GhostColor;
