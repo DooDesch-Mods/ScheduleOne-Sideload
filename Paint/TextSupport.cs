@@ -191,7 +191,7 @@ namespace Sideload.Paint
         private readonly struct Key : IEquatable<Key>
         {
             private readonly string _text;
-            private readonly float _width, _size, _spacing, _mono;
+            private readonly float _width, _size, _spacing, _mono, _line;
             private readonly int _font, _flags;
 
             internal Key(string text, float width, TMP_FontAsset font, ComputedStyle s)
@@ -206,6 +206,10 @@ namespace Sideload.Paint
                 // for the same string and has to be part of what identifies it.
                 _mono = s.MonoAdvance;
 
+                // Same string, same size, different line-height is a different HEIGHT. Leaving this out of the key
+                // was safe only while line-height did nothing.
+                _line = s.LineHeight.IsDefinite ? s.ResolvedLineHeight : 0f;
+
                 _flags = (int)s.WhiteSpace
                          | (s.TextOverflowEllipsis ? 1 << 8 : 0)
                          | (s.WrapsWholeWords ? 1 << 9 : 0);
@@ -214,7 +218,7 @@ namespace Sideload.Paint
             public bool Equals(Key other) =>
                 _font == other._font && _flags == other._flags
                 && _width.Equals(other._width) && _size.Equals(other._size) && _spacing.Equals(other._spacing)
-                && _mono.Equals(other._mono)
+                && _mono.Equals(other._mono) && _line.Equals(other._line)
                 && string.Equals(_text, other._text, StringComparison.Ordinal);
 
             public override bool Equals(object obj) => obj is Key other && Equals(other);
@@ -442,7 +446,7 @@ namespace Sideload.Paint
             tmp.fontSize = s.FontSize;
             tmp.color = new Color(s.Color.R, s.Color.G, s.Color.B, s.Color.A);
             tmp.characterSpacing = s.LetterSpacing;
-            tmp.lineSpacing = 0f;
+            tmp.lineSpacing = LineSpacing(font, s);
             tmp.richText = true;
             // `pre` and `nowrap` both refuse to wrap; `pre-wrap` keeps the spaces but still fits itself to the box.
             tmp.enableWordWrapping = s.WhiteSpace == WhiteSpaceKind.Normal || s.WhiteSpace == WhiteSpaceKind.PreWrap;
@@ -460,9 +464,48 @@ namespace Sideload.Paint
                 _ => middle ? TextAlignmentOptions.Left : TextAlignmentOptions.TopLeft,
             };
 
-            // CSS line-height is a box height per line; TMP's lineSpacing is an offset in font units, so the closest
-            // honest mapping is to leave spacing alone and let the measured height carry it.
             tmp.fontStyle = FontStyles.Normal;
+        }
+
+        /// <summary>
+        /// `line-height`, in the units TextMeshPro takes.
+        ///
+        /// CSS says how tall a line box is; TMP takes how much to ADD to the one the font asks for, as a
+        /// percentage of the font size. So the conversion needs the font's own line height, which is why this
+        /// takes the resolved asset rather than the family name.
+        ///
+        /// Zero unless the stylesheet actually said something. An undeclared line-height keeps TMP's own spacing,
+        /// exactly as before - which keeps every page that never asked looking the way it looks today, and limits
+        /// this to the pages that did ask and were silently ignored.
+        /// </summary>
+        private static float LineSpacing(TMP_FontAsset font, ComputedStyle s)
+        {
+            if (font == null || s == null || !s.LineHeight.IsDefinite || s.FontSize <= 0f) return 0f;
+
+            float natural = NaturalLineHeight(font, s.FontSize);
+            if (float.IsNaN(natural) || natural <= 0f) return 0f;
+
+            return (s.ResolvedLineHeight - natural) / s.FontSize * 100f;
+        }
+
+        /// <summary>How tall one line is when nobody asks for anything, in css pixels. Read off the face the same
+        /// way <see cref="Ascent"/> reads the baseline, so the two cannot drift.</summary>
+        private static float NaturalLineHeight(TMP_FontAsset font, float fontSize)
+        {
+            try
+            {
+                var face = font.faceInfo;
+                float point = face.pointSize;
+                if (point <= 0f) return float.NaN;
+
+                float scale = face.scale > 0f ? face.scale : 1f;
+                return face.lineHeight * (fontSize / point) * scale;
+            }
+            catch (Exception e)
+            {
+                Core.Log?.Warning("line metric unavailable: " + e.Message);
+                return float.NaN;
+            }
         }
     }
 }

@@ -1161,6 +1161,13 @@ namespace Sideload.Host
             {
                 if (!_painted.TryGetValue(element, out Painter.PaintedBox box)) continue;
 
+                // `pointer-events: none` - there to be looked at, not touched. Not wiring it is the whole
+                // implementation: a box without a hit target lets the pointer through to whatever is behind it,
+                // which is what the rule asks for. A full-screen scrim that only dims, and a label lying over a
+                // map, both need exactly this and had no way to say it.
+                if (styles != null && styles.TryGetValue(element, out ComputedStyle pointer) && pointer.PointerEventsNone)
+                    continue;
+
                 bool disabled = element.HasAttribute("disabled");
 
                 // Form controls already own a Selectable; their handlers have to share its GameObject, otherwise a
@@ -1385,7 +1392,14 @@ namespace Sideload.Host
             if (!ray.Valid || _painted == null) return null;
 
             return Dom.HitPath.Deepest(root, element =>
-                _painted.TryGetValue(element, out Painter.PaintedBox box) && Input.Interaction.Covers(box.Rect, ray));
+            {
+                // `pointer-events: none` ends the descent as well. A label lying over a map has no hit target of
+                // its own, so without this the re-target would still hand the click to the label and the map
+                // below would never hear about the point that was actually pressed.
+                if (_styleWas.TryGetValue(element, out ComputedStyle style) && style.PointerEventsNone) return false;
+
+                return _painted.TryGetValue(element, out Painter.PaintedBox box) && Input.Interaction.Covers(box.Rect, ray);
+            });
         }
 
         /// <summary>

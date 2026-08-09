@@ -129,6 +129,23 @@ namespace Sideload.Css
         internal int FontWeight = 400;
         internal FontStyleKind FontStyle = FontStyleKind.Normal;
         internal Len LineHeight = Len.None;        // none = 1.2 x font-size, the engine default
+
+        /// <summary>`pointer-events: none` - the box is there to be looked at, not touched. Inherited, as CSS has
+        /// it, so a whole overlay opts out with one rule on its root.</summary>
+        internal bool PointerEventsNone;
+
+        internal TextTransformKind TextTransform = TextTransformKind.None;
+
+        /// <summary>
+        /// The point `scale` and `rotate` turn around, as a length or a percentage of the box.
+        ///
+        /// 50% 50% is the CSS default, and getting it wrong is not subtle: this renderer places every box from its
+        /// top-left corner, so before this existed every scale grew out of the corner and every rotation swung
+        /// around it. NOT inherited - a transform belongs to one box.
+        /// </summary>
+        internal Len TransformOriginX = Len.Percent(50f);
+
+        internal Len TransformOriginY = Len.Percent(50f);
         internal float LetterSpacing = 0f;
 
         /// <summary>
@@ -235,6 +252,8 @@ namespace Sideload.Css
             s.FontWeight = parent.FontWeight;
             s.FontStyle = parent.FontStyle;
             s.LineHeight = parent.LineHeight;
+            s.PointerEventsNone = parent.PointerEventsNone;
+            s.TextTransform = parent.TextTransform;
             s.LetterSpacing = parent.LetterSpacing;
             s.MonoAdvance = parent.MonoAdvance;
             s.SmoothScroll = parent.SmoothScroll;
