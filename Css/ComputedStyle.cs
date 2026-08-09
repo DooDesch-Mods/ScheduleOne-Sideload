@@ -136,6 +136,13 @@ namespace Sideload.Css
 
         internal TextTransformKind TextTransform = TextTransformKind.None;
 
+        /// <summary>Where the wrapped lines sit. Not inherited, like every other flex property.</summary>
+        internal AlignContentKind AlignContent = AlignContentKind.FlexStart;
+
+        /// <summary>How an `img` fills its box. `contain` is what this renderer has always done, so it is the
+        /// default here rather than CSS's `fill` - changing that would restretch every picture in every app.</summary>
+        internal ObjectFitKind ObjectFit = ObjectFitKind.Contain;
+
         /// <summary>
         /// The point `scale` and `rotate` turn around, as a length or a percentage of the box.
         ///

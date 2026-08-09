@@ -201,6 +201,35 @@ namespace Sideload.Css
                 case "overflow": s.OverflowX = s.OverflowY = ParseOverflow(value, s.OverflowX); break;
                 case "transform-origin": ApplyTransformOrigin(s, value); break;
 
+                case "object-fit":
+                    // `contain` is what this renderer has always done with an <img>, so taking it in silence is
+                    // the truth - and all three uses in the shipped apps are exactly that, written to make the
+                    // BROWSER match the game. `cover` and `none` crop, and cropping needs a clip rectangle of the
+                    // image's own rather than the ancestor's, so those two say so instead of pretending.
+                    if (Is(value, "contain")) s.ObjectFit = ObjectFitKind.Contain;
+                    else if (Is(value, "fill")) s.ObjectFit = ObjectFitKind.Fill;
+                    else if (Is(value, "scale-down")) s.ObjectFit = ObjectFitKind.ScaleDown;
+                    else if (Is(value, "cover") || Is(value, "none"))
+                        Diagnostics.Report(DiagnosticKind.ValueIgnored, "object-fit", value);
+                    else Diagnostics.Report(DiagnosticKind.ValueRejected, "object-fit", value);
+                    break;
+
+                case "align-content":
+                    // `flex-start` is what this engine already does, so taking it in silence is the truth. An
+                    // explicit `stretch` is the one value it cannot honour - growing a line means laying its
+                    // items out again - and that one says so.
+                    if (Is(value, "flex-start") || Is(value, "start") || Is(value, "normal"))
+                        s.AlignContent = AlignContentKind.FlexStart;
+                    else if (Is(value, "flex-end") || Is(value, "end")) s.AlignContent = AlignContentKind.FlexEnd;
+                    else if (Is(value, "center")) s.AlignContent = AlignContentKind.Center;
+                    else if (Is(value, "space-between")) s.AlignContent = AlignContentKind.SpaceBetween;
+                    else if (Is(value, "space-around")) s.AlignContent = AlignContentKind.SpaceAround;
+                    else if (Is(value, "space-evenly")) s.AlignContent = AlignContentKind.SpaceEvenly;
+                    else if (Is(value, "stretch"))
+                        Diagnostics.Report(DiagnosticKind.ValueIgnored, "align-content", value);
+                    else Diagnostics.Report(DiagnosticKind.ValueRejected, "align-content", value);
+                    break;
+
                 // Accepted and deliberately without effect, because they have no effect to have here. Every one
                 // of these is a hint to a browser about work this renderer does not do - compositor layers, touch
                 // scrolling, tap highlights, subpixel smoothing, a scrollbar that is never drawn. Reporting them
