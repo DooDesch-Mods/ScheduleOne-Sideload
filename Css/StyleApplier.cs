@@ -275,9 +275,12 @@ namespace Sideload.Css
 
                 case "appearance":
                 case "-webkit-appearance":
-                    // There is no native control chrome to strip. A checkbox here is boxes and text this engine
-                    // drew itself, so `none` describes what already happens.
-                    if (!Is(value, "none")) Diagnostics.Report(DiagnosticKind.ValueIgnored, property, value);
+                    // Only a checkbox and a radio have an appearance to strip - this engine draws theirs, because
+                    // there is no user-agent stylesheet to put one in the cascade. Everywhere else `none` asks for
+                    // something that already is not there, which is agreement rather than a loss.
+                    if (Is(value, "none")) s.Appearance = AppearanceKind.None;
+                    else if (Is(value, "auto")) s.Appearance = AppearanceKind.Auto;
+                    else Diagnostics.Report(DiagnosticKind.ValueIgnored, property, value);
                     break;
 
                 case "resize":

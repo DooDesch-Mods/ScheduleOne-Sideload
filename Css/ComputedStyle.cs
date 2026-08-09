@@ -137,6 +137,15 @@ namespace Sideload.Css
         internal TextTransformKind TextTransform = TextTransformKind.None;
 
         /// <summary>
+        /// `appearance`. Not inherited, and only a form control reads it.
+        ///
+        /// It is the one property that means something here despite there being no native widgets to strip: a
+        /// checkbox HAS an appearance this engine draws for it, because there is no user-agent stylesheet to put
+        /// one in the cascade. `appearance: none` is how a page says it will draw its own.
+        /// </summary>
+        internal AppearanceKind Appearance = AppearanceKind.Auto;
+
+        /// <summary>
         /// `text-decoration-line` - the underline or strike on a run of text.
         ///
         /// Inherited here, which CSS does NOT say: there the property sits on one box and PROPAGATES to the inline

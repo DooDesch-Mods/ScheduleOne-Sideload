@@ -468,7 +468,14 @@ namespace Sideload.Paint
             BoxRenderer.ActiveClip = box.Clip;
             try
             {
-                BoxRenderer.Paint(box.Rect, ToVisual(style, box.Node.Width, box.Node.Height), box.Node.Width, box.Node.Height);
+                // A native control draws itself. Handing this one the element's own computed style would paint a
+                // checkbox as what its CSS says it is - transparent and borderless - which is how a checkbox used
+                // to vanish the moment the pointer touched it.
+                BoxVisual visual = IsToggle(box.Node)
+                    ? ToggleVisual(box.Node, style, out _)
+                    : ToVisual(style, box.Node.Width, box.Node.Height);
+
+                BoxRenderer.Paint(box.Rect, visual, box.Node.Width, box.Node.Height);
             }
             finally { BoxRenderer.ActiveClip = outer; }
 
@@ -493,8 +500,10 @@ namespace Sideload.Paint
 
             float w = box.Node.Width, h = box.Node.Height;
 
-            BoxVisual visual = ToVisual(to, w, h);
-            BoxVisual before = ToVisual(from, w, h);
+            // Same reasoning as Repaint: a native control draws itself, at both ends of the line.
+            bool toggle = IsToggle(box.Node);
+            BoxVisual visual = toggle ? ToggleVisual(box.Node, to, out _) : ToVisual(to, w, h);
+            BoxVisual before = toggle ? ToggleVisual(box.Node, from, out _) : ToVisual(from, w, h);
 
             visual.FillTL = Color.Lerp(before.FillTL, visual.FillTL, t);
             visual.FillTR = Color.Lerp(before.FillTR, visual.FillTR, t);
@@ -641,6 +650,50 @@ namespace Sideload.Paint
         /// see, which is exactly how it looked before this existed. The fallback below is only used when the page
         /// gave it neither a background nor a border, so any real styling wins outright.
         /// </summary>
+        /// <summary>
+        /// What a checkbox or a radio LOOKS like, in one place, so that every path which draws a box can draw this
+        /// one - the first paint, a hover restyle, the frame of a transition.
+        ///
+        /// It has to be a function rather than something the painter does once, and that is the whole lesson here.
+        /// The chrome used to be painted inside the toggle branch of the build walk, and everything else that ever
+        /// repaints a box - <see cref="Repaint"/> on hover, on active, on focus - went through
+        /// <see cref="ToVisual"/> with the element's own computed style, which for a checkbox is transparent and
+        /// borderless. So the box was drawn, and the first time the pointer crossed it, it was erased.
+        ///
+        /// <paramref name="native"/> says the engine supplied the appearance because the page did not. A page that
+        /// gave the box a background or a border of its own gets exactly that and nothing added; a page that said
+        /// `appearance: none` is asking for no widget at all and gets none.
+        /// </summary>
+        private static BoxVisual ToggleVisual(LayoutNode node, ComputedStyle s, out bool native)
+        {
+            bool round = node.Tag is AngleSharp.Dom.IElement element
+                         && string.Equals(element.GetAttribute("type"), "radio", StringComparison.OrdinalIgnoreCase);
+
+            native = s.Appearance != AppearanceKind.None
+                     && s.BackgroundColor.IsTransparent
+                     && s.BorderWidth.Left.Resolve(0f) <= 0f && s.BorderWidth.Top.Resolve(0f) <= 0f;
+
+            if (!native) return ToVisual(s, node.Width, node.Height);
+
+            bool on = node.Tag is AngleSharp.Dom.IElement box && Dom.ControlKinds.IsChecked(box);
+
+            ComputedStyle chrome = s.Clone();
+            chrome.BorderWidth = Edges.All(Len.Px(1f));
+            chrome.BorderColor = new RgbaColor(s.Color.R, s.Color.G, s.Color.B, s.Color.A * 0.5f);
+            chrome.BorderRadius = round
+                ? Corners.All(node.Width * 0.5f)
+                : Corners.All(MathF.Max(2f, node.Width * 0.2f));
+
+            // An off checkbox needs a FILL, not just an outline. A one-pixel hairline at half alpha over a dark
+            // panel is invisible at thirteen pixels square - the box was there, was clickable, and could not be
+            // found. Browsers fill theirs too, which is why an unchecked box reads as a box rather than a gap.
+            chrome.BackgroundColor = on
+                ? s.Color
+                : new RgbaColor(s.Color.R, s.Color.G, s.Color.B, s.Color.A * 0.16f);
+
+            return ToVisual(chrome, node.Width, node.Height);
+        }
+
         private static void PaintToggle(LayoutNode node, RectTransform rt)
         {
             var element = (AngleSharp.Dom.IElement)node.Tag;
@@ -648,27 +701,8 @@ namespace Sideload.Paint
             bool round = string.Equals(element.GetAttribute("type"), "radio", StringComparison.OrdinalIgnoreCase);
 
             ComputedStyle s = node.Style;
-            bool unstyled = s.BackgroundColor.IsTransparent
-                            && s.BorderWidth.Left.Resolve(0f) <= 0f && s.BorderWidth.Top.Resolve(0f) <= 0f;
 
-            if (unstyled)
-            {
-                ComputedStyle chrome = s.Clone();
-                chrome.BorderWidth = Edges.All(Len.Px(1f));
-                chrome.BorderColor = new RgbaColor(s.Color.R, s.Color.G, s.Color.B, s.Color.A * 0.5f);
-                chrome.BorderRadius = round
-                    ? Corners.All(node.Width * 0.5f)
-                    : Corners.All(MathF.Max(2f, node.Width * 0.2f));
-
-                // An off checkbox needs a FILL, not just an outline. A one-pixel hairline at half alpha over a dark
-                // panel is invisible at thirteen pixels square - the box was there, was clickable, and could not be
-                // found. Browsers fill theirs too, which is why an unchecked box reads as a box rather than a gap.
-                chrome.BackgroundColor = on
-                    ? s.Color
-                    : new RgbaColor(s.Color.R, s.Color.G, s.Color.B, s.Color.A * 0.16f);
-
-                BoxRenderer.Paint(rt, ToVisual(chrome, node.Width, node.Height), node.Width, node.Height);
-            }
+            BoxRenderer.Paint(rt, ToggleVisual(node, s, out bool unstyled), node.Width, node.Height);
 
             if (!on) return;
 
