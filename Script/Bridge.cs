@@ -230,6 +230,46 @@ namespace Sideload.Script
                 Save();
             }
 
+            // --- the Web Storage spelling of the same thing --------------------------------------------
+            //
+            // `localStorage` is what a LIBRARY reaches for. A page written by hand can be told to call s1.storage;
+            // a state manager, a router or a theme switcher pulled off npm cannot, and every one of them calls
+            // getItem/setItem without asking whether they exist. So the same store answers to both names.
+            //
+            // The Storage interface is small and completely specified, which is the only reason standing in for it
+            // is honest: a key that is not there reads as null and not as "", `length` counts, and `key(i)` walks.
+            // Getting any of those wrong makes a library take a branch it would never take in a browser.
+
+            /// <summary>The Web Storage reading of <see cref="Get"/>: an absent key is null, not an empty string.</summary>
+            public object GetItem(string key)
+            {
+                Load();
+                return key != null && _values.TryGetValue(key, out string value) ? value : null;
+            }
+
+            public void SetItem(string key, string value) => Set(key, value);
+
+            public void RemoveItem(string key) => Remove(key);
+
+            public int Length
+            {
+                get { Load(); return _values.Count; }
+            }
+
+            /// <summary>The key at an index, or null past the end. Insertion order, which is what this dictionary
+            /// keeps and what a browser is allowed to hand back.</summary>
+            public object Key(int index)
+            {
+                Load();
+                if (index < 0 || index >= _values.Count) return null;
+
+                int at = 0;
+                foreach (string key in _values.Keys)
+                    if (at++ == index) return key;
+
+                return null;
+            }
+
             private void Load()
             {
                 if (_loaded) return;

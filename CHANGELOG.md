@@ -3,6 +3,17 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.30.0] - 2026-08-09
+
+### Added
+
+- Elements look like they do in a browser before your CSS says anything: heading sizes, paragraph spacing, list
+  indent, bold, italic, monospace.
+  - Only with `<meta name="sideload" content="web-defaults">`, and every rule you write beats it.
+- Lists have bullets and numbers. `list-style-type` picks between `disc`, `circle`, `square`, `decimal` and `none`,
+  and `start` on an `<ol>` counts from there.
+- `localStorage` and `sessionStorage` reach the same store as `s1.storage`, so a library that calls `getItem` works.
+
 ## [1.29.0] - 2026-08-09
 
 ### Added

@@ -171,6 +171,15 @@ namespace Sideload.Css
     /// would have done nothing in a browser either, so nothing is lost by it doing nothing here.
     /// </summary>
     internal enum VerticalAlignKind { Baseline, Top, Middle, Bottom }
+
+    /// <summary>
+    /// What a list item draws in front of itself.
+    ///
+    /// Four of CSS's counter styles, chosen because they are the four a page actually writes and because each one
+    /// is a glyph or a number this engine can put on screen. `Disc` is drawn as the bullet character rather than as
+    /// a circle of geometry - the game's font has U+2022, checked on screen, which the tick U+2713 is not.
+    /// </summary>
+    internal enum ListMarkerKind { None, Disc, Circle, Square, Decimal }
     /// <summary>
     /// <c>Relative</c> stays IN the flow: it takes its normal room, siblings are placed as if it had not moved, and
     /// only the painted rectangle is shifted by the insets. Being in the flow is the whole difference from

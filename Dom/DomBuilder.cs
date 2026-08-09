@@ -35,6 +35,17 @@ namespace Sideload.Dom
         internal static LayoutNode Build(IElement element, Dictionary<IElement, ComputedStyle> styles,
                                          PseudoStyles generated = null)
         {
+            LayoutNode built = BuildBox(element, styles, generated);
+            if (built == null) return null;
+
+            return built.Style != null && built.Style.ListItem && built.Style.ListMarker != ListMarkerKind.None
+                ? Marked(element, built)
+                : built;
+        }
+
+        private static LayoutNode BuildBox(IElement element, Dictionary<IElement, ComputedStyle> styles,
+                                           PseudoStyles generated)
+        {
             if (element == null) return null;
             if (SkippedTags.Contains(element.LocalName)) return null;
 
@@ -376,6 +387,97 @@ namespace Sideload.Dom
             }
 
             line.Children.RemoveAll(child => child.IsTextLeaf && child.Text.Length == 0);
+        }
+
+        /// <summary>
+        /// A list item and its marker, side by side.
+        ///
+        /// The item becomes a ROW holding the marker and the item's own content, because a list item is a block with
+        /// something beside it and this engine's only way to put two things beside each other is a row. The box - its
+        /// margin, padding, background and border - stays on the outer node, so the element still has exactly one
+        /// painted box and the hover and hit-target machinery keeps finding it where it expects to.
+        ///
+        /// The marker draws INSIDE the content box, where a browser would hang it in the padding to the left. That
+        /// difference is one marker width of indent on the text, and closing it would need a box that is laid out
+        /// outside its parent's content edge - a second box model for one glyph.
+        /// </summary>
+        private static LayoutNode Marked(IElement element, LayoutNode built)
+        {
+            ComputedStyle style = built.Style;
+
+            ComputedStyle row = style.Clone();
+            row.FlexDirection = FlexDirection.Row;
+            row.FlexWrap = FlexWrap.NoWrap;
+
+            // The marker sits on the FIRST line of the item, not on the middle of a three-line one.
+            row.AlignItems = AlignKind.FlexStart;
+
+            var outer = new LayoutNode(row) { Tag = element };
+
+            ComputedStyle marker = Contents(style);
+            marker.WhiteSpace = WhiteSpaceKind.NoWrap;
+            marker.FlexShrink = 0f;
+
+            // The gap is padding rather than a space in the text. A trailing space is the one character TextMeshPro
+            // drops when it measures, so the marker would have measured narrower than it drew and the text would
+            // have started a fraction of a character to its left.
+            marker.Padding = new Edges { Right = Len.Px(style.FontSize * 0.4f) };
+
+            outer.Add(new LayoutNode(marker, MarkerText(element, style)));
+
+            // The item's own content keeps its style for text, and loses the box: the outer node draws that now, and
+            // drawing it twice would double every padding and put a second border inside the first.
+            built.Style = Contents(style);
+            built.Style.FlexGrow = 1f;
+
+            // A row makes its items as wide as they need to be; a block filled its line. Without this a list item
+            // with a background paints only as far as its longest word.
+            built.Style.Width = Len.Auto;
+
+            outer.Add(built);
+            return outer;
+        }
+
+        /// <summary>
+        /// What the marker says. A number for `decimal`, counting only the list items among its siblings, and a
+        /// glyph for the rest - all three checked on screen in the game's own font, which is not a given: the tick
+        /// U+2713 is missing from it and draws as a hollow rectangle.
+        /// </summary>
+        private static string MarkerText(IElement element, ComputedStyle style)
+        {
+            switch (style.ListMarker)
+            {
+                case ListMarkerKind.Circle: return "◦";
+                case ListMarkerKind.Square: return "▪";
+                case ListMarkerKind.Decimal: return Ordinal(element) + ".";
+                default: return "•";
+            }
+        }
+
+        /// <summary>
+        /// Which item this is in its list, counting from `start` and from one when there is none.
+        ///
+        /// Counted over ELEMENT siblings with the same tag rather than over every child, so a heading or a caption
+        /// between two items does not advance the numbering - which is what a browser does and what makes a list
+        /// with a nested list inside it number correctly.
+        /// </summary>
+        private static int Ordinal(IElement element)
+        {
+            int start = 1;
+            IElement list = element?.ParentElement;
+            if (list != null && int.TryParse(list.GetAttribute("start"), out int declared)) start = declared;
+
+            if (list == null) return start;
+
+            int index = 0;
+            foreach (IElement sibling in list.Children)
+            {
+                if (!string.Equals(sibling.LocalName, element.LocalName, StringComparison.OrdinalIgnoreCase)) continue;
+                if (ReferenceEquals(sibling, element)) break;
+                index++;
+            }
+
+            return start + index;
         }
 
         /// <summary>

@@ -66,6 +66,26 @@ namespace Sideload.Css
                     if (Is(value, "none")) s.Display = DisplayKind.None;
                     else if (Is(value, "grid") || Is(value, "inline-grid")) s.Display = DisplayKind.Grid;
                     else if (Is(value, "flex") || Is(value, "block") || Is(value, "inline-block")) s.Display = DisplayKind.Flex;
+                    else if (Is(value, "list-item")) { s.Display = DisplayKind.Flex; s.ListItem = true; }
+                    break;
+
+                case "list-style-type":
+                    // The four counter styles a page writes. `none` is a list item WITHOUT a marker, which is how a
+                    // navigation bar written as a <ul> loses its bullets, so it is a real value here rather than
+                    // agreement with a renderer that draws nothing.
+                    if (Is(value, "none")) s.ListMarker = ListMarkerKind.None;
+                    else if (Is(value, "disc")) s.ListMarker = ListMarkerKind.Disc;
+                    else if (Is(value, "circle")) s.ListMarker = ListMarkerKind.Circle;
+                    else if (Is(value, "square")) s.ListMarker = ListMarkerKind.Square;
+                    else if (Is(value, "decimal")) s.ListMarker = ListMarkerKind.Decimal;
+                    else Diagnostics.Report(DiagnosticKind.ValueIgnored, property, value);
+                    break;
+
+                case "list-style":
+                    // The shorthand is `<type> || <position> || <image>`. Only the type means anything here: there
+                    // is no marker image, and the position always draws inside the item - see DomBuilder.
+                    foreach (string part in ValueParser.SplitTopLevel(value))
+                        if (!Is(part, "inside") && !Is(part, "outside")) Apply(s, "list-style-type", part);
                     break;
 
                 case "flex-direction": s.FlexDirection = ParseDirection(value, s.FlexDirection); break;
@@ -314,12 +334,15 @@ namespace Sideload.Css
                     else Diagnostics.Report(DiagnosticKind.ValueIgnored, property, value);
                     break;
 
-                case "list-style":
-                case "list-style-type":
                 case "list-style-image":
-                case "list-style-position":
-                    // No marker is drawn, so `none` is agreement and a bullet or a number is not.
+                    // There is no marker image. A page that wanted one gets the counter style instead.
                     if (!Is(value, "none")) Diagnostics.Report(DiagnosticKind.ValueIgnored, property, value);
+                    break;
+
+                case "list-style-position":
+                    // The marker always draws inside the item's content box - see DomBuilder for why hanging it in
+                    // the padding would need a second box model.
+                    if (!Is(value, "inside")) Diagnostics.Report(DiagnosticKind.ValueIgnored, property, value);
                     break;
 
                 case "outline": ApplyOutline(s, value); break;
@@ -671,9 +694,10 @@ namespace Sideload.Css
                 case "vertical-align":
                 case "appearance":
                 case "-webkit-appearance":
-                case "list-style":
-                case "list-style-type":
                 case "outline": s.OutlineWidth = parent.OutlineWidth; s.OutlineColor = parent.OutlineColor; return true;
+
+                case "list-style":
+                case "list-style-type": s.ListMarker = parent.ListMarker; return true;
                 case "outline-color": s.OutlineColor = parent.OutlineColor; return true;
                 case "text-indent":
                 case "cursor": return true;

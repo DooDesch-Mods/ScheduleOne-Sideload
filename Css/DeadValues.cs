@@ -35,8 +35,11 @@ namespace Sideload.Css
                 case "display":
                     // Everything the engine has no box model for. It keeps whatever display it already had,
                     // which is a column flex container - so `table` quietly becomes a vertical stack.
+                    //
+                    // `list-item` came off this list in 1.30.0: it is a box with a marker beside it now, which is
+                    // what it is in a browser too.
                     if (IsAny(value, "inline", "inline-flex", "contents",
-                                     "table", "table-row", "table-cell", "table-row-group", "list-item", "flow-root"))
+                                     "table", "table-row", "table-cell", "table-row-group", "flow-root"))
                         Report(property, value);
                     break;
 
