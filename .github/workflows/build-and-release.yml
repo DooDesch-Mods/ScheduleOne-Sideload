@@ -45,6 +45,7 @@ jobs:
       version: ${{ steps.version-check.outputs.version }}
       notes: ${{ steps.changelog.outputs.notes }}
       notes_bbcode: ${{ steps.changelog.outputs.notes_bbcode }}
+      notes_plain: ${{ steps.changelog.outputs.notes_plain }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -158,6 +159,49 @@ jobs:
           {
             echo "notes_bbcode<<CHANGELOG_EOF"
             echo "$BBCODE"
+            echo "CHANGELOG_EOF"
+          } >> "$GITHUB_OUTPUT"
+          # A THIRD rendering, and it is not a duplicate of the one above. Nexus has two fields with two
+          # dialects: the FILE description takes BBCode, and the mod's Changelogs section takes plain text -
+          # it splits on newlines and prints every line verbatim, so BBCode handed to it appears as
+          # "[b]Changed[/b]" and "[*]..." on the page. One entry per line, no markup, headings kept as their
+          # own line. Same POSIX-awk-only constraint as above: the runner's awk is mawk.
+          PLAIN=$(printf '%s\n' "$SECTION" | awk '
+            function inline(s,   t, m, p, txt, url) {
+              while (match(s, /\*\*[^*]+\*\*/)) {
+                t = substr(s, RSTART + 2, RLENGTH - 4)
+                s = substr(s, 1, RSTART - 1) t substr(s, RSTART + RLENGTH)
+              }
+              while (match(s, /\[[^]]+\]\([^)]+\)/)) {
+                m = substr(s, RSTART, RLENGTH)
+                p = index(m, "](")
+                txt = substr(m, 2, p - 2)
+                url = substr(m, p + 2, length(m) - p - 2)
+                s = substr(s, 1, RSTART - 1) txt " (" url ")" substr(s, RSTART + RLENGTH)
+              }
+              return s
+            }
+            function flush() { if (item != "") { printf "%s%s\n", pad, inline(item); item = ""; pad = "" } }
+            BEGIN { item = ""; pad = "" }
+            {
+              raw = $0; gsub(/`/, "", raw); sub(/[ \t]+$/, "", raw)
+              if (raw ~ /^[ \t]*$/) { flush(); next }
+              if (raw ~ /^#+ /) { flush(); h = raw; sub(/^#+ +/, "", h); printf "%s\n", inline(h); next }
+              if (raw ~ /^[ \t]*[-*] /) {
+                flush()
+                indent = match(raw, /[^ \t]/) - 1
+                pad = (indent >= 2 ? "  " : "")
+                item = raw; sub(/^[ \t]*[-*] +/, "", item)
+                next
+              }
+              sub(/^[ \t]+/, "", raw)
+              if (item != "") { item = item " " raw; next }
+              printf "%s\n", inline(raw)
+            }
+            END { flush() }')
+          {
+            echo "notes_plain<<CHANGELOG_EOF"
+            echo "$PLAIN"
             echo "CHANGELOG_EOF"
           } >> "$GITHUB_OUTPUT"
 
@@ -412,7 +456,7 @@ jobs:
           version: ${{ needs.build.outputs.version }}
           display_name: "Sideload ${{ needs.build.outputs.version }}"
           description: ${{ needs.build.outputs.notes_bbcode }}
-          changelog: ${{ github.event_name == 'push' && github.run_attempt == 1 && needs.build.outputs.notes_bbcode || '' }}
+          changelog: ${{ github.event_name == 'push' && github.run_attempt == 1 && needs.build.outputs.notes_plain || '' }}
           category: main
           archive_existing_version: true
           update_mod_version: true
