@@ -655,11 +655,17 @@ namespace Sideload.Paint
             {
                 ComputedStyle chrome = s.Clone();
                 chrome.BorderWidth = Edges.All(Len.Px(1f));
-                chrome.BorderColor = new RgbaColor(s.Color.R, s.Color.G, s.Color.B, s.Color.A * 0.55f);
+                chrome.BorderColor = new RgbaColor(s.Color.R, s.Color.G, s.Color.B, s.Color.A * 0.5f);
                 chrome.BorderRadius = round
                     ? Corners.All(node.Width * 0.5f)
                     : Corners.All(MathF.Max(2f, node.Width * 0.2f));
-                if (on) chrome.BackgroundColor = s.Color;
+
+                // An off checkbox needs a FILL, not just an outline. A one-pixel hairline at half alpha over a dark
+                // panel is invisible at thirteen pixels square - the box was there, was clickable, and could not be
+                // found. Browsers fill theirs too, which is why an unchecked box reads as a box rather than a gap.
+                chrome.BackgroundColor = on
+                    ? s.Color
+                    : new RgbaColor(s.Color.R, s.Color.G, s.Color.B, s.Color.A * 0.16f);
 
                 BoxRenderer.Paint(rt, ToVisual(chrome, node.Width, node.Height), node.Width, node.Height);
             }
