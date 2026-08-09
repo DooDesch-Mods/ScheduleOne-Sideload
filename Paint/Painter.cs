@@ -1476,16 +1476,15 @@ namespace Sideload.Paint
             bool uniform = top == right && right == bottom && bottom == left;
 
             /*
-              A UNIFORM BORDER OVER A TRANSPARENT FILL DOES NOT DRAW AS A RING, so it is drawn as four strips instead.
+              A SQUARE UNIFORM BORDER OVER A TRANSPARENT FILL IS DRAWN AS FOUR STRIPS, which give an exact hairline
+              on each side rather than an antialiased ring rounded to nothing.
 
-              The ring lives in the same quad as the fill and is modulated by that quad's vertex colour, so with no
-              background there is nothing for it to modulate and the border disappears entirely. Every border in a
-              real page confirmed the rule: single-sided ones drew (they were already strips), bordered inputs and
-              buttons drew (they have a fill), and outlined chips with no background drew nothing at all - which is
-              how an app shipped with `border: 1px solid` on its state chips and no outline anywhere on screen.
-
-              Only when the corners are square. Four strips cannot follow a radius, and a rounded box with a
-              transparent fill is better served by the ring being subtly wrong than by its corners being cut off.
+              The reason the distinction was found is worth keeping: a quad whose four vertex colours are fully
+              transparent never reaches the fragment shader, and the ring travels in that same quad - so an outlined
+              chip with no background drew nothing at all, which is how an app shipped with `border: 1px solid` on
+              its state chips and no outline anywhere on screen. That is now handled where it belongs, in
+              BoxRenderer, by giving such a quad one step of alpha; a rounded transparent box therefore draws its
+              ring, corners and all.
             */
             bool fillCarriesTheRing = !s.BackgroundColor.IsTransparent || s.HasGradient;
             bool squared = s.BorderRadius.TopLeft <= 0f && s.BorderRadius.TopRight <= 0f

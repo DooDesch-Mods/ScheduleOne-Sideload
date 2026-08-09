@@ -15,6 +15,8 @@ All notable changes to Sideload are documented here. This project adheres to
 
 ### Fixed
 
+- A rounded box with a border and no background draws its border. It drew nothing at all, so an outlined chip was
+  an empty rectangle.
 - A drag listener no longer takes scrolling away from the list underneath. Claim the gesture with `preventDefault()`
   or `touch-action: none`.
 - `el.value = x` no longer reports itself as typing. A field whose page wrote its value back could loop.
