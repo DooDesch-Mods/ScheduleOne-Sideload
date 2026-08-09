@@ -1129,7 +1129,11 @@ namespace Sideload.Host
         {
             HashSet<IElement> stateful = StyleResolver.StatefulElements(_document, _sheet, _context.Orientation);
 
-            foreach (IElement control in _document.QuerySelectorAll("button, a, input, textarea"))
+            // `label` is on this list because a label IS interactive: clicking it activates the control it labels,
+            // and without a hit target of its own the click landed on the scroll area behind it and stopped there.
+            // Wrapping a checkbox and its words in a label is the ordinary way to write one, so this is most of
+            // them.
+            foreach (IElement control in _document.QuerySelectorAll("button, a, input, textarea, label"))
                 stateful.Add(control);
 
             // A top-layer box is modal by nature, so it takes the pointer whether or not anything listens to it.
@@ -1361,18 +1365,29 @@ namespace Sideload.Host
             // state and not the old one. HTML calls this the activation behaviour, and without it a controlled
             // React checkbox never moved: the page was told about a click on a box that still said what it said.
             //
-            // `change` follows the click, once, and `input` with it - both are what a page listens for, and React
-            // wires `onChange` to the second of them.
-            bool flipped = type == "click" && Dom.ControlKinds.Of(target) == Dom.ControlKind.Toggle;
-            if (flipped) Dom.ControlKinds.Toggle(target);
+            // Which is also why the previous state is kept. `preventDefault()` on the click CANCELS the activation,
+            // and a cancelled activation has to be undone rather than never done - a radio group has already lost
+            // its old selection by the time the handler runs.
+            IElement toggle = type == "click" ? Dom.ControlKinds.ActivatedBy(target) : null;
+            List<IElement> wasOn = toggle != null ? Dom.ControlKinds.Snapshot(toggle) : null;
+            if (toggle != null) Dom.ControlKinds.Toggle(toggle);
 
-            _script.Dispatch(target, type, spot: at, button: button, detail: detail,
-                             clientX: page.OffsetX, clientY: page.OffsetY);
+            Script.JsEvent raised = _script.Dispatch(target, type, spot: at, button: button, detail: detail,
+                                                     clientX: page.OffsetX, clientY: page.OffsetY);
 
-            if (!flipped) return;
+            if (toggle == null) return;
 
-            _script.Dispatch(target, "input");
-            _script.Dispatch(target, "change");
+            if (raised != null && raised.DefaultPrevented)
+            {
+                Dom.ControlKinds.Restore(toggle, wasOn);
+                QueueRebuild();
+                return;
+            }
+
+            // On the CONTROL, not on whatever was clicked - a click on a label activates the box, and the box is
+            // what the page is listening to. React wires `onChange` to `input`.
+            _script.Dispatch(toggle, "input");
+            _script.Dispatch(toggle, "change");
             QueueRebuild();
         }
 

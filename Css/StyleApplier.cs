@@ -548,6 +548,13 @@ namespace Sideload.Css
 
             if (size < 0) { Diagnostics.Report(DiagnosticKind.ValueRejected, "font", value); return; }
 
+            // A shorthand RESETS what it does not mention. `font: 16px game-ui` inside a bold italic paragraph is
+            // normal weight, normal style and normal line height - which is most of the point of writing the
+            // shorthand at all, and the opposite of what leaving the inherited values in place produces.
+            s.FontStyle = FontStyleKind.Normal;
+            s.FontWeight = 400;
+            s.LineHeight = Len.None;
+
             for (int i = 0; i < size; i++)
             {
                 if (Is(words[i], "normal")) continue;

@@ -27,15 +27,33 @@ namespace Sideload.Css
             if (body == null || styles == null) return;
             if (!styles.TryGetValue(body, out ComputedStyle style) || style == null) return;
 
-            if (Declares(styles, body.Owner?.DocumentElement) || Declares(styles, body)) return;
+            // The ROOT element decides, and &lt;body&gt; only gets a say when the root said nothing - the propagation
+            // is from html, and from body only as the fallback CSS spells out for exactly this reason.
+            ComputedStyle source = Declared(styles, body.Owner?.DocumentElement) ?? Declared(styles, body) ?? style;
 
-            style.OverflowX = OverflowKind.Auto;
-            style.OverflowY = OverflowKind.Auto;
+            style.OverflowX = Used(source.OverflowX);
+            style.OverflowY = Used(source.OverflowY);
         }
 
-        /// <summary>Whether this element said anything about overflow at all - any non-initial value counts.</summary>
-        private static bool Declares(System.Collections.Generic.Dictionary<IElement, ComputedStyle> styles, IElement element) =>
+        /// <summary>
+        /// One axis of the viewport's overflow, given what the root asked for on both.
+        ///
+        /// Per axis, and that is the whole of this method. `visible` alongside another `visible` is the plain
+        /// document scroll. `visible` alongside anything else computes to `auto` - CSS Overflow 3 section 2.1,
+        /// because a box cannot overflow visibly on one axis while clipping on the other.
+        ///
+        /// That second rule is not a corner: `body { overflow-x: hidden }` is one of the most common lines on the
+        /// web, and reading it as "the document declared its overflow, leave it alone" left the vertical axis at
+        /// `visible`. The painter then clipped the page at the viewport - either axis hidden clips - and never gave
+        /// it a scroll area, so everything below the first screenful was drawn nowhere and reachable by nothing.
+        /// </summary>
+        private static OverflowKind Used(OverflowKind axis) =>
+            axis == OverflowKind.Visible ? OverflowKind.Auto : axis;
+
+        /// <summary>This element's overflow, or null when it never mentioned any.</summary>
+        private static ComputedStyle Declared(System.Collections.Generic.Dictionary<IElement, ComputedStyle> styles, IElement element) =>
             element != null && styles.TryGetValue(element, out ComputedStyle s) && s != null
-            && (s.OverflowX != OverflowKind.Visible || s.OverflowY != OverflowKind.Visible);
+            && (s.OverflowX != OverflowKind.Visible || s.OverflowY != OverflowKind.Visible)
+                ? s : null;
     }
 }
