@@ -3,6 +3,23 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.19.0] - 2026-08-09
+
+### Added
+
+- `align-items: baseline` works. It parsed and then did nothing, so a 13px name and a 12px amount in one row sat
+  visibly off each other with no rule anywhere looking wrong.
+- `overflow-wrap`, `word-wrap` and `word-break` are implemented. `break-all` and `anywhere` bring back the old
+  behaviour of cutting a long word to fit.
+
+### Fixed
+
+- A word too long for its box hangs out of it instead of being cut in half. A stock count of 1073904864 printed as
+  10739048 over 64, which reads as two numbers.
+- A row that does not fit holds each label at its longest word instead of squeezing every box toward nothing.
+- An invalid `flex` value is named in the log. It used to vanish in silence, leaving the box at its default with
+  nothing pointing at the line that caused it.
+
 ## [1.18.0] - 2026-08-09
 
 ### Changed
