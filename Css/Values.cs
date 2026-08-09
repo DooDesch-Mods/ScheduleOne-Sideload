@@ -184,6 +184,14 @@ namespace Sideload.Css
     ///   PreWrap  keep every space and newline, may wrap   preformatted text that still has to fit
     /// </summary>
     internal enum WhiteSpaceKind { Normal, NoWrap, Pre, PreWrap }
+
+    /// <summary>`overflow-wrap`, and its old name `word-wrap`. <c>Anywhere</c> differs from <c>BreakWord</c> only in
+    /// intrinsic sizing, which this engine does not distinguish, so the two behave alike here.</summary>
+    internal enum OverflowWrapKind { Normal, BreakWord, Anywhere }
+
+    /// <summary>`word-break`. <c>KeepAll</c> concerns CJK line-breaking rules this engine does not have and
+    /// therefore behaves as <c>Normal</c>.</summary>
+    internal enum WordBreakKind { Normal, BreakAll, KeepAll }
     internal enum FontStyleKind { Normal, Italic }
 
     /// <summary>Which viewport shape a `@media (orientation: ...)` block applies to.</summary>

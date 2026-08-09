@@ -775,14 +775,24 @@ namespace Sideload.Layout
         ///
         /// Coarser than the spec for containers: a nowrap row is the sum of its children and everything else is
         /// the widest of them. Wrapping, which could pack them tighter, is not tried.
+        ///
+        /// <para>Internal because flexbox needs the same number for a different reason: the floor a ROW item may
+        /// be shrunk to. One definition of "narrowest" for both algorithms - two would drift.</para>
+        ///
+        /// <para><paramref name="honourDeclaredWidth"/> is the one place the two callers differ, and it is the
+        /// spec that makes them. A grid track asking for `min-content` wants the box as it is, declared width
+        /// included. Flexbox wants the CONTENT size suggestion - what is inside the box, ignoring the width
+        /// written on it - and takes the smaller of that and the declared width itself afterwards, which is what
+        /// lets `width: 200px; flex-shrink: 1` shrink at all. Only the top of the walk is affected: a CHILD's
+        /// declared width is always its own answer.</para>
         /// </summary>
-        private static float MinContentWidth(LayoutNode node, IMeasureText measure)
+        internal static float MinContentWidth(LayoutNode node, IMeasureText measure, bool honourDeclaredWidth = true)
         {
             ComputedStyle s = node.Style;
             if (s.Display == DisplayKind.None) return 0f;
 
             // Border-box sizing, so a declared width IS the answer rather than a starting point.
-            if (s.Width.Unit == LenUnit.Px) return Math.Max(s.Width.Value, 0f);
+            if (honourDeclaredWidth && s.Width.Unit == LenUnit.Px) return Math.Max(s.Width.Value, 0f);
 
             float frame = FlexLayout.Horizontal(s.Padding, 0f) + FlexLayout.Horizontal(s.BorderWidth, 0f);
 
@@ -811,6 +821,14 @@ namespace Sideload.Layout
             return total + s.ColumnGap.Resolve(0f) * (counted - 1) + frame;
         }
 
+        /// <summary>
+        /// The widest run of text with no break point in it - CSS's min-content width for a text leaf.
+        ///
+        /// ONE measurement, not one per word: every break opportunity becomes a newline, and the widest line of
+        /// an unwrapped block is by definition its widest word. Measuring word by word was the obvious way to
+        /// write it and cost a font call per word, which is affordable for a `min-content` grid track and is not
+        /// affordable on the flex path, where every row item asks on every layout.
+        /// </summary>
         private static float LongestUnbreakableRun(string text, ComputedStyle style, IMeasureText measure)
         {
             if (string.IsNullOrEmpty(text)) return 0f;
@@ -819,14 +837,8 @@ namespace Sideload.Layout
             if (style.WhiteSpace == WhiteSpaceKind.NoWrap || style.WhiteSpace == WhiteSpaceKind.Pre)
                 return measure.Measure(text, style, float.PositiveInfinity).Width;
 
-            float widest = 0f;
-            foreach (string word in text.Split(' ', '\t', '\n', '\r'))
-            {
-                if (word.Length == 0) continue;
-                widest = Math.Max(widest, measure.Measure(word, style, float.PositiveInfinity).Width);
-            }
-
-            return widest;
+            string perLine = text.Replace(' ', '\n').Replace('\t', '\n').Replace('\r', '\n');
+            return measure.Measure(perLine, style, float.PositiveInfinity).Width;
         }
 
         private static bool IsUsable(float value) => !float.IsNaN(value) && !float.IsInfinity(value);

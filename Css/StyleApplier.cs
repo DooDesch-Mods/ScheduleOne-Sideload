@@ -288,6 +288,26 @@ namespace Sideload.Css
                     break;
                 case "text-overflow": s.TextOverflowEllipsis = Is(value, "ellipsis"); break;
 
+                // `word-wrap` is the old name for the same property; every browser still takes it and so do the
+                // resets that pages ship, so it is an alias rather than a second field.
+                case "overflow-wrap":
+                case "word-wrap":
+                    if (Is(value, "break-word")) s.OverflowWrap = OverflowWrapKind.BreakWord;
+                    else if (Is(value, "anywhere")) s.OverflowWrap = OverflowWrapKind.Anywhere;
+                    else if (Is(value, "normal")) s.OverflowWrap = OverflowWrapKind.Normal;
+                    else Diagnostics.Report(DiagnosticKind.ValueRejected, property, value);
+                    break;
+
+                // `word-break: break-word` is deprecated and means `overflow-wrap: break-word` - it is in the CSS
+                // that exists, so it is taken, and taken as what it actually does rather than as a word-break value.
+                case "word-break":
+                    if (Is(value, "break-all")) s.WordBreak = WordBreakKind.BreakAll;
+                    else if (Is(value, "keep-all")) s.WordBreak = WordBreakKind.KeepAll;
+                    else if (Is(value, "normal")) s.WordBreak = WordBreakKind.Normal;
+                    else if (Is(value, "break-word")) s.OverflowWrap = OverflowWrapKind.BreakWord;
+                    else Diagnostics.Report(DiagnosticKind.ValueRejected, property, value);
+                    break;
+
                 // ----------------------------------------------------- generated content --
                 //
                 // Only `::before` and `::after` read this: DomBuilder turns a style whose Content is not null into
@@ -443,6 +463,10 @@ namespace Sideload.Css
         ///
         /// Nothing is written until the whole value has parsed. A shorthand is one declaration: half of it
         /// applied and half not is worse than none of it, because the half that landed is invisible.
+        ///
+        /// A value this grammar cannot take is REPORTED rather than dropped. Every other rejection in this file
+        /// says so, and a shorthand that silently changes nothing is the hardest kind to find: the property is
+        /// implemented, the name raises no warning, and the box just sits at its default.
         /// </summary>
         private static void ApplyFlex(ComputedStyle s, string value)
         {
@@ -451,7 +475,7 @@ namespace Sideload.Css
             if (Is(value, "auto")) { s.FlexGrow = 1f; s.FlexShrink = 1f; s.FlexBasis = Len.Auto; return; }
 
             string[] p = ValueParser.SplitTopLevel(value);
-            if (p.Length == 0 || p.Length > 3) return;
+            if (p.Length == 0 || p.Length > 3) { Reject(value); return; }
 
             float grow = 1f;
             float shrink = 1f;
@@ -468,14 +492,14 @@ namespace Sideload.Css
             {
                 if (Is(p[at], "auto")) basis = Len.Auto;
                 else if (ValueParser.TryLength(p[at], Context, out Len b)) basis = b;
-                else return;                                    // not a basis either - the whole value is junk
+                else { Reject(value); return; }                 // not a basis either - the whole value is junk
 
                 haveBasis = true;
                 at++;
             }
 
-            if (at != p.Length) return;                         // something left over: do not guess at it
-            if (!haveGrow && !haveBasis) return;                // nothing understood at all
+            if (at != p.Length) { Reject(value); return; }      // something left over: do not guess at it
+            if (!haveGrow && !haveBasis) { Reject(value); return; }   // nothing understood at all
 
             // A basis on its own is `1 1 <width>`: it says how big to start, not that it may not move.
             if (!haveGrow) { grow = 1f; shrink = 1f; }
@@ -484,6 +508,8 @@ namespace Sideload.Css
             s.FlexShrink = shrink;
             s.FlexBasis = basis;
         }
+
+        private static void Reject(string value) => Diagnostics.Report(DiagnosticKind.ValueRejected, "flex", value);
 
         /// <summary>
         /// `grid-template: &lt;rows&gt; / &lt;columns&gt;` - the two-track-list form only.

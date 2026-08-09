@@ -8,7 +8,34 @@ namespace Sideload.Layout
     internal readonly struct Size
     {
         internal readonly float Width, Height;
-        internal Size(float width, float height) { Width = width; Height = height; }
+
+        /// <summary>
+        /// Where the FIRST baseline sits, measured down from the top of this box. <see cref="float.NaN"/> when the
+        /// measurer cannot say.
+        ///
+        /// A third number rather than a second call because it comes free with the measurement and would otherwise
+        /// have to be asked for again per item, per pass - and because a baseline that could drift out of the height
+        /// it belongs to is worse than no baseline at all.
+        /// </summary>
+        internal readonly float Baseline;
+
+        /// <summary>
+        /// The width the text was actually wrapped into, which can be WIDER than what was available.
+        ///
+        /// That happens for the browser's default wrapping: a word too long for the box is not cut, it hangs out
+        /// of it. The measurer is the only thing that can work out how far - it is the one holding the font - and
+        /// the painter has to give the text the same room or the two would disagree about the line count.
+        /// </summary>
+        internal readonly float WrapWidth;
+
+        internal Size(float width, float height, float baseline = float.NaN, float wrapWidth = float.NaN)
+        {
+            Width = width;
+            Height = height;
+            Baseline = baseline;
+            WrapWidth = wrapWidth;
+        }
+
         public override string ToString() => $"{Width:0.##} x {Height:0.##}";
     }
 
@@ -43,6 +70,26 @@ namespace Sideload.Layout
 
         // --- results, relative to the PARENT's padding box, top-left origin, y growing downwards ---
         internal float X, Y, Width, Height;
+
+        /// <summary>
+        /// This box's first baseline, measured down from its own TOP BORDER EDGE. <see cref="float.NaN"/> when the
+        /// box has no text to take one from - an icon, a spacer, a container of empty boxes.
+        ///
+        /// Filled in by <see cref="FlexLayout.LayoutBox"/> alongside the width and height: a text leaf reads it off
+        /// the measurement, a container inherits it from its first in-flow child that has one. That recursion is
+        /// what lets `align-items: baseline` line up a heading with a note that is wrapped in two divs.
+        /// </summary>
+        internal float Baseline = float.NaN;
+
+        /// <summary>
+        /// How wide the text inside this leaf was laid out, when that is WIDER than the box itself -
+        /// <see cref="float.NaN"/> whenever it fits, which is nearly always.
+        ///
+        /// A word longer than its box overflows in a browser rather than being cut in half, and the painter has to
+        /// hand TextMeshPro the same width the measurement used or the drawn line count would not match the
+        /// measured height. Whatever clips the box clips the overhang, exactly as elsewhere.
+        /// </summary>
+        internal float TextWrapWidth = float.NaN;
 
         internal LayoutNode() { }
 
