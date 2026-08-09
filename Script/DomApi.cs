@@ -962,6 +962,24 @@ namespace Sideload.Script
         /// <summary>One wheel notch on a `wheel` event, positive downwards - the sign the DOM uses.</summary>
         public float WheelDelta { get; internal set; }
 
+        /// <summary>
+        /// Where the pointer was in the PAGE, in css pixels from its top left - what a browser calls clientX/clientY.
+        ///
+        /// The counterpart to <see cref="OffsetX"/>, which is measured inside the element. A page placing a context
+        /// menu where the pointer is needs this one; a page asking which part of a map was hit needs the other.
+        /// </summary>
+        public float ClientX { get; internal set; }
+
+        public float ClientY { get; internal set; }
+
+        /// <summary>Which mouse button: 0 left, 1 middle, 2 right - the numbering the DOM uses. Zero for events that
+        /// have no button.</summary>
+        public int Button { get; internal set; }
+
+        /// <summary>How many clicks in the run this event belongs to: 1 for a click, 2 for the second of a
+        /// double-click. Zero for events that do not count.</summary>
+        public int Detail { get; internal set; }
+
         public bool DefaultPrevented { get; private set; }
 
         internal bool PropagationStopped { get; private set; }

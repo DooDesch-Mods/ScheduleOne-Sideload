@@ -71,6 +71,10 @@ namespace Sideload.Host
         private Dictionary<IElement, RectTransform> _survivors;
         private LayoutNode _tree;
         private IElement _focused;
+
+        /// <summary>What the focused field held when it took the caret. `change` is the difference between this and
+        /// what it holds when it gives the caret back.</summary>
+        private string _valueAtFocus;
         private IElement _pinToEnd;
 
         /// <summary>A focus asked for before the field was painted, granted by the next render. See
@@ -365,6 +369,7 @@ namespace Sideload.Host
             _script = null;
             _painted = null;
             _focused = null;
+            _valueAtFocus = null;
 
             EnsureBuilt();
         }
@@ -494,7 +499,7 @@ namespace Sideload.Host
                 Css.SheetAudit.Scan(_sheet);
                 css = phase.ElapsedMilliseconds;
 
-                _interaction = new Interaction(OnStateChanged, OnClicked, OnDragged, OnWheel, OnHover, _root);
+                _interaction = new Interaction(OnStateChanged, OnClicked, OnDragged, OnWheel, OnHover, _root, OnPointer);
                 _context = new StyleContext
                 {
                     Orientation = cssW >= cssH ? Orientation.Landscape : Orientation.Portrait,
@@ -1052,7 +1057,7 @@ namespace Sideload.Host
                 return;
             }
 
-            _focused = element;
+            SetFocused(element);
             field.ActivateInputField();
         }
 
@@ -1069,7 +1074,7 @@ namespace Sideload.Host
             if (element != null && _focused != null && element != _focused) return;
             if (_focused == null) return;
 
-            _focused = null;
+            SetFocused(null);
             Paint.Painter.ReleaseKeyboard();
         }
 
@@ -1292,18 +1297,79 @@ namespace Sideload.Host
         {
             if (element == null) return;
 
+            // The caret follows the field, not the deepest box inside it.
+            if (_inputs.ContainsKey(element)) SetFocused(element);
+
+            Pointer(element, "click", spot, ray, button: 0, detail: 1);
+        }
+
+        /// <summary>Every pointer event that is not a click, drag or wheel: mousedown, mouseup, mouseover, mouseout,
+        /// dblclick, contextmenu. They all travel the same road, so they share it.</summary>
+        private void OnPointer(IElement element, string type, Input.PointerSpot spot, Input.PointerRay ray,
+                               int button, int detail) =>
+            Pointer(element, type, spot, ray, button, detail);
+
+        /// <summary>
+        /// Send one pointer event, from the element that was actually under the pointer.
+        ///
+        /// See <see cref="DeepestUnder"/> for why the element handed in is not necessarily the one that was hit.
+        /// Offsets are re-measured against whatever the event ends up reporting, so `e.offsetX` is always in the box
+        /// a page will look at; `clientX`/`clientY` are the same point against the page, which is the frame a page
+        /// places a floating menu in.
+        /// </summary>
+        private void Pointer(IElement element, string type, Input.PointerSpot spot, Input.PointerRay ray,
+                             int button, int detail)
+        {
+            if (element == null || _script == null) return;
+
             IElement target = DeepestUnder(element, ray) ?? element;
 
-            // The caret follows the field, not the deepest box inside it.
-            if (_inputs.ContainsKey(element)) _focused = element;
-
-            // Offsets belong to the element the event reports, so `e.offsetX` is measured in the box a page will look
-            // at. Falls back to the caught element's spot when the re-target found nothing new.
             Input.PointerSpot at = ReferenceEquals(target, element) || !ray.Valid
+                                   || !_painted.TryGetValue(target, out Painter.PaintedBox box)
                 ? spot
-                : Input.Interaction.SpotIn(_painted[target].Rect, ray);
+                : Input.Interaction.SpotIn(box.Rect, ray);
 
-            _script?.Dispatch(target, "click", spot: at);
+            Input.PointerSpot page = ray.Valid ? Input.Interaction.SpotIn(_root, ray) : default;
+
+            _script.Dispatch(target, type, spot: at, button: button, detail: detail,
+                             clientX: page.OffsetX, clientY: page.OffsetY);
+        }
+
+        /// <summary>
+        /// Move the caret, and tell the page about it the way a browser does: `blur` then `focusout` on the field
+        /// that had it, `focus` then `focusin` on the one that takes it.
+        ///
+        /// `focus` and `blur` do not bubble and `focusin`/`focusout` do, which is the whole reason both pairs exist:
+        /// a form that wants to hear about any of its fields listens once, on the form.
+        ///
+        /// A field that lost the caret with a different value than it gained it with also raises `change`. That is
+        /// the DOM's rule, not a convenience - `input` fires on every keystroke and `change` fires when the player
+        /// has finished, and a page that saves on every keystroke saves eight times per word.
+        /// </summary>
+        private void SetFocused(IElement next)
+        {
+            if (ReferenceEquals(_focused, next)) return;
+
+            IElement previous = _focused;
+            _focused = next;
+
+            if (previous != null)
+            {
+                _script?.Dispatch(previous, "blur");
+                _script?.Dispatch(previous, "focusout");
+
+                string now = previous.GetAttribute("value") ?? "";
+                if (!string.Equals(now, _valueAtFocus ?? "", StringComparison.Ordinal))
+                    _script?.Dispatch(previous, "change", value: now);
+            }
+
+            _valueAtFocus = next?.GetAttribute("value") ?? "";
+
+            if (next != null)
+            {
+                _script?.Dispatch(next, "focus");
+                _script?.Dispatch(next, "focusin");
+            }
         }
 
         /// <summary>
@@ -1347,8 +1413,10 @@ namespace Sideload.Host
         {
             if (element == null) return;
 
+            // The field the player is typing in HAS the caret, whatever this view last remembered - so the focus
+            // events fire here too when a click reached the control directly rather than through the page.
+            SetFocused(element);
             element.SetAttribute("value", value ?? "");
-            _focused = element;
             _script?.Dispatch(element, "input", value);
         }
 
@@ -1490,7 +1558,6 @@ namespace Sideload.Host
             element.SetAttribute("value", value ?? "");
             _script?.Dispatch(element, "keydown", value, "Enter");
 
-            _focused = element;
             Focus(element);
         }
 

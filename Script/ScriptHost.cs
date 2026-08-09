@@ -397,9 +397,29 @@ namespace Sideload.Script
         /// </summary>
         private static readonly HashSet<string> Dispatchable = new(StringComparer.OrdinalIgnoreCase)
         {
-            "click", "mouseenter", "mouseleave", "wheel", "input", "keydown",
+            "click", "dblclick", "contextmenu", "mousedown", "mouseup",
+            "mouseenter", "mouseleave", "mouseover", "mouseout",
+            "wheel", "input", "change", "keydown",
+            "focus", "blur", "focusin", "focusout",
             "dragstart", "drag", "dragend", "orientationchange", "back",
         };
+
+        /// <summary>
+        /// The events that do NOT bubble, as the DOM has them.
+        ///
+        /// `mouseenter` and `mouseleave` are the pair a tooltip uses: one that bubbled would open and shut as the
+        /// pointer crossed each nested box on the way in. `focus` and `blur` do not bubble either, which is why
+        /// `focusin` and `focusout` exist at all - a form that wants to hear about any of its fields listens to
+        /// those on the form.
+        /// </summary>
+        private static readonly HashSet<string> NonBubbling = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "mouseenter", "mouseleave", "focus", "blur",
+        };
+
+        /// <summary>Whether an event of this type bubbles. Asked by the view, so the rule lives in one place rather
+        /// than at each of the dozen call sites that raise one.</summary>
+        internal static bool Bubbles(string type) => !NonBubbling.Contains(type ?? "");
 
         internal void AddListener(INode node, string type, JsValue handler, bool capture = false)
         {
@@ -490,7 +510,8 @@ namespace Sideload.Script
                                   Input.PointerSpot spot = default,
                                   float deltaX = 0f, float deltaY = 0f, float wheelDelta = 0f,
                                   bool ctrl = false, bool shift = false, bool alt = false, bool repeat = false,
-                                  bool hasSelection = false, bool bubbles = true)
+                                  bool hasSelection = false, bool? bubbles = null,
+                                  float clientX = 0f, float clientY = 0f, int button = 0, int detail = 0)
         {
             var evt = new JsEvent(type, WrapNode(target))
             {
@@ -498,10 +519,14 @@ namespace Sideload.Script
                 OffsetX = spot.OffsetX, OffsetY = spot.OffsetY, NormX = spot.NormX, NormY = spot.NormY,
                 DeltaX = deltaX, DeltaY = deltaY, WheelDelta = wheelDelta,
                 CtrlKey = ctrl, ShiftKey = shift, AltKey = alt, Repeat = repeat, HasSelection = hasSelection,
+                ClientX = clientX, ClientY = clientY, Button = button, Detail = detail,
             };
             if (_failed || target == null) return evt;
 
-            evt.Bubbles = bubbles;
+            // The type decides, unless a caller overrides it. Passing the rule in from a dozen call sites is
+            // how half of them end up disagreeing with the other half.
+            bool climbs = bubbles ?? Bubbles(type);
+            evt.Bubbles = climbs;
 
             // The path, root first. A browser walks it down running the capturing listeners, then back up running the
             // bubbling ones, and the two halves are not interchangeable: a delegating listener registered with
@@ -514,7 +539,7 @@ namespace Sideload.Script
                 // mouseenter/mouseleave do not bubble, here as in a browser: a tooltip that fired again for every
                 // ancestor would open and shut as the pointer crossed each nested box on the way in. Such an event
                 // has no path beyond its target - not even a capturing one, which is what a browser does too.
-                if (!bubbles) break;
+                if (!climbs) break;
             }
 
             for (int i = path.Count - 1; i > 0; i--)
