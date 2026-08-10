@@ -3,12 +3,12 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.31.0] - 2026-08-10
 
 ### Added
 
-- Changing only the text of a box no longer rebuilds the page. A clock that ticks once a second used to rebuild
-  every element on screen once a second.
+- Changing only the text of a box no longer rebuilds the page. A clock that ticks once a second rebuilt every
+  element on screen with it.
 
 ### Fixed
 
