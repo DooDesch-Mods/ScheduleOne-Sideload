@@ -527,6 +527,7 @@ namespace Sideload.Host
                 // those or force a second full pass one frame later.
                 _script = new ScriptHost(_appId, _document, QueueRebuild, Focus, PinToEnd, RepaintOnly, RectOf, Blur,
                                          FocusedElement, ViewportSize);
+                _script.OnTextOnlyChange = Retext;
                 RunScripts(_document);
                 script = phase.ElapsedMilliseconds;
 
@@ -1234,6 +1235,59 @@ namespace Sideload.Host
 
             if (Config.Preferences.LogPageBuilds) Core.Log?.Msg($"interaction wired on {wired} element(s).");
         }
+
+        /// <summary>
+        /// A script wrote new text into an element whose box is nothing but that text. Write it into the box that is
+        /// already on screen, or say no and let the page rebuild.
+        ///
+        /// The case this exists for is a clock: `el.textContent = '19:34:00'` once a second, which until now rebuilt
+        /// the whole page - every GameObject destroyed and made again, sixty times a minute, taking `:hover` and
+        /// `:active` with them. Nothing had moved; only four glyphs had changed.
+        ///
+        /// The test is not "is it text" but "does it MEASURE the same". A longer word makes its box wider, which
+        /// moves whatever sits beside it and can rewrap the paragraph above it, and no amount of care here could
+        /// find that out - so the measurer answers it, with the same width and the same style the layout used. Any
+        /// disagreement, however small, falls back to the rebuild that was going to happen anyway.
+        /// </summary>
+        private bool Retext(IElement element, string raw)
+        {
+            if (element == null || _painted == null || _measure == null) return false;
+            if (!_painted.TryGetValue(element, out Painter.PaintedBox box)) return false;
+
+            LayoutNode node = box.Node;
+            if (node == null || box.Text == null || !node.IsTextLeaf) return false;
+
+            // The same two steps the builder takes, in the same order, rather than a second copy of the rules.
+            string text = Dom.DomBuilder.Transform(raw ?? "", node.Style);
+            if (string.Equals(text, node.Text, StringComparison.Ordinal)) return true;
+
+            // Against the CONTENT box, not the border box. Sizing here is border-box throughout, so a badge with
+            // padding has a box wider than its text by exactly that padding - comparing the two would refuse every
+            // element that has any, which is most of them.
+            ComputedStyle s = node.Style;
+            float insetX = s.Padding.Left.Resolve(node.Width) + s.Padding.Right.Resolve(node.Width)
+                           + s.BorderWidth.Left.Resolve(node.Width) + s.BorderWidth.Right.Resolve(node.Width);
+            float insetY = s.Padding.Top.Resolve(node.Width) + s.Padding.Bottom.Resolve(node.Width)
+                           + s.BorderWidth.Top.Resolve(node.Width) + s.BorderWidth.Bottom.Resolve(node.Width);
+
+            float contentW = node.Width - insetX, contentH = node.Height - insetY;
+            if (contentW <= 0f || contentH <= 0f) return false;
+
+            Layout.Size now = _measure.Measure(text, s, contentW);
+#if DEBUG
+            if (Config.Preferences.LogPageBuilds)
+                Core.Log?.Msg($"[retext] '{text}' measured {now.Width:0.##}x{now.Height:0.##} against content "
+                              + $"{contentW:0.##}x{contentH:0.##}");
+#endif
+            if (!Same(now.Width, contentW) || !Same(now.Height, contentH)) return false;
+
+            Painter.Retext(box, text);
+            return true;
+        }
+
+        /// <summary>Same to within a tenth of a pixel. Exactly equal would be the honest test and never true: the
+        /// measurement is floating point and the stored size has been through a layout pass.</summary>
+        private static bool Same(float a, float b) => Math.Abs(a - b) < 0.1f;
 
         /// <summary>
         /// Hand the interaction layer the boxes that were WIRED this pass, so it can decide which the pointer is on.

@@ -5,6 +5,11 @@ All notable changes to Sideload are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Added
+
+- Changing only the text of a box no longer rebuilds the page. A clock that ticks once a second used to rebuild
+  every element on screen once a second.
+
 ### Fixed
 
 - A scrolling area inside a plain `<div>` keeps its height. It was squeezed to nothing, so the one part of a page
