@@ -1365,6 +1365,25 @@ namespace Sideload.Paint
         }
 
         /// <summary>Nothing to draw when the box is fully transparent - skip the mesh instead of adding an invisible one.</summary>
+        /// <summary>
+        /// Write a new string into a box that is already on screen, without building anything.
+        ///
+        /// The one case that has to be cheap: a page with a clock in it changes one text node a second, and until
+        /// this that rebuilt the entire page - every GameObject destroyed and made again, hover and press dropped
+        /// with them. The caller has already proved the new text measures exactly as the old one did, so nothing
+        /// can have moved and there is nothing else to do.
+        ///
+        /// Goes through <see cref="TmpMeasure.Content"/> like every other write, so the tab stops and the mono
+        /// advance are applied the same way rather than a second time in a second place.
+        /// </summary>
+        internal static void Retext(PaintedBox box, string text)
+        {
+            if (box.Text == null || box.Node == null) return;
+
+            box.Node.Text = text;
+            box.Text.text = TmpMeasure.Content(text, box.Node.Style);
+        }
+
         /// <summary>The child a box's outline ring is drawn into. Named so a repaint finds the one it made last
         /// time instead of stacking a second ring on top of it.</summary>
         private const string OutlineName = "outline";

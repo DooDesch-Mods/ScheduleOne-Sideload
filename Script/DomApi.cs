@@ -169,6 +169,12 @@ namespace Sideload.Script
             if (string.Equals(Node.TextContent ?? "", text, StringComparison.Ordinal)) return;
 
             Node.TextContent = text;
+
+            // A box that is nothing but this text, and text that measures exactly as the old text did, cannot have
+            // moved anything - so the view writes the string into the box already on screen and the page is left
+            // standing. Anything else, including any doubt, falls through to the rebuild.
+            if (Node is IElement element && Host.TryRetext(element, text)) return;
+
             Host.MarkDirty();
         }
 

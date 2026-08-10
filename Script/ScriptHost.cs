@@ -205,6 +205,17 @@ namespace Sideload.Script
         /// see <see cref="DomApi.JsStyle"/> for the list and why each entry is on it. Falls back to a full rebuild
         /// when no repaint path is wired.
         /// </summary>
+        /// <summary>
+        /// New text for an element whose box is nothing but that text. The view takes it if the string measures
+        /// exactly as the old one did, and says no otherwise - so the caller must fall back to a full rebuild.
+        ///
+        /// A clock is the case: one text node a second, four glyphs different, the same width every time.
+        /// </summary>
+        internal bool TryRetext(IElement element, string text) =>
+            OnTextOnlyChange != null && OnTextOnlyChange(element, text);
+
+        internal Func<IElement, string, bool> OnTextOnlyChange { get; set; }
+
         internal void MarkPaintDirty(IElement element)
         {
             if (OnPaintOnlyChange == null) { MarkDirty(); return; }
