@@ -1274,12 +1274,17 @@ namespace Sideload.Host
             if (contentW <= 0f || contentH <= 0f) return false;
 
             Layout.Size now = _measure.Measure(text, s, contentW);
+            bool fits = Same(now.Width, contentW) && Same(now.Height, contentH);
+
 #if DEBUG
+            // Under LogPageBuilds, because the answer is the whole reason a page does or does not rebuild and
+            // "why is this still rebuilding" is otherwise a question with nowhere to look.
             if (Config.Preferences.LogPageBuilds)
-                Core.Log?.Msg($"[retext] '{text}' measured {now.Width:0.##}x{now.Height:0.##} against content "
-                              + $"{contentW:0.##}x{contentH:0.##}");
+                Core.Log?.Msg($"[retext] {(fits ? "took" : "refused")} '{text}': measured "
+                              + $"{now.Width:0.##}x{now.Height:0.##} against content {contentW:0.##}x{contentH:0.##}");
 #endif
-            if (!Same(now.Width, contentW) || !Same(now.Height, contentH)) return false;
+
+            if (!fits) return false;
 
             Painter.Retext(box, text);
             return true;
