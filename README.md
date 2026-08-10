@@ -106,10 +106,21 @@ Both packages are in this repo under `tools/` and on npm as
 [`@doodesch/sideload-vite`](https://www.npmjs.com/package/@doodesch/sideload-vite).
 
 It writes the web bundle, the C# mod that registers it, a Vite build that puts the result straight into your
-`Mods/` folder, and TypeScript types generated from this engine's own source. `preact` is the default because
-it loads in 37 ms against react-dom's 113 ms, measured against the script host - a framework is parsed on every
-page build here, so its size is a load-time cost rather than a download cost. `--template react` and
-`--template vanilla` are the other two.
+`Mods/` folder, and TypeScript types generated from this engine's own source. `--template react` and
+`--template vanilla` are the other two, and React 18 and 19 both run.
+
+`preact` is the default because it loads in about a third of the time. A framework is parsed by the script
+engine when a page opens, so its size is a load-time cost here rather than a download cost - which is the
+opposite of the web and worth measuring rather than assuming. Mounting a hundred rows, on one machine, after
+warming the engine:
+
+| | bundle | load | mount |
+|---|---|---|---|
+| preact 10.29 | 14 kB | 24 ms | 22 ms |
+| react-dom 18.3 | 139 kB | 71 ms | 28 ms |
+| react-dom 19.2 | 188 kB | 54 ms | 41 ms |
+
+Run it yourself: `dotnet run` in `Workspace/Tests/Sideload.Tests` prints these lines.
 
 The rest of this section is the same thing by hand. Four files, no Unity reference, no reference to Sideload
 itself.
