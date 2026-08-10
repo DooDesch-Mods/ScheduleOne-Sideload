@@ -1,9 +1,13 @@
 # @doodesch/sideload-vite
 
-**Not published yet.** Until it is, a consumer reaches it through a relative path
-(`"@doodesch/sideload-vite": "file:../../tools/sideload-vite"`) and has to run `npm install` **in this folder
-once**, because Node resolves this package's own `lightningcss` from here rather than from the consumer's tree.
-Publishing removes both steps.
+```
+npm install -D @doodesch/sideload-vite
+```
+
+`examples/showcase` in this repository deliberately does NOT do that: it reaches the plugin through
+`file:../../tools/sideload-vite`, so it builds against the code in the tree rather than the last release. That
+one costs an extra `npm install` inside this folder, because Node resolves this package's own `lightningcss`
+from here rather than from the consumer's tree.
 
 
 Build a Sideload app with Vite. React or plain TypeScript in, one bundle the engine reads out.
