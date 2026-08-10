@@ -1,6 +1,6 @@
 {
   "name": "@doodesch/sideload-vite",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "description": "Build a Sideload app with Vite: React or plain TypeScript in, one bundle the engine reads out.",
   "license": "MIT",
