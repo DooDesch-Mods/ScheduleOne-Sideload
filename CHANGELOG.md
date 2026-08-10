@@ -3,6 +3,19 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- A scrolling area inside a plain `<div>` keeps its height. It was squeezed to nothing, so the one part of a page
+  meant to scroll was the part that disappeared.
+- A box only shrinks its children if it says `display: flex`, `flex-direction`, `flex-wrap` or `flex-flow`. Anything
+  else overflows, as a block does.
+- `transform` turns a box around its `transform-origin` without dragging its contents along. A button growing on
+  hover left its own label behind.
+- `:hover` survives a page rebuild. A page that redraws on a timer flickered once a second, and a text field lost
+  its hover for good.
+
 ## [1.30.0] - 2026-08-09
 
 ### Added

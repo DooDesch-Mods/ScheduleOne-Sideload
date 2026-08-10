@@ -65,7 +65,18 @@ namespace Sideload.Css
                 case "display":
                     if (Is(value, "none")) s.Display = DisplayKind.None;
                     else if (Is(value, "grid") || Is(value, "inline-grid")) s.Display = DisplayKind.Grid;
-                    else if (Is(value, "flex") || Is(value, "block") || Is(value, "inline-block")) s.Display = DisplayKind.Flex;
+                    else if (Is(value, "flex") || Is(value, "inline-flex"))
+                    {
+                        s.Display = DisplayKind.Flex;
+                        s.DeclaredFlex = true;
+                    }
+                    else if (Is(value, "block") || Is(value, "inline-block"))
+                    {
+                        // Still a flex container underneath - that is the engine's only box - but the page called it
+                        // a block, and a block does not squeeze its children. See ComputedStyle.DeclaredFlex.
+                        s.Display = DisplayKind.Flex;
+                        s.DeclaredFlex = false;
+                    }
                     else if (Is(value, "list-item")) { s.Display = DisplayKind.Flex; s.ListItem = true; }
                     break;
 
@@ -88,14 +99,28 @@ namespace Sideload.Css
                         if (!Is(part, "inside") && !Is(part, "outside")) Apply(s, "list-style-type", part);
                     break;
 
-                case "flex-direction": s.FlexDirection = ParseDirection(value, s.FlexDirection); break;
-                case "flex-wrap": s.FlexWrap = ParseWrap(value, s.FlexWrap); break;
+                // Writing a flex property IS how a page declares a flex container here, and it has to be: this
+                // engine gives every box a flex layout, so `display: flex` buys nothing and almost nobody writes
+                // it - all fourteen shipped apps say `flex-direction: row` and stop. A browser ignores these on a
+                // block, so the rule cannot be read off CSS; it is read off what the apps actually do. A box that
+                // writes none of them is a block, and blocks do not squeeze their children.
+                case "flex-direction":
+                    s.FlexDirection = ParseDirection(value, s.FlexDirection);
+                    s.DeclaredFlex = true;
+                    break;
+
+                case "flex-wrap":
+                    s.FlexWrap = ParseWrap(value, s.FlexWrap);
+                    s.DeclaredFlex = true;
+                    break;
+
                 case "flex-flow":
                     foreach (string part in ValueParser.SplitTopLevel(value))
                     {
                         s.FlexDirection = ParseDirection(part, s.FlexDirection);
                         s.FlexWrap = ParseWrap(part, s.FlexWrap);
                     }
+                    s.DeclaredFlex = true;
                     break;
 
                 case "flex": ApplyFlex(s, value); break;

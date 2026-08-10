@@ -547,54 +547,51 @@ namespace Sideload.Paint
         {
             if (rt == null || style == null) return;
 
-            PivotAt(rt, style);
-            Place(rt, style.TranslateX, style.TranslateY, style.ScaleX, style.ScaleY, style.RotateDeg);
+            Place(rt, style, style.TranslateX, style.TranslateY, style.ScaleX, style.ScaleY, style.RotateDeg);
         }
 
         /// <summary>
-        /// Turn the box around its `transform-origin` instead of around its top-left corner.
+        /// How far a box has to MOVE so that scaling and rotating it look like they happened around its
+        /// `transform-origin` instead of around its top-left corner.
         ///
-        /// Every box is placed from its top-left here, which means its pivot is there - and uGUI scales and
-        /// rotates around the pivot. So before this a `scale(1.1)` grew out of the corner and a `rotate(4deg)`
-        /// swung around it, while CSS says both happen around the centre. That was not a missing feature but a
-        /// wrong default, and it was wrong in every shipped app that scales anything.
+        /// uGUI transforms around the pivot, and every box here is placed from its top-left, so the pivot is there.
+        /// The obvious fix - move the pivot to the origin and compensate the position - is the one this used to do,
+        /// and it is wrong: a rect's CHILDREN are positioned relative to its pivot too, so moving it slid every
+        /// child of the box sideways. On a button that is the label leaving the button, and on a hover that
+        /// animates it is the label leaving first and the button following. Both were on screen.
         ///
-        /// Only touched when the box actually transforms. Moving the pivot means moving the anchored position to
-        /// compensate, and doing that to every box on the page would be a lot of arithmetic to arrive back where
-        /// it started - with one rounding error per box.
+        /// Moving the box instead touches nothing else. A point <c>p</c> that must stay still is at <c>p</c> before
+        /// the transform and at <c>T(p)</c> after it, so translating by <c>p - T(p)</c> puts it back - which is the
+        /// textbook way to change the centre of a linear transform, and it composes with the page's own translate.
         /// </summary>
-        private static void PivotAt(RectTransform rt, ComputedStyle style)
+        private static Vector2 OriginShift(RectTransform rt, ComputedStyle style, float sx, float sy, float rotation)
         {
-            bool transforms = style.ScaleX != 1f || style.ScaleY != 1f || style.RotateDeg != 0f;
-            if (!transforms) return;
+            if (sx == 1f && sy == 1f && rotation == 0f) return Vector2.zero;
 
             Rect rect = rt.rect;
             float w = rect.width, h = rect.height;
-            if (w <= 0f || h <= 0f) return;
+            if (w <= 0f || h <= 0f) return Vector2.zero;
 
-            float px = Mathf.Clamp01(style.TransformOriginX.Resolve(w) / w);
-            float py = Mathf.Clamp01(style.TransformOriginY.Resolve(h) / h);
+            // CSS measures the origin down from the top; Unity's local y grows up, so the point is below the pivot.
+            var p = new Vector2(style.TransformOriginX.Resolve(w), -style.TransformOriginY.Resolve(h));
 
-            // CSS measures the origin down from the top; a uGUI pivot is measured up from the bottom.
-            var pivot = new Vector2(px, 1f - py);
-            if (rt.pivot == pivot) return;
+            var scaled = new Vector2(p.x * sx, p.y * sy);
 
-            // The pivot IS the anchored position, so moving it moves the box. Put the top-left corner back where
-            // the layout put it: with the anchor at the parent's top-left, that corner sits at
-            // (anchoredPosition.x - px*w, anchoredPosition.y + (1-py)*h).
-            Vector2 anchored = rt.anchoredPosition;
-            float left = anchored.x - rt.pivot.x * w;
-            float top = anchored.y + (1f - rt.pivot.y) * h;
+            // Place() turns a CSS rotation into Euler(0, 0, -rotation), so the same sign belongs here.
+            float radians = -rotation * Mathf.Deg2Rad;
+            float cos = Mathf.Cos(radians), sin = Mathf.Sin(radians);
+            var moved = new Vector2(scaled.x * cos - scaled.y * sin, scaled.x * sin + scaled.y * cos);
 
-            rt.pivot = pivot;
-            rt.anchoredPosition = new Vector2(left + pivot.x * w, top - (1f - pivot.y) * h);
+            return p - moved;
         }
 
         private static void ApplyTransform(RectTransform rt, ComputedStyle from, ComputedStyle to, float t)
         {
             if (rt == null) return;
 
-            Place(rt,
+            // `to` supplies the origin: it is a length, not an animated value, and the box has to turn around the
+            // same point for every frame of the transition or it walks across the screen while it animates.
+            Place(rt, to,
                   Mathf.Lerp(from.TranslateX, to.TranslateX, t),
                   Mathf.Lerp(from.TranslateY, to.TranslateY, t),
                   Mathf.Lerp(from.ScaleX, to.ScaleX, t),
@@ -602,7 +599,8 @@ namespace Sideload.Paint
                   Mathf.Lerp(from.RotateDeg, to.RotateDeg, t));
         }
 
-        private static void Place(RectTransform rt, float tx, float ty, float sx, float sy, float rotation)
+        private static void Place(RectTransform rt, ComputedStyle style,
+                                  float tx, float ty, float sx, float sy, float rotation)
         {
             // The layout's own offset is remembered the first time, so repeated transforms compose against the
             // placement rather than against each other.
@@ -610,7 +608,7 @@ namespace Sideload.Paint
                 _placement[rt.GetInstanceID()] = anchored = rt.anchoredPosition;
 
             // CSS y grows downwards, Unity's grows up.
-            rt.anchoredPosition = anchored + new Vector2(tx, -ty);
+            rt.anchoredPosition = anchored + new Vector2(tx, -ty) + OriginShift(rt, style, sx, sy, rotation);
             rt.localScale = new Vector3(sx, sy, 1f);
             rt.localRotation = Quaternion.Euler(0f, 0f, -rotation);
         }
