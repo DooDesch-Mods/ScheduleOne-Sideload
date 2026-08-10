@@ -14,9 +14,13 @@ npm run dev
 `dev` rebuilds on every save and copies the bundle into `Mods/showcase/`, where the running game picks it up
 about 250 ms later. No restart, no rebuild of the mod.
 
-**`@doodesch/sideload-vite` is not on npm yet.** `package.json` reaches it through a relative path to
-`../../tools/sideload-vite`, so `npm install` works from a checkout of this repository and not from a copy of
-this folder on its own.
+**`package.json` reaches the plugin at `../../tools/sideload-vite`, not through npm.** On purpose: this example
+ships with the engine, so it has to build against the plugin in the tree rather than against the last release -
+otherwise a change to either could break the other and the example would still be green. Your own app installs
+`@doodesch/sideload-vite` normally.
+
+The one cost is a `npm install` inside `tools/sideload-vite` once per checkout, because Node resolves that
+package's `lightningcss` from its own folder.
 
 ## What it shows
 

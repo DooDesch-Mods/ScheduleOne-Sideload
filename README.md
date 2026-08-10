@@ -101,8 +101,9 @@ Fastest way to an empty one, if you have Node:
 npx @doodesch/create-sideload-app my-app --template preact
 ```
 
-**Not on npm yet** - that command 404s today. Both packages live in this repo under `tools/`; run
-`node tools/create-sideload-app/index.mjs my-app` from a checkout, or copy `examples/showcase` and edit.
+Both packages are in this repo under `tools/` and on npm as
+[`@doodesch/create-sideload-app`](https://www.npmjs.com/package/@doodesch/create-sideload-app) and
+[`@doodesch/sideload-vite`](https://www.npmjs.com/package/@doodesch/sideload-vite).
 
 It writes the web bundle, the C# mod that registers it, a Vite build that puts the result straight into your
 `Mods/` folder, and TypeScript types generated from this engine's own source. `preact` is the default because
