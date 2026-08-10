@@ -367,7 +367,7 @@ namespace Sideload.Layout
             foreach (List<Item> line in lines)
             {
                 lineStarts.Add(crossCursor);
-                ResolveFlexibleLengths(line, mainAvail, mainGap, measure);
+                ResolveFlexibleLengths(line, mainAvail, mainGap, measure, s.DeclaredFlex);
 
                 // Give every item its main size, then read back the cross size it needs.
                 foreach (Item item in line)
@@ -716,7 +716,8 @@ namespace Sideload.Layout
         /// the rest, which is what makes "one scrollable box soaks up the whole overflow" come out right instead of
         /// shaving a few pixels off every box on the page. Follows CSS Flexbox 9.7.
         /// </summary>
-        private static void ResolveFlexibleLengths(List<Item> line, float mainAvail, float mainGap, IMeasureText measure)
+        private static void ResolveFlexibleLengths(List<Item> line, float mainAvail, float mainGap,
+                                                   IMeasureText measure, bool declaredFlex)
         {
             if (line.Count == 0 || float.IsNaN(mainAvail)) return;
 
@@ -741,6 +742,11 @@ namespace Sideload.Layout
                 // An item with no flex factor in the active direction keeps its base size, clamped.
                 float factor = growing ? item.Node.Style.FlexGrow : item.Node.Style.FlexShrink;
                 if (factor <= 0f) frozen[i] = true;
+
+                // A BLOCK does not squeeze its children - it overflows, and something above it scrolls. Only the
+                // shrinking half: `flex: 1` is written on the children of undeclared boxes in every app there is,
+                // and taking growing away with it would relayout all of them. See ComputedStyle.DeclaredFlex.
+                if (!declaredFlex && !growing) frozen[i] = true;
             }
 
             // Each pass freezes at least one item, so the line length bounds the iteration count.

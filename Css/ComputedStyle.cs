@@ -55,6 +55,24 @@ namespace Sideload.Css
         /// </summary>
         internal bool ListItem;
 
+        /// <summary>
+        /// Whether the page actually wrote `display: flex` on this box, as opposed to it being a flex container
+        /// here because every box is.
+        ///
+        /// It decides one thing, and it is a big one: whether the box SHRINKS its children when they do not fit.
+        /// Real flexbox does. A block does not - it overflows, and the page scrolls. Until this existed every box
+        /// shrank, because every box was a flex container.
+        ///
+        /// What that cost, measured against a browser on this engine's own self-test page at 733x400:
+        /// `.list { height: 96px; overflow: auto }` inside a plain `&lt;div&gt;` came out 114 px in the browser and
+        /// 0 px here. The list was the only child with no content-based floor - a scroll box is allowed to be
+        /// smaller than its content - so it absorbed every pixel the page was over, and the one area the app wanted
+        /// to scroll was the one area that had gone.
+        ///
+        /// It does NOT affect direction: an undeclared box still stacks downwards, which is what a block does.
+        /// </summary>
+        internal bool DeclaredFlex;
+
         /// <summary>What the marker draws. `none` means a list item with no marker at all, which is how a navigation
         /// bar written as a `&lt;ul&gt;` gets rid of its bullets.</summary>
         internal ListMarkerKind ListMarker = ListMarkerKind.Disc;

@@ -131,6 +131,44 @@ namespace Sideload.Input
         }
 
         /// <summary>
+        /// Work out what the pointer is over NOW and hover it, after a render has replaced the boxes.
+        ///
+        /// <see cref="ResetForRender"/> has to drop hover, because a destroyed GameObject never sends its
+        /// PointerExit and the style would stick forever. The cost of that was two things the player sees:
+        ///
+        /// A page that rebuilds on a timer - the self-test app redraws its clock once a second - dropped the hover
+        /// every second and got it back a frame later when uGUI noticed the pointer over the new hit target, so
+        /// the button flickered while the pointer stood still. And a REUSED control never got it back at all: a
+        /// text field keeps its GameObject across the rebuild, the pointer never left it, so no enter is ever
+        /// raised again and the field stayed unhovered until the player moved out and back in.
+        ///
+        /// Asking where the pointer is answers both, and it is the same question uGUI would answer a frame later.
+        /// </summary>
+        internal void RehoverFrom(IEnumerable<KeyValuePair<IElement, RectTransform>> boxes)
+        {
+            if (!WantsRehover || boxes == null) return;
+
+            var ray = new PointerRay(UnityEngine.Input.mousePosition, _lastCamera);
+            if (!ray.Valid) return;
+
+            foreach (KeyValuePair<IElement, RectTransform> box in boxes)
+            {
+                if (box.Value == null || !Covers(box.Value, ray)) continue;
+
+                // Notified, so the box repaints in this frame rather than waiting for the next pointer event. Set
+                // skips both the write and the notification when the flag is already there, which it is for every
+                // box the pointer has not moved off.
+                Set(box.Key, StateFlags.Hover, true);
+                _hovered = box.Key;
+                _hoveredRect = box.Value;
+            }
+        }
+
+        /// <summary>False until a pointer event has been seen, because the camera one arrived through is the only
+        /// way to convert a screen position - and a null camera is a valid answer, so its absence cannot say.</summary>
+        private bool WantsRehover => _sawPointer;
+
+        /// <summary>
         /// Mark every element carrying the `disabled` attribute BEFORE the first cascade runs. Hover and press states
         /// arrive later through the pointer, but `:disabled` is true from the start - discovering it only while wiring
         /// handlers would paint the first frame with the enabled style.

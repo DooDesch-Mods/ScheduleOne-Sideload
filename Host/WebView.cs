@@ -636,6 +636,12 @@ namespace Sideload.Host
 
             PublishDeclaredKeys();
             WireInteraction(styles);
+
+            // The boxes under the pointer are new objects; hover was dropped with the old ones. Asking where the
+            // pointer is puts it back in this frame instead of a frame later - or, for a control that survived the
+            // rebuild and therefore gets no fresh enter, at all.
+            Rehover();
+
             ApplyPin();
             ApplyPendingFocus();
             long tWire = split.ElapsedMilliseconds;
@@ -1191,6 +1197,8 @@ namespace Sideload.Host
             }
 
             int wired = 0;
+            _wired.Clear();
+
             foreach (IElement element in stateful)
             {
                 if (!_painted.TryGetValue(element, out Painter.PaintedBox box)) continue;
@@ -1220,11 +1228,35 @@ namespace Sideload.Host
                 _interaction.Attach(box.Rect, element, disabled, ownGameObject: isFormControl,
                                     draggable: draggable.Contains(element), wheel: wheeled.Contains(element),
                                     ownsGesture: owns);
+                if (!disabled) _wired.Add(element);
                 wired++;
             }
 
             if (Config.Preferences.LogPageBuilds) Core.Log?.Msg($"interaction wired on {wired} element(s).");
         }
+
+        /// <summary>
+        /// Hand the interaction layer the boxes that were WIRED this pass, so it can decide which the pointer is on.
+        ///
+        /// Wired and not merely painted, because only those have a hit target: a box the pointer cannot reach must
+        /// not gain a hover state it could never have got from a pointer event, or a rebuild would hover more of
+        /// the page than moving the mouse over it does.
+        /// </summary>
+        private void Rehover()
+        {
+            if (_interaction == null || _painted == null || _wired.Count == 0) return;
+
+            var boxes = new List<KeyValuePair<IElement, UnityEngine.RectTransform>>(_wired.Count);
+            foreach (IElement element in _wired)
+                if (_painted.TryGetValue(element, out Painter.PaintedBox box) && box.Rect != null)
+                    boxes.Add(new KeyValuePair<IElement, UnityEngine.RectTransform>(element, box.Rect));
+
+            _interaction.RehoverFrom(boxes);
+        }
+
+        /// <summary>What the last wiring pass gave a hit target. Kept because a rebuild has to work out where the
+        /// pointer is again, and only these can answer.</summary>
+        private readonly HashSet<IElement> _wired = new HashSet<IElement>();
 
         /// <summary>
         /// An element's hover/press state changed: recompute the cascade and repaint just that box. The layout is
