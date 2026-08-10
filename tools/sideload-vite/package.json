@@ -18,9 +18,10 @@
   ],
   "scripts": {
     "gen": "node gen-types.mjs",
-    "check": "node gen-types.mjs --check && tsc -p example && node example/verify.mjs",
+    "check": "tsc -p example && node example/verify.mjs",
     "example": "cd example && vite build",
-    "types": "tsc -p example"
+    "types": "tsc -p example",
+    "types:check": "node gen-types.mjs --check"
   },
   "peerDependencies": {
     "vite": ">=5"
