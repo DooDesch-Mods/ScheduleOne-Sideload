@@ -241,7 +241,7 @@ namespace Sideload.Script
             // Getting any of those wrong makes a library take a branch it would never take in a browser.
 
             /// <summary>The Web Storage reading of <see cref="Get"/>: an absent key is null, not an empty string.</summary>
-            public object GetItem(string key)
+            public string GetItem(string key)
             {
                 Load();
                 return key != null && _values.TryGetValue(key, out string value) ? value : null;
@@ -258,7 +258,7 @@ namespace Sideload.Script
 
             /// <summary>The key at an index, or null past the end. Insertion order, which is what this dictionary
             /// keeps and what a browser is allowed to hand back.</summary>
-            public object Key(int index)
+            public string Key(int index)
             {
                 Load();
                 if (index < 0 || index >= _values.Count) return null;
