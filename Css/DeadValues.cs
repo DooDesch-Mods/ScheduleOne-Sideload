@@ -17,10 +17,10 @@ namespace Sideload.Css
     /// class. Either the layout implements them, or the applier should refuse the value so it falls back visibly."
     /// Refusing would change rendering, so this reports instead - the visible fallback without the behaviour change.
     ///
-    /// Not on the list on purpose: `display: block` and `inline-block`. They ARE mapped onto flex rather than
-    /// implemented, but a column flex container is the closest thing this engine has and the result is usually what
-    /// the author wanted. Reporting them would put a line in every app's log that nobody can act on, and a report
-    /// people learn to skip is worse than no report.
+    /// Not on the list on purpose: `display: block`, `inline-block` and `inline-flex`. They ARE mapped onto flex
+    /// rather than implemented, but a column flex container is the closest thing this engine has and the result is
+    /// usually what the author wanted. Reporting them would put a line in every app's log that nobody can act on,
+    /// and a report people learn to skip is worse than no report.
     /// </summary>
     internal static class DeadValues
     {
@@ -38,7 +38,13 @@ namespace Sideload.Css
                     //
                     // `list-item` came off this list in 1.30.0: it is a box with a marker beside it now, which is
                     // what it is in a browser too.
-                    if (IsAny(value, "inline", "inline-flex", "contents",
+                    //
+                    // `inline-flex` came off it for the reason `inline-block` was never on it, above. Both lose
+                    // only their OUTER display - there are no line boxes here, so nothing is inline-level - and
+                    // `inline-flex` keeps its inner one exactly: StyleApplier gives it DeclaredFlex, so it
+                    // shrinks its children like the flex container the author asked for. Reporting the one and
+                    // not the other said the more faithful mapping was the lossy one.
+                    if (IsAny(value, "inline", "contents",
                                      "table", "table-row", "table-cell", "table-row-group", "flow-root"))
                         Report(property, value);
                     break;

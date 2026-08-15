@@ -3,6 +3,13 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.31.1] - 2026-08-15
+
+### Fixed
+
+- The stylesheet report no longer flags `display: inline-flex` as lost. It maps onto flex exactly, keeping the
+  shrink behaviour, so only the report was wrong.
+
 ## [1.31.0] - 2026-08-10
 
 ### Added
