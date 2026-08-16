@@ -3,7 +3,7 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
-## [1.31.1] - 2026-08-15
+## [1.31.1] - 2026-08-16
 
 ### Fixed
 
