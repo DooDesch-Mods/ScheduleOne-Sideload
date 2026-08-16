@@ -615,6 +615,28 @@ namespace Sideload.Api
             return this;
         }
 
+        /// <summary>
+        /// Publish a picture this surface's page can draw with <c>&lt;img src="s1://&lt;name&gt;"&gt;</c>, exactly as
+        /// an app does. Null or empty bytes remove it.
+        ///
+        /// It was missing, and the store never cared: pictures are held by (id, name) and nothing asks whether
+        /// the id belongs to an app or a surface. So a surface could always have them - it just had no supported
+        /// way to say so, and the one mod that needed it reached past this file into the internals because it
+        /// compiles the shim in as source. A mod that references the DLL could not have done that at all.
+        ///
+        /// PNG bytes rather than a texture, for the reason the whole file gives: nothing here references a Unity
+        /// type and nothing here is going to start.
+        /// <code>
+        ///   surface.Image("icon/" + itemId, pngBytes);
+        /// </code>
+        /// </summary>
+        public SurfaceHandle Image(string name, byte[] png)
+        {
+            string id = _id;
+            Apps.WhenBound(() => Apps.SetImage(id, name, png));
+            return this;
+        }
+
         /// <summary>Take this surface down.</summary>
         public void Unmount() { Apps.UnmountSurface(_id); }
     }
