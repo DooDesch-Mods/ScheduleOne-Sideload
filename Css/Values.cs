@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 
 namespace Sideload.Css
 {
@@ -192,6 +192,10 @@ namespace Sideload.Css
     /// </summary>
     internal enum PositionKind { Static, Relative, Absolute, Fixed }
     internal enum OverflowKind { Visible, Hidden, Scroll, Auto }
+
+    /// <summary>`scrollbar-width`. `Auto` and `Thin` draw a bar of different widths; `None` draws none,
+    /// which is what every value of this property did before there was a bar to draw.</summary>
+    internal enum ScrollbarKind { Auto, Thin, None }
 
     /// <summary>`text-transform`. `full-width` and `full-size-kana` are absent on purpose - they are Japanese
     /// typesetting and mean nothing in a font this game ships.</summary>

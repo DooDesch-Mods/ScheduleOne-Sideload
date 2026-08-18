@@ -359,7 +359,8 @@ Honest limits, because a browser sets different expectations:
 - **CSS:** flexbox, Grid, absolute positioning, `position: relative`, and `position: fixed` as a top layer
   (measured against the screen, drawn over everything else, and it takes the pointer - which is how an app
   gets a modal), the box and paint properties, text properties, custom properties with `var()`, `transform`
-  and `transition`, `overflow` (`hidden` clips, `auto` and `scroll` clip and scroll), `z-index` on a
+  and `transition`, `overflow` (`hidden` clips, `auto` and `scroll` clip and scroll, with a bar down the right edge that
+  `scrollbar-width: none` takes away), `z-index` on a
   positioned box (it orders siblings inside one parent; there are no stacking contexts, so it cannot lift a
   box out of the subtree it was written in), auto margins, and `@media` on width, height and orientation.
   Units are `px`, `%`, `em`, `rem`, the viewport units and the physical ones, with `calc()` over all of them.

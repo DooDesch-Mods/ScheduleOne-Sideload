@@ -291,8 +291,16 @@ namespace Sideload.Css
                 case "-webkit-font-smoothing":
                 case "-moz-osx-font-smoothing":
                 case "text-rendering":
-                case "scrollbar-width":
                 case "-ms-overflow-style":
+                    break;
+
+                // No longer in the list above: a scrolling box now draws a bar, so this property has an effect to
+                // have. `auto` and `thin` differ only in width; `none` is the old behaviour of all three.
+                case "scrollbar-width":
+                    if (Is(value, "auto")) s.ScrollbarWidth = ScrollbarKind.Auto;
+                    else if (Is(value, "thin")) s.ScrollbarWidth = ScrollbarKind.Thin;
+                    else if (Is(value, "none")) s.ScrollbarWidth = ScrollbarKind.None;
+                    else Diagnostics.Report(DiagnosticKind.ValueRejected, "scrollbar-width", value);
                     break;
 
                 case "border-style":

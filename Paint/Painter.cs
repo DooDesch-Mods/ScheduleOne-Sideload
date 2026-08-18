@@ -371,6 +371,73 @@ namespace Sideload.Paint
         private static bool NeedsClipping(LayoutNode node) =>
             node.Style.OverflowX == OverflowKind.Hidden || node.Style.OverflowY == OverflowKind.Hidden;
 
+        /// <summary>Auto is 6 CSS px, thin is 3 - the two widths `scrollbar-width` distinguishes.</summary>
+        private static float ScrollbarWidthOf(ScrollbarKind kind) => kind == ScrollbarKind.Thin ? 3f : 6f;
+
+        /// <summary>How short the thumb is allowed to get. A 700-entry list would otherwise put a two-pixel mark on
+        /// the edge, which says "there is more" without saying where you are - the one thing the bar is for.</summary>
+        private const float MinThumbHeight = 24f;
+
+        /// <summary>
+        /// The bar down the right edge of a scrolling box, or null when there is nothing to show.
+        ///
+        /// A THUMB AND NO TRACK, on purpose. A groove needs a second colour that works on any page this engine
+        /// might be asked to draw, and there is no such colour; the thumb can be the page's own text colour faded,
+        /// which is legible by construction wherever the text is. It also never takes the pointer - dragging it
+        /// would need a scrollbar the ScrollRect owns, and the wheel already moves the list.
+        ///
+        /// Nothing is built when the content fits, so a short list is drawn exactly as it was before.
+        /// </summary>
+        private static RectTransform BuildScrollbar(LayoutNode node, RectTransform viewport, RectTransform content, Rect? clip)
+        {
+            if (node.Style.ScrollbarWidth == ScrollbarKind.None) return null;
+            if (content == null || viewport == null) return null;
+            if (content.rect.height <= node.Height + 0.5f) return null;
+
+            float width = ScrollbarWidthOf(node.Style.ScrollbarWidth);
+
+            RectTransform bar = UiFactory.Rect("scrollbar", viewport);
+            bar.anchorMin = new Vector2(1f, 1f);
+            bar.anchorMax = new Vector2(1f, 1f);
+            bar.pivot = new Vector2(1f, 1f);
+            bar.sizeDelta = new Vector2(width, MinThumbHeight);
+            bar.anchoredPosition = new Vector2(-2f, 0f);
+
+            RgbaColor ink = node.Style.Color;
+            Image fill = UiFactory.Fill(bar, new Color(ink.R, ink.G, ink.B, 0.35f));
+            fill.raycastTarget = false;
+            ClipTo(fill, clip);
+
+            return bar;
+        }
+
+        /// <summary>
+        /// Put the thumb where the list is: as tall a fraction of the track as the viewport is of the content, and
+        /// as far down as the content has scrolled.
+        ///
+        /// Read off the CONTENT's position rather than the ScrollRect's normalized value. The elastic movement type
+        /// takes that value past 0 and 1 while the list bounces, and a thumb driven by it walks off both ends of
+        /// its own track; the content's offset is the truth in either state and needs no clamping of its own.
+        /// </summary>
+        private static void PlaceThumb(RectTransform thumb, RectTransform viewport, RectTransform content)
+        {
+            if (thumb == null || viewport == null || content == null) return;
+
+            float visible = viewport.rect.height;
+            float total = content.rect.height;
+            if (total <= visible + 0.5f || visible <= 0f) return;
+
+            float height = Math.Max(MinThumbHeight, visible * visible / total);
+            float travel = visible - height;
+
+            // anchoredPosition.y of the content is 0 at the top and grows as the list moves up past the viewport.
+            float scrolled = Math.Max(0f, Math.Min(total - visible, content.anchoredPosition.y));
+            float y = travel * (scrolled / (total - visible));
+
+            thumb.sizeDelta = new Vector2(thumb.sizeDelta.x, height);
+            thumb.anchoredPosition = new Vector2(thumb.anchoredPosition.x, -y);
+        }
+
         /// <summary>The part of an inner clip that survives an outer one. Null outer means nothing narrows it.</summary>
         private static Rect? Narrow(Rect? inner, Rect? outer)
         {
@@ -447,13 +514,20 @@ namespace Sideload.Paint
             // wheel notch - images and text were being culled outright, and the boxes, which are not Graphics at
             // all and so were never re-examined, carried on drawing past the edge of the screen. Reapplying on the
             // scroll event is the only point at which both are true again.
+            // The bar, if this box is to have one. Built before the listener so the same listener can move it -
+            // one subscription rather than two, and no chance of the two drifting a frame apart.
+            RectTransform thumb = BuildScrollbar(node, viewport, content, clip);
+
             Rect? settled = clip;
             RectTransform viewportRect = viewport;
             scroll.onValueChanged.AddListener((UnityEngine.Events.UnityAction<Vector2>)(_ =>
             {
                 Reclip(content, settled);
                 CullHitTargets(content, viewportRect);
+                PlaceThumb(thumb, viewportRect, content);
             }));
+
+            PlaceThumb(thumb, viewport, content);
 
             // Once at build time as well: a list that is already scrolled when it is rebuilt - a rebuild during a
             // scroll, or a page that restores its position - would otherwise wait for the next wheel notch.

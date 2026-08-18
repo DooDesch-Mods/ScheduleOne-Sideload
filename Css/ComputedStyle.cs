@@ -268,6 +268,11 @@ namespace Sideload.Css
         /// pointer - a map, a canvas - wants the jump, because there smoothing is lag.</summary>
         internal bool SmoothScroll = true;
 
+        /// <summary>`scrollbar-width`. A scrolling box shows where it is in its content; `none` takes the bar away
+        /// again, which is what every value of this property did before there was a bar to draw. NOT inherited,
+        /// which is what CSS says - hiding the bar on one pane still leaves one on the next.</summary>
+        internal ScrollbarKind ScrollbarWidth = ScrollbarKind.Auto;
+
         // --- generated content ---
 
         /// <summary>

@@ -53,7 +53,8 @@ namespace Sideload.Devtools
                 float notches = -3f;
                 if (parts.Length > 1 && !float.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out notches))
                 {
-                    Core.Log?.Msg("usage: sideloadwheel [notches] - negative scrolls down, for example 'sideloadwheel -3'.");
+                    Core.Log?.Msg("usage: sideloadwheel [notches] [appId] [selector] - negative scrolls down, "
+                                + "for example 'sideloadwheel -3' or 'sideloadwheel -12 clipwise #rows'.");
                     return true;
                 }
 
@@ -62,8 +63,12 @@ namespace Sideload.Devtools
                 string appId = parts.Length > 2 ? parts[2] : null;
                 Host.WebView page = appId != null ? Host.WebView.Find(appId) : Host.WebView.Newest;
 
+                // Everything after the app id is the selector, joined back together - `#tasks .item` is three
+                // arguments by the time the console has split on spaces.
+                string selector = parts.Length > 3 ? string.Join(" ", parts, 3, parts.Length - 3) : null;
+
                 if (page == null) Core.Log?.Msg($"sideloadwheel: no page mounted{(appId != null ? " for " + appId : "")}.");
-                else page.DebugWheel(notches);
+                else page.DebugWheel(notches, selector);
             }
             catch (Exception e) { Core.Log?.Warning("sideloadwheel failed: " + e.Message); }
 
