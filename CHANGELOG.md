@@ -3,10 +3,12 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
-## [1.32.0] - 2026-08-16
+## [1.32.0] - 2026-08-19
 
 ### Added
 
+- A scrolling box has a bar down its right edge now, so a long list shows where you are in it.
+  `scrollbar-width: none` takes it away.
 - A surface can publish pictures for its page, the same way an app does: `surface.Image(name, png)`, drawn with
   `<img src="s1://name">`.
 
