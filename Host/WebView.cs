@@ -1664,15 +1664,35 @@ namespace Sideload.Host
             Devtools.ClickProbe.ClickAt(RectTransformUtility.WorldToScreenPoint(camera, world), selector);
         }
 
-        /// <summary>Debug-only: turn the wheel over the middle of the page, through the real pointer path. Positive
-        /// notches scroll toward the top, which is the sign a mouse reports.</summary>
-        internal void DebugWheel(float notches)
+        /// <summary>
+        /// Debug-only: turn the wheel over the page, through the real pointer path. Positive notches scroll toward
+        /// the top, which is the sign a mouse reports.
+        ///
+        /// A SELECTOR, because the middle of the page is usually not the list. A scrolling box is one element among
+        /// several and the page centre lands in a gap as often as not - the probe then reports "hit nothing", which
+        /// is true and useless. Naming the box is how the wheel gets aimed at the thing under test.
+        /// </summary>
+        internal void DebugWheel(float notches, string selector = null)
         {
-            if (_root == null) return;
+            RectTransform target = _root;
 
-            Canvas canvas = _root.GetComponentInParent<Canvas>();
+            if (!string.IsNullOrEmpty(selector))
+            {
+                IElement element = _document?.QuerySelector(selector);
+                if (element == null || _painted == null
+                    || !_painted.TryGetValue(element, out Painter.PaintedBox box) || box.Rect == null)
+                {
+                    Core.Log?.Warning($"[Sideload/probe] '{selector}' is not painted.");
+                    return;
+                }
+                target = box.Rect;
+            }
+
+            if (target == null) return;
+
+            Canvas canvas = target.GetComponentInParent<Canvas>();
             Camera camera = canvas != null && canvas.renderMode != RenderMode.ScreenSpaceOverlay ? canvas.worldCamera : null;
-            Vector3 world = _root.TransformPoint(_root.rect.center);
+            Vector3 world = target.TransformPoint(target.rect.center);
 
             Devtools.ClickProbe.WheelAt(RectTransformUtility.WorldToScreenPoint(camera, world), notches, _appId);
         }
