@@ -351,7 +351,7 @@ jobs:
           VERSION: ${{ needs.build.outputs.version }}
           NOTES: ${{ needs.build.outputs.notes }}
           REPO: ${{ github.repository }}
-          NEXUS_MOD_ID: ${{ secrets.NEXUS_MOD_ID }}
+          NEXUS_MOD_ID: ${{ vars.NEXUS_MOD_ID }}
         run: |
           if [ -z "$WEBHOOK" ]; then echo "DISCORD_RELEASE_WEBHOOK is not set - nothing announced."; exit 0; fi
 
