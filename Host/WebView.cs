@@ -149,7 +149,7 @@ namespace Sideload.Host
         /// A camera-drawn canvas (the phone's, and any world-space panel) is converted back downstream; an overlay
         /// canvas is composited straight into the finished frame and is not.
         /// </summary>
-        private bool WantsLinearColors()
+        internal bool WantsLinearColors()
         {
             try
             {
@@ -297,6 +297,11 @@ namespace Sideload.Host
             if (_watcher != null && _watcher.ShouldReload(deltaSeconds)) { Reload(); return; }
 #endif
 
+            // A transition repaints boxes without going through Render, and the painter reads its conversion flag
+            // from a global that only Render sets. With two views on different canvas kinds, whichever rendered
+            // last decides how the other one's transition is coloured. Set it per tick for the same reason
+            // Render sets it: the flag belongs to the view being painted, not to the last one built.
+            Paint.BoxRenderer.ConvertToLinear = WantsLinearColors();
             using (Profiling.Phase.Of("sideload.transitions")) Transitions.Tick(deltaSeconds);
             using (Profiling.Phase.Of("sideload.script")) _script?.Tick(deltaSeconds);
 
