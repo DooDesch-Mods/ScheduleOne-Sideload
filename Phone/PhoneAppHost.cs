@@ -669,6 +669,55 @@ namespace Sideload.Phone
         }
 
         /// <summary>
+        /// Give the shell back its subscriptions. Called when this host is dropped, which is every time the player
+        /// returns to the menu and loads back in.
+        ///
+        /// <para><b>Without this the listeners never went away.</b> <see cref="SubscribeShellEvents"/> registers one
+        /// exit listener and one <c>closeApps</c> handler per app, <c>HomeScreenPatch</c> respawns every host on each
+        /// <c>HomeScreen.Start</c>, and nothing ever deregistered. So every load cycle added one dead listener per
+        /// installed app to <c>GameInput.exitListeners</c> - a list vanilla walks on every single Escape and
+        /// right-click, calling into hosts whose panels were destroyed scenes ago.</para>
+        ///
+        /// <para>A tester's log showed <b>244</b> of them, and every press produced a wall of
+        /// <c>NullReferenceException at ScheduleOne.UI.App`1[T].Exit</c> - one per corpse. It leaks in Release
+        /// exactly as it does in Debug; the only difference is that a Debug build has a tracer that prints the
+        /// count, so the number is visible rather than merely the consequences.</para>
+        ///
+        /// <para>Both handlers are released even if the first throws, and a missing <c>Phone</c> instance is normal
+        /// at teardown rather than a fault - the shell can be gone before we are.</para>
+        /// </summary>
+        internal void Release()
+        {
+            try
+            {
+                if (_exitHandler != null)
+                {
+                    GameInput.DeregisterExitListener(_exitHandler);
+                    _exitHandler = null;
+                }
+            }
+            catch (Exception e)
+            {
+                Core.Log?.Warning($"'{_reg.Id}' kept its exit listener: {e.Message}");
+            }
+
+            try
+            {
+                if (_closeAppsHandler != null)
+                {
+                    if (Il2CppScheduleOne.UI.Phone.Phone.InstanceExists)
+                        Il2CppScheduleOne.UI.Phone.Phone.Instance.closeApps -= _closeAppsHandler;
+
+                    _closeAppsHandler = null;
+                }
+            }
+            catch (Exception e)
+            {
+                Core.Log?.Warning($"'{_reg.Id}' kept its closeApps handler: {e.Message}");
+            }
+        }
+
+        /// <summary>
         /// The open/close dance the vanilla App class performs: swap which canvas is live, record the active app, and
         /// rotate the phone plus pull the camera in for landscape.
         /// </summary>
