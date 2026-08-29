@@ -54,6 +54,12 @@ namespace Sideload.Phone
 
             // Returning to the menu and re-hosting runs Start again against a fresh hierarchy; the old hosts point at
             // destroyed objects, so drop them and rebuild rather than reusing.
+            //
+            // RELEASED, not merely dropped. Each host holds a GameInput exit listener and a closeApps handler, and
+            // clearing this list does nothing about either - the game keeps calling them for the rest of the
+            // session, on objects that no longer exist. One load cycle per app used to be one more corpse on
+            // GameInput.exitListeners, and a tester's log reached 244 of them before anybody noticed.
+            for (int i = 0; i < _hosts.Count; i++) _hosts[i]?.Release();
             _hosts.Clear();
 
 #if DEBUG
