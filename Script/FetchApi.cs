@@ -111,9 +111,20 @@ namespace Sideload.Script
 
             var call = new FetchCall { AppId = _appId };
 
-            if (!Uri.TryCreate(url, UriKind.Absolute, out Uri parsed))
+            // A page has no document URL, so there is nothing for a relative path to be relative to.
+            //
+            // The scheme test is not belt and braces, it is the half that actually runs on Linux: `TryCreate`
+            // with UriKind.Absolute REFUSES "/api/items" on Windows and ACCEPTS it on Unix, where a leading
+            // slash is an absolute path and the result is `file:///api/items`. Without this, the same page gets
+            // a different answer on a different machine - and the guard above, which is the one that explains
+            // itself to the author, would never fire on the platform CI runs on.
+            //
+            // Nothing reaches the network either way: HostAllowlist refuses a non-http scheme a few lines down.
+            // What differs is whether the page is told "fetch needs an absolute http(s) URL" or is told about a
+            // `file` scheme it never wrote.
+            if (!Uri.TryCreate(url, UriKind.Absolute, out Uri parsed)
+                || (parsed.Scheme != Uri.UriSchemeHttp && parsed.Scheme != Uri.UriSchemeHttps))
             {
-                // A page has no document URL, so there is nothing for a relative path to be relative to.
                 Later(() => deferred.Reject($"fetch needs an absolute http(s) URL - got '{Trim(url)}'."));
                 return deferred.Promise;
             }
