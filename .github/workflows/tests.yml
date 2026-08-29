@@ -1,0 +1,56 @@
+# The headless suite, on every pull request.
+#
+# It existed and nothing ran it. 703 tests, passing, gating nothing: the only workflow in this repo was
+# `on: push: tags:`, so a pull request showed an empty check list and a tag went from the Release build straight to
+# Thunderstore and Nexus. Seven shipped mods render through this engine, so a break in the cascade, the flexbox or
+# the paint path reaches all of them at once, in a build a player installs. See #56.
+#
+# No game, no network, no Unity: the project compiles Css/, Layout/, Dom/, Model/, Net/ and Script/ WITHOUT a Unity
+# reference, which is also the structural rule it guards - an accidental `using UnityEngine` in the style or layout
+# code fails this run rather than quietly welding the engine to the game. Seconds, not minutes.
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  headless:
+    runs-on: ubuntu-latest
+    steps:
+      # Into Sideload/ rather than the root, because the test project reaches the engine by relative path from the
+      # sibling layout on a developer's disk: its SideloadRoot defaults to ..\..\..\Sideload\ from
+      # Workspace/Tests/Sideload.Tests. The release workflow checks out at the root and passes its own paths; this
+      # one just rebuilds the layout the project already expects.
+      - name: Checkout the engine
+        uses: actions/checkout@v4
+        with:
+          path: Sideload
+
+      # The secret is the same one the release workflow already uses for this repo. It is withheld only from
+      # pull_request runs that originate in a FORK, which cannot happen on a private repo inside the org.
+      - name: Checkout Workspace (the tests live there)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/ScheduleOne-Workspace
+          path: Workspace
+          ssh-key: ${{ secrets.WORKSPACE_TOKEN }}
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      # Exit code 0 means every case passed; the runner prints each one either way.
+      - name: Run the headless suite
+        run: dotnet run --project Workspace/Tests/Sideload.Tests
+
+      # Separate step so a failure names which suite. This one covers fetch, the promise queue and the web
+      # globals, and it had not COMPILED since #40 - its file list was missing Script/WebApis.cs. Repaired in
+      # ScheduleOne-Workspace 15f0554, which this job pulls, so it has to stay after that landed.
+      - name: Run the net suite
+        run: dotnet run --project Workspace/Tests/Sideload.Net.Tests
