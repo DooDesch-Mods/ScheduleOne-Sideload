@@ -4,6 +4,13 @@ using MelonLoader.Utils;
 
 [assembly: MelonInfo(typeof(Sideload.Core), "Sideload", DooDesch.ModVersion.Current, "DooDesch", "https://github.com/DooDesch-Mods/ScheduleOne-Sideload")]
 [assembly: MelonGame("TVGS", "Schedule I")]
+// AngleSharp, Jint and Esprima are referenced by this assembly and shipped INSIDE it as embedded resources
+// (Sideload.csproj, EmbedRuntimeDependencies), so nothing of them lies on disk for MelonLoader to find.
+// Its DependencyGraph walks the reference list before any melon runs, well before the resolver below is
+// registered, and reported all three as missing on every clean install - a warning naming three files a
+// player has no way to obtain. Declaring them optional is what that warning itself asks for; it changes
+// nothing else, the graph uses the list for the missing-dependency report only.
+[assembly: MelonOptionalDependencies("AngleSharp", "Jint", "Esprima")]
 
 namespace Sideload
 {
