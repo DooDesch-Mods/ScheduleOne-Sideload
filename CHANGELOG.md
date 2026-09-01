@@ -3,6 +3,20 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.33.0] - 2026-09-01
+
+### Fixed
+
+- Escape and right-click keep working after you return to the menu and load back in. Every app left a dead
+  listener behind on each load, one per app per cycle.
+- A fresh install no longer warns that AngleSharp, Jint and Esprima are missing. They are inside
+  `Sideload.dll` and always were; MelonLoader was looking for them on disk.
+
+### For mod authors
+
+- `sideloadgamma` prints per mounted page: the canvas and its render mode, its camera, whether that camera
+  has a target texture, and what `WantsLinearColors()` returned. Debug builds.
+
 ## [1.32.0] - 2026-08-19
 
 ### Added
