@@ -10,12 +10,26 @@ namespace Sideload.Paint
     /// case (a pointer that leaves a button before the hover finished arriving), and it must not jump: the new tween
     /// starts from where the box IS, not from where the old one started, which is why the current interpolated style
     /// is captured rather than the old target.
+    ///
+    /// ONE registry serves every mounted view, so a tween has to say which view it belongs to. Two pages can be up
+    /// at once - the phone and a world panel, a surface and an overlay - and three things went wrong without an
+    /// owner on the tween: the paint settings came from whichever view rendered last (see
+    /// <see cref="PaintSettings"/>), a rebuild of one page cancelled the other page's animations, and every view
+    /// driving the same global <see cref="Tick"/> advanced every tween once per view per frame, so a fade ran at
+    /// double speed with two pages open. The owner is what separates them.
     /// </summary>
     internal static class Transitions
     {
         private sealed class Tween
         {
             internal Painter.PaintedBox Box;
+
+            /// <summary>The view this tween's box belongs to. Reference identity only - never dereferenced here.</summary>
+            internal object Owner;
+
+            /// <summary>What the painter has to have in force while this box is drawn.</summary>
+            internal PaintSettings Settings;
+
             internal ComputedStyle From;
             internal ComputedStyle To;
             internal float Elapsed;
@@ -33,13 +47,18 @@ namespace Sideload.Paint
         /// Move a box to a new style. With no transition declared this is an ordinary immediate repaint, so a page
         /// that says nothing about transitions behaves exactly as it did before they existed.
         /// </summary>
-        internal static void To(Painter.PaintedBox box, ComputedStyle from, ComputedStyle to)
+        internal static void To(Painter.PaintedBox box, ComputedStyle from, ComputedStyle to,
+                                object owner, PaintSettings settings)
         {
             if (box.Rect == null || to == null) return;
 
             if (to.TransitionSeconds <= 0f || from == null)
             {
                 Cancel(box);
+
+                // This repaint runs from an interaction, not from a render, so nothing has told the painter which
+                // view it is drawing. Same reason Tick has to say it.
+                settings.Apply();
                 Painter.Repaint(box, to);
                 return;
             }
@@ -54,6 +73,8 @@ namespace Sideload.Paint
             _active[key] = new Tween
             {
                 Box = box,
+                Owner = owner,
+                Settings = settings,
                 From = start,
                 To = to,
                 Duration = to.TransitionSeconds,
@@ -67,9 +88,29 @@ namespace Sideload.Paint
             if (box.Rect != null) _active.Remove(box.Rect.GetInstanceID());
         }
 
-        /// <summary>A rebuild replaces every GameObject, so every tween is aimed at a box that no longer exists.</summary>
-        internal static void Clear() => _active.Clear();
+        /// <summary>
+        /// A rebuild replaces every GameObject OF ONE VIEW, so only that view's tweens are aimed at boxes that no
+        /// longer exist. Clearing the whole registry cancelled the other mounted page's animations mid-flight -
+        /// they stopped wherever they had got to, because nothing repaints them again.
+        /// </summary>
+        internal static void Clear(object owner)
+        {
+            if (_active.Count == 0) return;
 
+            List<int> mine = null;
+            foreach (KeyValuePair<int, Tween> pair in _active)
+                if (ReferenceEquals(pair.Value.Owner, owner)) (mine ??= new List<int>()).Add(pair.Key);
+
+            if (mine == null) return;
+            foreach (int key in mine) _active.Remove(key);
+        }
+
+        /// <summary>
+        /// One pass over every mounted view's tweens. Driven ONCE per frame - see
+        /// <see cref="Host.WebView.TickAll"/> - because this registry is global: called from each view's own tick
+        /// it advanced and repainted every tween once per mounted view, so a fade ran at double speed with a second
+        /// page open and each box was drawn twice.
+        /// </summary>
         internal static void Tick(float deltaSeconds)
         {
             if (_active.Count == 0) return;
@@ -88,6 +129,9 @@ namespace Sideload.Paint
                 }
 
                 float t = Progress(tween);
+
+                // The paint settings of the view this box belongs to, not of whichever view rendered last.
+                tween.Settings.Apply();
                 Painter.RepaintBetween(tween.Box, tween.From, tween.To, Ease(t, tween.Easing));
 
                 if (t >= 1f) (finished ??= new List<int>()).Add(pair.Key);

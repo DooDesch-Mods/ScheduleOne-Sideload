@@ -160,6 +160,17 @@ namespace Sideload.Host
             catch { return true; }
         }
 
+        /// <summary>Device units per css pixel as of this view's last render - the number <see cref="Render"/>
+        /// published. Kept so a paint that happens outside Render can be handed it.</summary>
+        private float _cssToDevice = 1f;
+
+        /// <summary>
+        /// What the painter has to have in force while a box of THIS view is drawn, wherever the paint is coming
+        /// from. Read afresh rather than cached: the canvas a mod mounted a surface under can be reparented, and
+        /// the answer costs one GetComponentInParent.
+        /// </summary>
+        internal Paint.PaintSettings PaintSettings => new Paint.PaintSettings(WantsLinearColors(), _cssToDevice);
+
         /// <summary>The node everything of this view lives under. Destroying it disposes the view.</summary>
         public RectTransform Root => _root;
 
@@ -250,6 +261,17 @@ namespace Sideload.Host
                 try { view.Tick(deltaSeconds); }
                 catch (Exception e) { Core.Log?.Error("view tick failed: " + e); }
             }
+
+            // Once for every view's tweens, not once per view. Paint.Transitions is a single registry keyed by box,
+            // so driving it from each view's own tick advanced every tween once per mounted view: with the phone and
+            // a world panel both up, a 200ms fade finished in 100ms and every animating box was painted twice a
+            // frame. Each tween carries the settings of the view it belongs to, so one pass paints them all right.
+            if (RenderingDisabled) return;
+            try
+            {
+                using (Profiling.Phase.Of("sideload.transitions")) Paint.Transitions.Tick(deltaSeconds);
+            }
+            catch (Exception e) { Core.Log?.Error("transition tick failed: " + e); }
         }
 
         /// <summary>
@@ -297,12 +319,8 @@ namespace Sideload.Host
             if (_watcher != null && _watcher.ShouldReload(deltaSeconds)) { Reload(); return; }
 #endif
 
-            // A transition repaints boxes without going through Render, and the painter reads its conversion flag
-            // from a global that only Render sets. With two views on different canvas kinds, whichever rendered
-            // last decides how the other one's transition is coloured. Set it per tick for the same reason
-            // Render sets it: the flag belongs to the view being painted, not to the last one built.
-            Paint.BoxRenderer.ConvertToLinear = WantsLinearColors();
-            using (Profiling.Phase.Of("sideload.transitions")) Transitions.Tick(deltaSeconds);
+            // Transitions are NOT driven from here - see TickAll. One registry serves every view, so a per-view
+            // call ran it once per mounted view.
             using (Profiling.Phase.Of("sideload.script")) _script?.Tick(deltaSeconds);
 
             // Nothing is laid out while the app is off screen, and the pending flags are deliberately LEFT SET so it
@@ -601,12 +619,13 @@ namespace Sideload.Host
         private void Render(float cssW, float cssH, float hostW, float hostH, float scale)
         {
             // Tell the painter what one css pixel is worth in device pixels, so a hairline border can be snapped to
-            // a whole one instead of being smeared across two.
-            Paint.Painter.CssToDevice = scale;
-            Paint.BoxRenderer.ConvertToLinear = WantsLinearColors();
+            // a whole one instead of being smeared across two. Remembered as well as published, because a repaint
+            // that happens outside this method has to be handed the same two numbers - see PaintSettings.
+            _cssToDevice = scale;
+            PaintSettings.Apply();
             long started = System.Diagnostics.Stopwatch.GetTimestamp();
             _interaction.ResetForRender(_document);
-            Transitions.Clear();
+            Transitions.Clear(this);
             _styleWas.Clear();
 
             // The five phases, measured separately. "A rebuild costs about a millisecond per box" was true and
@@ -1353,7 +1372,7 @@ namespace Sideload.Host
                 // Through the transition runner rather than straight to the paint: with no `transition` declared it
                 // repaints at once, exactly as before, and with one it animates from the style the box has now.
                 _styleWas.TryGetValue(element, out ComputedStyle previous);
-                Transitions.To(box, previous, style);
+                Transitions.To(box, previous, style, this, PaintSettings);
                 _styleWas[element] = style;
             }
             catch (Exception e)
