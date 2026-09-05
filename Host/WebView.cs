@@ -146,8 +146,18 @@ namespace Sideload.Host
         ///
         /// Decided from the canvas rather than asked of the caller: a mod mounting a panel has no way to know which
         /// answer its canvas needs, and getting it wrong is invisible until somebody looks at a dark surface.
-        /// A camera-drawn canvas (the phone's, and any world-space panel) is converted back downstream; an overlay
-        /// canvas is composited straight into the finished frame and is not.
+        ///
+        /// <para><b>What converts back is a RENDER TEXTURE, not a world-space canvas.</b> This used to answer
+        /// "anything that is not an overlay", on the reasoning that the phone's screen is drawn by a camera into a
+        /// render texture and that path converts back. `sideloadgamma` measured it in the running game and the
+        /// premise is false - every phone app reports:</para>
+        /// <code>
+        ///   canvas='AppsCanvas' mode=WorldSpace worldCamera='OverlayCamera' targetTexture=NONE
+        ///   wantsLinear=True  #3a3d42 uploaded as #0B0C0E
+        /// </code>
+        /// <para>No render texture, so nothing converts back, so every colour on the phone shipped a step dark -
+        /// #d7d9dc (215) arriving as 177 and #3a3d42 (58) as 13. The camera is the wrong thing to ask about. The
+        /// texture is the right one, and a camera without one is just a camera.</para>
         /// </summary>
         internal bool WantsLinearColors()
         {
@@ -155,7 +165,10 @@ namespace Sideload.Host
             {
                 Canvas canvas = _root != null ? _root.GetComponentInParent<Canvas>() : null;
                 if (canvas == null) return true;
-                return canvas.renderMode != RenderMode.ScreenSpaceOverlay;
+                if (canvas.renderMode == RenderMode.ScreenSpaceOverlay) return false;
+
+                Camera cam = canvas.worldCamera;
+                return cam != null && cam.targetTexture != null;
             }
             catch { return true; }
         }
