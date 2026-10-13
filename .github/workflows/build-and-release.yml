@@ -37,6 +37,7 @@ on:
 permissions:
   contents: write
   packages: write
+  pull-requests: write
 
 jobs:
   build:
@@ -312,13 +313,15 @@ jobs:
           path: "Sideload_${{ steps.version-check.outputs.version }}_nexus.zip"
 
       # The attestation id changes with every release, so the badge line in the repository README moves with
-      # it. This pushes a branch off main that carries the new line; the pull request is opened by hand.
-      - name: Push the MLVScan badge branch
+      # it. This opens a pull request off main that carries the new line and squash-merges it. The script
+      # merges only a diff that touches nothing but the README files.
+      - name: Merge the MLVScan badge into main
         if: ${{ steps.mlvscan.outputs.badges != '' }}
         env:
+          GH_TOKEN: ${{ github.token }}
           MLVSCAN_BADGE_LINE: ${{ steps.mlvscan.outputs.badges }}
           MLVSCAN_VERSION: ${{ steps.version-check.outputs.version }}
-        run: bash Workspace/tools/ci/mlvscan.sh readme-branch
+        run: bash Workspace/tools/ci/mlvscan.sh readme-pr
 
   release:
     needs: build

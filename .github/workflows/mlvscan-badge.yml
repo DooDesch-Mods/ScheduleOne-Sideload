@@ -1,0 +1,38 @@
+name: MLVScan badge
+
+# Attests the DLLs of the latest stable release on mlvscan.com and merges the badge line into the README.
+# The release workflow does the same for every new tag. Run this by hand for a release that has no
+# attestation yet, or when the badge pull request of a release did not merge.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  badge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Checkout Workspace repository (build libs)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/ScheduleOne-Workspace
+          path: Workspace
+          ssh-key: ${{ secrets.WORKSPACE_TOKEN }}
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Attest the latest release and merge its badge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MLVSCAN_API_KEY: ${{ secrets.MLVSCAN_API_KEY }}
+          MLVSCAN_API_BASE_URL: ${{ vars.MLVSCAN_API_BASE_URL }}
+        run: bash Workspace/tools/ci/mlvscan.sh latest-release sideload=bin/Release/net6.0/Sideload.dll
