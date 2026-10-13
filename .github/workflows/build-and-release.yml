@@ -44,6 +44,7 @@ jobs:
     outputs:
       version: ${{ steps.version-check.outputs.version }}
       notes: ${{ steps.changelog.outputs.notes }}
+      mlvscan_badges: ${{ steps.mlvscan.outputs.badges }}
       notes_bbcode: ${{ steps.changelog.outputs.notes_bbcode }}
       notes_plain: ${{ steps.changelog.outputs.notes_plain }}
     steps:
@@ -208,6 +209,19 @@ jobs:
       - name: Build the project (Release, IL2CPP)
         run: dotnet build Sideload.csproj --configuration Release /p:Version="${{ steps.version-check.outputs.version }}" /p:WorkspaceLibPath="${{ github.workspace }}/Workspace/lib"
 
+      # Scans the DLLs that ship. A file MLVScan would block on a player's machine fails the release here,
+      # before anything is packaged. With the MLVSCAN_API_KEY secret set, the same step publishes an
+      # attestation per DLL and writes its badge into README.md and thunderstore/README.md, so the package
+      # built below carries the badge for exactly the DLL inside it.
+      - name: MLVScan (scan, attest, badge)
+        id: mlvscan
+        env:
+          MLVSCAN_API_KEY: ${{ secrets.MLVSCAN_API_KEY }}
+          MLVSCAN_API_BASE_URL: ${{ vars.MLVSCAN_API_BASE_URL }}
+          MLVSCAN_VERSION: ${{ steps.version-check.outputs.version }}
+          MLVSCAN_SOURCE_URL: https://github.com/${{ github.repository }}/releases/tag/v${{ steps.version-check.outputs.version }}
+        run: bash Workspace/tools/ci/mlvscan.sh scan sideload=bin/Release/net6.0/Sideload.dll
+
       - name: Prepare release directory
         run: |
           mkdir -p release
@@ -297,6 +311,15 @@ jobs:
           name: Sideload-nexus
           path: "Sideload_${{ steps.version-check.outputs.version }}_nexus.zip"
 
+      # The attestation id changes with every release, so the badge line in the repository README moves with
+      # it. This pushes a branch off main that carries the new line; the pull request is opened by hand.
+      - name: Push the MLVScan badge branch
+        if: ${{ steps.mlvscan.outputs.badges != '' }}
+        env:
+          MLVSCAN_BADGE_LINE: ${{ steps.mlvscan.outputs.badges }}
+          MLVSCAN_VERSION: ${{ steps.version-check.outputs.version }}
+        run: bash Workspace/tools/ci/mlvscan.sh readme-branch
+
   release:
     needs: build
     runs-on: ubuntu-latest
@@ -338,6 +361,8 @@ jobs:
             Installing by hand: put `Sideload.dll` into `Mods/`. That is the whole install - AngleSharp, Jint and
             Esprima are inside it now, so there is nothing to place in `UserLibs/` any more. Old copies there do no
             harm and are still used if present; delete them whenever you like.
+
+            ${{ needs.build.outputs.mlvscan_badges }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
