@@ -3,6 +3,13 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.33.1] - 2026-10-15
+
+### Fixed
+
+- `setAttribute(name, '')` now adds the attribute. React switches `disabled`, `checked` and `hidden` on that
+  way, so a disabled button was still pressable and `disabled:` styles never showed.
+
 ## [1.33.0] - 2026-09-01
 
 ### Fixed
