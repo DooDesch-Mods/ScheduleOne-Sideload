@@ -389,7 +389,7 @@ namespace Sideload.Script
             {
                 case "getAttribute": return a => (JsValue)Native.GetAttribute(Name(a, 0)) ?? JsValue.Null;
                 case "hasAttribute": return a => Native.HasAttribute(Name(a, 0));
-                case "setAttribute": return a => { Write(Name(a, 0), a.Length > 1 ? Text(a[1]) : ""); return JsValue.Undefined; };
+                case "setAttribute": return a => { SetAttribute(Name(a, 0), a.Length > 1 ? Text(a[1]) : ""); return JsValue.Undefined; };
                 case "removeAttribute": return a => { Erase(Name(a, 0)); return JsValue.Undefined; };
 
                 case "querySelector": return a => Wrap(Query(() => Native.QuerySelector(Name(a, 0))));
@@ -439,6 +439,24 @@ namespace Sideload.Script
             Host.MarkDirty();
         }
 
+        /// <summary>
+        /// <c>setAttribute</c>. Unlike <see cref="Write"/>, a missing attribute is not the same as an empty one: React
+        /// switches a boolean attribute on with <c>setAttribute('disabled', '')</c>, and treating that as "unchanged"
+        /// left every <c>disabled</c>, <c>checked</c> and <c>hidden</c> it set off the element.
+        /// </summary>
+        private void SetAttribute(string attribute, string value)
+        {
+            if (string.IsNullOrEmpty(attribute)) return;
+            if (Native.HasAttribute(attribute)) { Write(attribute, value); return; }
+
+            Native.SetAttribute(attribute, value ?? "");
+            Host.MarkDirty();
+        }
+
+        /// <summary>
+        /// A property setter's write (<c>value</c>, <c>className</c>, ...). Empty and missing count as the same here, so
+        /// an empty property does not grow an empty attribute or mark the page dirty on every render.
+        /// </summary>
         private bool Write(string attribute, string value)
         {
             if (string.IsNullOrEmpty(attribute)) return true;
