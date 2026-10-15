@@ -11,7 +11,7 @@
 ![MelonLoader](https://img.shields.io/badge/MelonLoader-0.7.3+-green)
 ![Type](https://img.shields.io/badge/type-framework-orange)
 
-[![MLVScan Sideload.dll](https://mlvscan.com/attestations/att_4V9FR3rHoFXCYGkapzlq3vLe/badge.svg)](https://mlvscan.com/attestations/att_4V9FR3rHoFXCYGkapzlq3vLe)
+[![MLVScan Sideload.dll](https://mlvscan.com/attestations/att_grc1lkiYrHaWcHDgwX_i0zYf/badge.svg)](https://mlvscan.com/attestations/att_grc1lkiYrHaWcHDgwX_i0zYf)
 
 **[Source + docs](https://github.com/DooDesch-Mods/ScheduleOne-Sideload)** · **[Reference app (WhatsDab)](https://github.com/DooDesch-Mods/ScheduleOne-WhatsDab)** · **[Support](https://support.doodesch.de/sideload)**
 
