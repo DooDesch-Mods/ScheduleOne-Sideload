@@ -3,6 +3,12 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.33.5] - 2026-10-16
+
+### Fixed
+
+- `box-shadow` no longer flickers between soft and hard edges from frame to frame on a page that does not change.
+
 ## [1.33.4] - 2026-10-16
 
 ### Fixed
