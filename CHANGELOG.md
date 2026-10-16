@@ -3,6 +3,12 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.33.2] - 2026-10-16
+
+### Fixed
+
+- A text field the page removes no longer stays on screen as an empty bar until the next rebuild.
+
 ## [1.33.1] - 2026-10-15
 
 ### Fixed
