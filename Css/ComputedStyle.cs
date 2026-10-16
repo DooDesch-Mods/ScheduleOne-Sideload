@@ -273,6 +273,10 @@ namespace Sideload.Css
         /// which is what CSS says - hiding the bar on one pane still leaves one on the next.</summary>
         internal ScrollbarKind ScrollbarWidth = ScrollbarKind.Auto;
 
+        /// <summary>The thumb half of `scrollbar-color`, or null for `auto`, which draws the text colour faded. The
+        /// track half is parsed and dropped: the bar has no track to colour. Inherited, as in CSS.</summary>
+        internal RgbaColor? ScrollbarThumb;
+
         // --- generated content ---
 
         /// <summary>
@@ -372,6 +376,7 @@ namespace Sideload.Css
             s.ListMarker = parent.ListMarker;
             s.SmoothScroll = parent.SmoothScroll;
             s.CaretColor = parent.CaretColor;
+            s.ScrollbarThumb = parent.ScrollbarThumb;
             s.GhostColor = parent.GhostColor;
             s.CaretWidth = parent.CaretWidth;
             s.TextAlign = parent.TextAlign;

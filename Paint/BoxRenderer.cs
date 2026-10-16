@@ -153,6 +153,13 @@ namespace Sideload.Paint
             var half = new Vector2(width * 0.5f, height * 0.5f);
             var radii = new Vector4(visual.RadiusTL, visual.RadiusTR, visual.RadiusBR, visual.RadiusBL);
 
+            // The canvas carries every vertex into its own space when it batches, and it does that to the normal and
+            // the tangent as well - with the same matrix and without normalising them. Those two channels hold the
+            // border width and blur and the border colour, so under a page scaled by 1.637 a 1.8px #505050 frame came
+            // out 2.9px wide and (101,101,80): x and y grew with the scale, z did not. Writing them through the
+            // inverse matrix makes the batch hand the shader back the values that were meant.
+            Matrix4x4 undo = CanvasMatrix(rt).inverse;
+
             int v = 0, t = 0;
 
             if (visual.HasShadow)
@@ -162,7 +169,7 @@ namespace Sideload.Paint
                 Vector2 shadowCentre = centre + new Vector2(visual.ShadowOffsetX, -visual.ShadowOffsetY);
                 Color shadow = visual.ShadowColor;
 
-                EmitQuad(vertices, colors, uv0, uv1, uv2, uv3, normals, tangents, triangles, ref v, ref t,
+                EmitQuad(vertices, colors, uv0, uv1, uv2, uv3, normals, tangents, triangles, ref v, ref t, undo,
                          shadowCentre, half + new Vector2(pad, pad), half, radii,
                          shadow, shadow, shadow, shadow,
                          borderWidth: 0f, blur: Mathf.Max(visual.ShadowBlur, 0.5f),
@@ -186,7 +193,7 @@ namespace Sideload.Paint
                 fillTL = fillTR = fillBR = fillBL = ghost;
             }
 
-            EmitQuad(vertices, colors, uv0, uv1, uv2, uv3, normals, tangents, triangles, ref v, ref t,
+            EmitQuad(vertices, colors, uv0, uv1, uv2, uv3, normals, tangents, triangles, ref v, ref t, undo,
                      centre, half, half, radii,
                      fillTL, fillTR, fillBR, fillBL,
                      visual.BorderWidth, blur: 0f, borderColor: visual.BorderColor);
@@ -194,16 +201,16 @@ namespace Sideload.Paint
             // Single-side borders, drawn over the fill. Adjacent sides overlap in the corner by a fraction of a pixel;
             // at hairline widths that is invisible, and anything thicker wants a uniform border anyway.
             Color edge = visual.BorderColor;
-            EmitEdge(vertices, colors, uv0, uv1, uv2, uv3, normals, tangents, triangles, ref v, ref t,
+            EmitEdge(vertices, colors, uv0, uv1, uv2, uv3, normals, tangents, triangles, ref v, ref t, undo,
                      centre + new Vector2(0f, half.y - visual.EdgeTop * 0.5f),
                      new Vector2(half.x, visual.EdgeTop * 0.5f), visual.EdgeTop, edge);
-            EmitEdge(vertices, colors, uv0, uv1, uv2, uv3, normals, tangents, triangles, ref v, ref t,
+            EmitEdge(vertices, colors, uv0, uv1, uv2, uv3, normals, tangents, triangles, ref v, ref t, undo,
                      centre - new Vector2(0f, half.y - visual.EdgeBottom * 0.5f),
                      new Vector2(half.x, visual.EdgeBottom * 0.5f), visual.EdgeBottom, edge);
-            EmitEdge(vertices, colors, uv0, uv1, uv2, uv3, normals, tangents, triangles, ref v, ref t,
+            EmitEdge(vertices, colors, uv0, uv1, uv2, uv3, normals, tangents, triangles, ref v, ref t, undo,
                      centre - new Vector2(half.x - visual.EdgeLeft * 0.5f, 0f),
                      new Vector2(visual.EdgeLeft * 0.5f, half.y), visual.EdgeLeft, edge);
-            EmitEdge(vertices, colors, uv0, uv1, uv2, uv3, normals, tangents, triangles, ref v, ref t,
+            EmitEdge(vertices, colors, uv0, uv1, uv2, uv3, normals, tangents, triangles, ref v, ref t, undo,
                      centre + new Vector2(half.x - visual.EdgeRight * 0.5f, 0f),
                      new Vector2(visual.EdgeRight * 0.5f, half.y), visual.EdgeRight, edge);
 
@@ -227,15 +234,31 @@ namespace Sideload.Paint
             else cr.DisableRectClipping();
         }
 
+        /// <summary>
+        /// The matrix the canvas batches <paramref name="rt"/> with: from its local space into the space of the canvas
+        /// it renders under. Only the linear part matters here, so the translation is irrelevant.
+        /// </summary>
+        internal static Matrix4x4 CanvasMatrix(RectTransform rt)
+        {
+            Canvas canvas = rt.GetComponentInParent<Canvas>();
+            if (canvas == null)
+            {
+                Core.Log?.Warning($"'{rt.name}' sits under no canvas - its border and blur are written unscaled.");
+                return Matrix4x4.identity;
+            }
+
+            return canvas.transform.worldToLocalMatrix * rt.localToWorldMatrix;
+        }
+
         /// <summary>One flat, square-cornered strip in the border colour, or nothing when that side has no width.</summary>
         private static void EmitEdge(Vector3[] vertices, Color32[] colors, Vector2[] uv0, Vector2[] uv1,
                                      Vector2[] uv2, Vector2[] uv3, Vector3[] normals, Vector4[] tangents,
-                                     int[] triangles, ref int v, ref int t,
+                                     int[] triangles, ref int v, ref int t, Matrix4x4 undo,
                                      Vector2 centre, Vector2 half, float width, Color color)
         {
             if (width <= 0f || color.a <= 0f) return;
 
-            EmitQuad(vertices, colors, uv0, uv1, uv2, uv3, normals, tangents, triangles, ref v, ref t,
+            EmitQuad(vertices, colors, uv0, uv1, uv2, uv3, normals, tangents, triangles, ref v, ref t, undo,
                      centre, half, half, Vector4.zero,
                      color, color, color, color,
                      borderWidth: 0f, blur: 0f, borderColor: new Color(0f, 0f, 0f, 0f));
@@ -247,7 +270,7 @@ namespace Sideload.Paint
         /// </summary>
         private static void EmitQuad(Vector3[] vertices, Color32[] colors, Vector2[] uv0, Vector2[] uv1,
                                      Vector2[] uv2, Vector2[] uv3, Vector3[] normals, Vector4[] tangents,
-                                     int[] triangles, ref int v, ref int t,
+                                     int[] triangles, ref int v, ref int t, Matrix4x4 undo,
                                      Vector2 centre, Vector2 quadHalf, Vector2 shapeHalf, Vector4 radii,
                                      Color cTL, Color cTR, Color cBR, Color cBL,
                                      float borderWidth, float blur, Color borderColor)
@@ -264,6 +287,11 @@ namespace Sideload.Paint
             };
             var fills = new[] { cTL, cTR, cBR, cBL };
 
+            // Through the inverse of the batch matrix - see Paint. The tangent's w is not transformed and stays alpha.
+            Vector3 normal = undo.MultiplyVector(new Vector3(borderWidth, blur, 0f));
+            Vector3 rgb = undo.MultiplyVector(new Vector3(borderColor.r, borderColor.g, borderColor.b));
+            var tangent = new Vector4(rgb.x, rgb.y, rgb.z, borderColor.a);
+
             int baseIndex = v;
             for (int i = 0; i < 4; i++)
             {
@@ -274,8 +302,8 @@ namespace Sideload.Paint
                 uv1[v] = shapeHalf;
                 uv2[v] = new Vector2(radii.x, radii.y);
                 uv3[v] = new Vector2(radii.z, radii.w);
-                normals[v] = new Vector3(borderWidth, blur, 0f);
-                tangents[v] = new Vector4(borderColor.r, borderColor.g, borderColor.b, borderColor.a);
+                normals[v] = normal;
+                tangents[v] = tangent;
                 v++;
             }
 

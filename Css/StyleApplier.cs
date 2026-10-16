@@ -510,6 +510,26 @@ namespace Sideload.Css
                     break;
 
                 // Standard CSS. `auto` hands the caret back to the text colour, which is the default.
+                case "scrollbar-color":
+                {
+                    if (Is(value, "auto")) { s.ScrollbarThumb = null; break; }
+
+                    // "<thumb> <track>". Split on the first space outside parentheses, so rgb(1, 2, 3) stays whole.
+                    string thumb = value.Trim();
+                    int depth = 0;
+                    for (int i = 0; i < thumb.Length; i++)
+                    {
+                        char ch = thumb[i];
+                        if (ch == '(') depth++;
+                        else if (ch == ')') depth--;
+                        else if (ch == ' ' && depth == 0) { thumb = thumb.Substring(0, i); break; }
+                    }
+
+                    if (Colour(thumb, out RgbaColor bar)) s.ScrollbarThumb = bar;
+                    else Diagnostics.Report(DiagnosticKind.ValueRejected, "scrollbar-color", value);
+                    break;
+                }
+
                 case "caret-color":
                     if (Is(value, "auto")) s.CaretColor = null;
                     else if (Colour(value, out RgbaColor caret)) s.CaretColor = caret;
@@ -713,6 +733,7 @@ namespace Sideload.Css
                 case "word-break": s.WordBreak = parent.WordBreak; return true;
                 case "pointer-events": s.PointerEventsNone = parent.PointerEventsNone; return true;
                 case "caret-color": s.CaretColor = parent.CaretColor; return true;
+                case "scrollbar-color": s.ScrollbarThumb = parent.ScrollbarThumb; return true;
 
                 // Not inherited in CSS, but `inherit` names the parent's value all the same, and these are the ones
                 // a real sheet asks it of - a border that follows the text colour, a control that takes the box's.
