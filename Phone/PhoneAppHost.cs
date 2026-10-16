@@ -651,6 +651,10 @@ namespace Sideload.Phone
                 // released the keyboard. Hand it back here, where every way of opening an app passes through.
                 if (!building) _view?.RestoreFocus();
 
+                // Switching the container off on close cost every text and picture its clip rectangle; a page that
+                // was not built just now needs them back. See Paint/ClipMemory.cs.
+                if (!building) _view?.ReassertClips();
+
                 if (fade != null) AppFade.Play(fade);
 
 #if DEBUG
@@ -660,6 +664,50 @@ namespace Sideload.Phone
 #endif
             }
             catch (Exception e) { Core.Log?.Error($"opening '{_reg.Id}' failed: {e.Message}"); }
+        }
+
+        /// <summary>
+        /// Build the page without opening the app: the container is switched on invisible and without raycasts, built,
+        /// and switched off again. Returns false, with the reason logged, when there is nothing to build or the panel
+        /// cannot be laid out right now. Driven by Phone/Prebuild.cs.
+        /// </summary>
+        internal bool Prebuild()
+        {
+            if (_view == null || _container == null) { Core.Log?.Warning($"'{_reg.Id}' has no page to prebuild."); return false; }
+            if (_view.Built) return false;
+            if (_container.activeSelf) { Core.Log?.Msg($"'{_reg.Id}' is open - its page builds there."); return false; }
+            if (_panel == null || !_panel.activeInHierarchy) { Core.Log?.Warning($"'{_reg.Id}' panel is inactive - its page builds on first open."); return false; }
+
+            CanvasGroup group = _container.GetComponent<CanvasGroup>() ?? _container.AddComponent<CanvasGroup>();
+            float alpha = group.alpha;
+            bool raycasts = group.blocksRaycasts;
+            group.alpha = 0f;
+            group.blocksRaycasts = false;
+
+            // AppsCanvas disables its Canvas while the phone is away. A disabled nested canvas is its own root, so
+            // every clip rectangle the page measured would be in that canvas's space instead of the phone's - and
+            // once the phone opens, text that should be cut off runs out of its box. The page is built under the
+            // canvas exactly as an open app would be; the container's zero alpha keeps it unseen.
+            Canvas apps = _appsCanvas != null ? _appsCanvas.GetComponent<Canvas>() : null;
+            bool appsWasEnabled = apps != null && apps.enabled;
+            if (apps == null) Core.Log?.Warning($"'{_reg.Id}' found no AppsCanvas canvas - its clip rectangles may be measured in the wrong space.");
+            else apps.enabled = true;
+
+            try
+            {
+                _container.SetActive(true);
+                Canvas.ForceUpdateCanvases();
+                _view.EnsureBuilt();
+            }
+            finally
+            {
+                if (apps != null) apps.enabled = appsWasEnabled;
+                _container.SetActive(false);
+                group.alpha = alpha;
+                group.blocksRaycasts = raycasts;
+            }
+
+            return _view.Built;
         }
 
         internal void Close()

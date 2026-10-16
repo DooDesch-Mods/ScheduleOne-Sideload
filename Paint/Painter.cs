@@ -34,17 +34,63 @@ namespace Sideload.Paint
             /// What that looked like: hovering a list row that had scrolled up out of its viewport repainted the
             /// row's background across the sticky bar above the list, hiding it completely - and with no text,
             /// because a TMP component carries its own clip from build time and was never touched.
+            ///
+            /// Read through the `overflow: hidden` box it was painted under, when there is one: that box's rectangle
+            /// is measured again when an ancestor moves (see <see cref="Rescope"/>), and a box repainted afterwards
+            /// has to take the new one.
             /// </summary>
-            internal readonly Rect? Clip;
+            internal Rect? Clip => Scope != null ? Scope.Clip : _clip;
+
+            private readonly Rect? _clip;
+
+            /// <summary>The innermost `overflow: hidden` box this one was painted under, or null.</summary>
+            internal readonly ClipScope Scope;
+
+            /// <summary>Every `overflow: hidden` box of the render this box belongs to, in paint order.</summary>
+            internal readonly List<ClipScope> Scopes;
 
             internal PaintedBox(LayoutNode node, RectTransform rect, Il2CppTMPro.TextMeshProUGUI text = null)
             {
                 Node = node;
                 Rect = rect;
                 Text = text;
-                Clip = BoxRenderer.ActiveClip;
+                _clip = BoxRenderer.ActiveClip;
+                Scope = _scope;
+                Scopes = _scopes;
             }
         }
+
+        /// <summary>
+        /// One `overflow: hidden` box that is not a scroll area, kept so its clip can be measured again.
+        ///
+        /// The clip is a rectangle in canvas space, taken where the box sat when the page was painted. A `transform`
+        /// written afterwards moves the pixels without a rebuild and leaves the rectangle behind - so everything
+        /// inside a clipping box under a panned map was cut away, because its clip now covered somewhere else.
+        /// </summary>
+        internal sealed class ClipScope
+        {
+            internal RectTransform Rect;
+            internal LayoutNode Node;
+            internal float AbsX;
+            internal float AbsY;
+
+            /// <summary>The clip the box itself sits under.</summary>
+            internal Rect? Outer;
+
+            /// <summary>The enclosing `overflow: hidden` box that <see cref="Outer"/> came from, or null when it
+            /// came from a scroll area or the viewport.</summary>
+            internal ClipScope Parent;
+
+            /// <summary>What its contents are clipped to now.</summary>
+            internal Rect? Clip;
+
+            internal RectTransform ViewRoot;
+            internal Vector2 ViewSize;
+        }
+
+        /// <summary>The scopes of the render in progress, and the innermost one the walk is inside.</summary>
+        private static List<ClipScope> _scopes;
+        private static ClipScope _scope;
 
         /// <summary>
         /// The form controls of the render in progress, and where keystrokes from them go. Both belong to ONE view:
@@ -108,6 +154,10 @@ namespace Sideload.Paint
             BoxRenderer.ActiveClip = viewport;
             BoxRenderer.BeginPass(host.GetInstanceID());
 
+            _scopes = new List<ClipScope>();
+            _scope = null;
+            ClipMemory.Sweep();
+
             var topLayer = new List<LayoutNode>();
             _topLayer = topLayer;
             try
@@ -143,6 +193,8 @@ namespace Sideload.Paint
             finally
             {
                 _topLayer = null;
+                _scopes = null;
+                _scope = null;
                 BoxRenderer.EndPass();
                 _reuse = null;
                 _inputs = null;
@@ -244,12 +296,27 @@ namespace Sideload.Paint
 
                 Rect? outerClip = BoxRenderer.ActiveClip;
                 BoxRenderer.ActiveClip = Narrow(own, outerClip);
+
+                var scope = new ClipScope
+                {
+                    Rect = rt, Node = node, AbsX = absX, AbsY = absY,
+                    Outer = outerClip, Parent = _scope, Clip = BoxRenderer.ActiveClip,
+                    ViewRoot = _viewRoot, ViewSize = _viewSize,
+                };
+                _scopes?.Add(scope);
+
+                ClipScope outerScope = _scope;
+                _scope = scope;
                 try
                 {
                     foreach (LayoutNode child in StackingOrder.Of(node.Children))
                         PaintNode(child, rt, depth + 1, painted, absX, absY);
                 }
-                finally { BoxRenderer.ActiveClip = outerClip; }
+                finally
+                {
+                    BoxRenderer.ActiveClip = outerClip;
+                    _scope = outerScope;
+                }
 
                 return;
             }
@@ -257,16 +324,69 @@ namespace Sideload.Paint
             Transform content = BuildScrollArea(node, rt, absX, absY, out Rect? clip);
 
             // Everything painted below here clips to this rectangle. A nested scroll area restores the outer one on
-            // the way out, so the stack unwinds correctly.
+            // the way out, so the stack unwinds correctly. Inside it no `overflow: hidden` box is the clip any more,
+            // so the scope chain starts again from nothing.
             Rect? previous = BoxRenderer.ActiveClip;
+            ClipScope previousScope = _scope;
             BoxRenderer.ActiveClip = clip ?? previous;
+            _scope = null;
             try
             {
                 foreach (LayoutNode child in StackingOrder.Of(node.Children))
                     PaintNode(child, content, depth + 1, painted, absX, absY);
             }
-            finally { BoxRenderer.ActiveClip = previous; }
+            finally
+            {
+                BoxRenderer.ActiveClip = previous;
+                _scope = previousScope;
+            }
         }
+
+        /// <summary>
+        /// Measure the `overflow: hidden` boxes inside a box again, after a repaint moved it.
+        ///
+        /// Walked in paint order, so an enclosing box is measured before the ones inside it and they narrow against
+        /// its new rectangle. Each box's children are clipped again in that order too, which leaves a nested box's
+        /// contents on the nested rectangle rather than on the outer one.
+        /// </summary>
+        private static void Rescope(PaintedBox box)
+        {
+            List<ClipScope> scopes = box.Scopes;
+            if (scopes == null || scopes.Count == 0 || box.Rect == null) return;
+
+            RectTransform viewRoot = _viewRoot;
+            Vector2 viewSize = _viewSize;
+            var moved = new HashSet<ClipScope>();
+
+            try
+            {
+                for (int s = 0; s < scopes.Count; s++)
+                {
+                    ClipScope scope = scopes[s];
+                    if (scope.Rect == null || !scope.Rect.IsChildOf(box.Rect)) continue;
+
+                    // ClipRectOf measures against the view the page is drawn in, and the last render may have been
+                    // another app's.
+                    _viewRoot = scope.ViewRoot;
+                    _viewSize = scope.ViewSize;
+
+                    Rect? outer = scope.Parent != null && moved.Contains(scope.Parent) ? scope.Parent.Clip : scope.Outer;
+                    scope.Clip = Narrow(ClipRectOf(scope.Rect, scope.Node, scope.AbsX, scope.AbsY), outer);
+                    moved.Add(scope);
+
+                    for (int i = 0; i < scope.Rect.childCount; i++) Reclip(scope.Rect.GetChild(i), scope.Clip);
+                }
+            }
+            finally
+            {
+                _viewRoot = viewRoot;
+                _viewSize = viewSize;
+            }
+        }
+
+        /// <summary>Whether writing a transform changed where a box sits, which is when its clips need measuring.</summary>
+        private static bool Moved(RectTransform rt, Vector3 position, Quaternion rotation, Vector3 scale) =>
+            rt.localPosition != position || rt.localRotation != rotation || rt.localScale != scale;
 
         /// <summary>
         /// Where a box actually ENDS UP, as a clip rectangle - transforms included.
@@ -541,7 +661,7 @@ namespace Sideload.Paint
             clip = ClipRectInCanvasSpace(absX + bLeft, absY + bTop,
                                          node.Width - bLeft - bRight, node.Height - bTop - bBottom);
 
-            // Put the clip back on every child each time the list moves.
+            // Put the clips back on every child each time the list moves - each child its own, as it was painted.
             //
             // Scrolling is not a passive act in uGUI: moving the content makes every MaskableGraphic under it
             // recompute which mask it belongs to, and the phone's own panel HAS a RectMask2D that our content sits
@@ -557,7 +677,7 @@ namespace Sideload.Paint
             RectTransform viewportRect = viewport;
             scroll.onValueChanged.AddListener((UnityEngine.Events.UnityAction<Vector2>)(_ =>
             {
-                Reclip(content, settled);
+                Reassert(content, settled);
                 CullHitTargets(content, viewportRect);
                 PlaceThumb(thumb, viewportRect, content);
             }));
@@ -586,7 +706,13 @@ namespace Sideload.Paint
 
             // Under the clip it was built with - see PaintedBox.Clip. Restored rather than assigned, because a
             // repaint can be triggered from inside a paint walk and must not leave the walk's clip behind.
-            ApplyTransform(box.Rect, style);
+            RectTransform rt = box.Rect;
+            Vector3 position = rt.localPosition;
+            Quaternion rotation = rt.localRotation;
+            Vector3 scale = rt.localScale;
+
+            ApplyTransform(rt, style);
+            if (Moved(rt, position, rotation, scale)) Rescope(box);
             ApplyOpacity(box.Rect, style.Opacity);
 
             Rect? outer = BoxRenderer.ActiveClip;
@@ -636,7 +762,13 @@ namespace Sideload.Paint
             visual.BorderColor = Color.Lerp(before.BorderColor, visual.BorderColor, t);
             visual.ShadowColor = Color.Lerp(before.ShadowColor, visual.ShadowColor, t);
 
-            ApplyTransform(box.Rect, from, to, t);
+            RectTransform rt = box.Rect;
+            Vector3 position = rt.localPosition;
+            Quaternion rotation = rt.localRotation;
+            Vector3 scale = rt.localScale;
+
+            ApplyTransform(rt, from, to, t);
+            if (Moved(rt, position, rotation, scale)) Rescope(box);
             ApplyOpacity(box.Rect, from.Opacity + (to.Opacity - from.Opacity) * t);
 
             // Same as Repaint: a transition frame is a repaint, and an unclipped one escapes its scroll area.
@@ -1404,11 +1536,32 @@ namespace Sideload.Paint
             // actually right for this page.
             if (graphic is MaskableGraphic maskable) maskable.maskable = false;
 
-            CanvasRenderer renderer = graphic.canvasRenderer;
-            if (renderer == null) return;
+            ClipMemory.Set(graphic.canvasRenderer, clip);
+        }
 
-            if (clip.HasValue) renderer.EnableRectClipping(clip.Value);
-            else renderer.DisableRectClipping();
+        /// <summary>
+        /// Give every renderer in a subtree back the clip it was painted with - each its own, so an `overflow: hidden`
+        /// box inside a scrolled list keeps its narrower rectangle instead of taking the list's. A renderer the
+        /// painter never clipped gets <paramref name="fallback"/>.
+        /// </summary>
+        internal static void Reassert(Transform root, Rect? fallback)
+        {
+            try { ClipMemory.Reassert(root, fallback, useFallback: true); }
+            catch (Exception e) { Core.Log?.Msg("reassert skipped: " + e.Message); }
+        }
+
+        /// <summary>
+        /// Give a whole page its clips back after it was switched off and on again, which is when uGUI takes them -
+        /// see <see cref="ClipMemory"/>. Renderers the painter never clipped are left as they are.
+        /// </summary>
+        internal static void ReassertPage(Transform root)
+        {
+            try
+            {
+                int n = ClipMemory.Reassert(root, null, useFallback: false);
+                if (Config.Preferences.LogPageBuilds) Core.Log?.Msg($"reasserted {n} clip(s) on show.");
+            }
+            catch (Exception e) { Core.Log?.Warning("reasserting the page's clips failed: " + e.Message); }
         }
 
         /// <summary>
@@ -1433,13 +1586,13 @@ namespace Sideload.Paint
                     CanvasRenderer cr = renderers[i];
                     if (cr == null) continue;
 
-                    if (clip.HasValue) cr.EnableRectClipping(clip.Value);
-                    else cr.DisableRectClipping();
+                    ClipMemory.Set(cr, clip);
                 }
             }
-            catch
+            catch (Exception e)
             {
-                // The page was torn down mid-scroll. Nothing to reassert and nothing worth logging.
+                // Usually a page torn down mid-scroll, with nothing left to reassert.
+                Core.Log?.Msg("reclip skipped: " + e.Message);
             }
         }
 

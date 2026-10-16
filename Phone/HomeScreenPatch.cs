@@ -88,6 +88,8 @@ namespace Sideload.Phone
 
             Core.Log?.Msg($"{_hosts.Count}/{Registry.Apps.Count} app(s) live on the phone.");
 
+            if (_hosts.Count > 0) Prebuild.Listen();
+
 #if DEBUG
             if (_hosts.Count > 0) Devtools.AutoOpen.Arm();
 #endif
