@@ -44,8 +44,11 @@ namespace Sideload.Paint
                        : weight <= 300 ? "Light"
                        : "Regular";
 
+            // The italic of the regular cut is "OpenSans-Italic", not "OpenSans-RegularItalic". The game ships no TMP
+            // asset under either name, though, and neither for Light: those fall through to the upright cut, and
+            // Apply slants it.
             TMP_FontAsset hit = null;
-            if (italic) hit = Find("OpenSans-" + cut + "Italic");
+            if (italic) hit = Find(cut == "Regular" ? "OpenSans-Italic" : "OpenSans-" + cut + "Italic");
             hit ??= Find("OpenSans-" + cut);
             hit ??= Find("OpenSans-Regular");
             return hit ?? _fallback;
@@ -525,11 +528,16 @@ namespace Sideload.Paint
                 _ => middle ? TextAlignmentOptions.Left : TextAlignmentOptions.TopLeft,
             };
 
-            // Bold and italic are picked as a FONT ASSET above, not as a style flag, so the flags carry only what
-            // TMP draws on top of the glyphs: the underline and the strike.
+            // Bold and italic are picked as a FONT ASSET above, not as a style flag, so the flags carry what TMP
+            // draws on top of the glyphs: the underline and the strike. The one exception is italic text whose cut
+            // has no italic asset in the game (Regular, Light). TMP slants the upright glyphs then, the synthetic
+            // oblique a browser draws in the same case. Without it, `font-style: italic` at weight 400 stayed upright.
             FontStyles lines = FontStyles.Normal;
             if ((s.TextDecoration & TextDecorationKind.Underline) != 0) lines |= FontStyles.Underline;
             if ((s.TextDecoration & TextDecorationKind.LineThrough) != 0) lines |= FontStyles.Strikethrough;
+            if (s.FontStyle == FontStyleKind.Italic && font != null
+                && font.name.IndexOf("Italic", StringComparison.OrdinalIgnoreCase) < 0)
+                lines |= FontStyles.Italic;
 
             tmp.fontStyle = lines;
         }
@@ -540,8 +548,19 @@ namespace Sideload.Paint
         /// Shared, because the painter has to grow an undersized rect around the same point TMP will draw on. Two
         /// copies of the rule would drift apart in silence: the line would be centred confidently on a rectangle
         /// that is no longer the box.
+        ///
+        /// Two rules say "middle". `align-items: center` always has. In a column the vertical axis is the main axis,
+        /// so `justify-content: center` says it too - a browser puts the line in the middle of a tall column box,
+        /// and here it stayed on the top edge.
         /// </summary>
-        internal static bool IsMiddleAligned(ComputedStyle s) => s != null && s.AlignItems == AlignKind.Center;
+        internal static bool IsMiddleAligned(ComputedStyle s)
+        {
+            if (s == null) return false;
+            if (s.AlignItems == AlignKind.Center) return true;
+
+            bool column = s.FlexDirection == FlexDirection.Column || s.FlexDirection == FlexDirection.ColumnReverse;
+            return column && s.JustifyContent == Justify.Center;
+        }
 
         /// <summary>
         /// How tall ONE line of this text is, in css pixels, or <see cref="float.NaN"/> when the face cannot be

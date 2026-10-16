@@ -185,6 +185,7 @@ namespace Sideload.Paint
             RectTransform rt = UiFactory.Rect(NameOf(node, depth), parent);
             UiFactory.PlaceFromTopLeft(rt, node.X, node.Y, node.Width, node.Height);
             ApplyTransform(rt, node.Style);
+            ApplyOpacity(rt, node.Style.Opacity);
 
             // A text leaf shares its element with the box around it; the box wins, because that is what gets restyled.
             if (node.Tag is AngleSharp.Dom.IElement owner && !painted.ContainsKey(owner))
@@ -375,7 +376,8 @@ namespace Sideload.Paint
         private static bool NeedsScrolling(LayoutNode node)
         {
             OverflowKind overflow = node.Style.OverflowY;
-            if (overflow != OverflowKind.Auto && overflow != OverflowKind.Scroll) return false;
+            if (overflow == OverflowKind.Scroll) return true;
+            if (overflow != OverflowKind.Auto) return false;
             return ContentBottom(node) > node.Height + 0.5f;
         }
 
@@ -403,13 +405,16 @@ namespace Sideload.Paint
         /// which is legible by construction wherever the text is. It also never takes the pointer - dragging it
         /// would need a scrollbar the ScrollRect owns, and the wheel already moves the list.
         ///
-        /// Nothing is built when the content fits, so a short list is drawn exactly as it was before.
+        /// Nothing is built when the content fits, so a short list is drawn exactly as it was before - unless the box
+        /// says `overflow-y: scroll`, which is CSS for "the bar is always there". Then a list that fits gets a thumb
+        /// the full height of the box, the way a Unity scrollbar set to stay visible draws it.
         /// </summary>
         private static RectTransform BuildScrollbar(LayoutNode node, RectTransform viewport, RectTransform content, Rect? clip)
         {
             if (node.Style.ScrollbarWidth == ScrollbarKind.None) return null;
             if (content == null || viewport == null) return null;
-            if (content.rect.height <= node.Height + 0.5f) return null;
+            bool always = node.Style.OverflowY == OverflowKind.Scroll;
+            if (!always && content.rect.height <= node.Height + 0.5f) return null;
 
             float width = ScrollbarWidthOf(node.Style.ScrollbarWidth);
 
@@ -421,7 +426,10 @@ namespace Sideload.Paint
             bar.anchoredPosition = new Vector2(-2f, 0f);
 
             RgbaColor ink = node.Style.Color;
-            Image fill = UiFactory.Fill(bar, new Color(ink.R, ink.G, ink.B, 0.35f));
+            Color colour = node.Style.ScrollbarThumb is RgbaColor set
+                ? new Color(set.R, set.G, set.B, set.A)
+                : new Color(ink.R, ink.G, ink.B, 0.35f);
+            Image fill = UiFactory.Fill(bar, colour);
             fill.raycastTarget = false;
             ClipTo(fill, clip);
 
@@ -442,7 +450,15 @@ namespace Sideload.Paint
 
             float visible = viewport.rect.height;
             float total = content.rect.height;
-            if (total <= visible + 0.5f || visible <= 0f) return;
+            if (visible <= 0f) return;
+
+            // Only an `overflow-y: scroll` box has a thumb while its content fits, and that thumb is the whole track.
+            if (total <= visible + 0.5f)
+            {
+                thumb.sizeDelta = new Vector2(thumb.sizeDelta.x, visible);
+                thumb.anchoredPosition = new Vector2(thumb.anchoredPosition.x, 0f);
+                return;
+            }
 
             float height = Math.Max(MinThumbHeight, visible * visible / total);
             float travel = visible - height;
@@ -570,6 +586,10 @@ namespace Sideload.Paint
 
             // Under the clip it was built with - see PaintedBox.Clip. Restored rather than assigned, because a
             // repaint can be triggered from inside a paint walk and must not leave the walk's clip behind.
+            // Placed before it is painted: the paint reads the box's final matrix (see BoxRenderer.Paint).
+            ApplyTransform(box.Rect, style);
+            ApplyOpacity(box.Rect, style.Opacity);
+
             Rect? outer = BoxRenderer.ActiveClip;
             BoxRenderer.ActiveClip = box.Clip;
             try
@@ -585,8 +605,6 @@ namespace Sideload.Paint
                 PaintOutline(box.Rect, style, box.Node.Width, box.Node.Height);
             }
             finally { BoxRenderer.ActiveClip = outer; }
-
-            ApplyTransform(box.Rect, style);
 
             if (box.Text != null)
                 box.Text.color = new Color(style.Color.R, style.Color.G, style.Color.B, style.Color.A);
@@ -619,17 +637,35 @@ namespace Sideload.Paint
             visual.BorderColor = Color.Lerp(before.BorderColor, visual.BorderColor, t);
             visual.ShadowColor = Color.Lerp(before.ShadowColor, visual.ShadowColor, t);
 
+            ApplyTransform(box.Rect, from, to, t);
+            ApplyOpacity(box.Rect, from.Opacity + (to.Opacity - from.Opacity) * t);
+
             // Same as Repaint: a transition frame is a repaint, and an unclipped one escapes its scroll area.
             Rect? outer = BoxRenderer.ActiveClip;
             BoxRenderer.ActiveClip = box.Clip;
             try { BoxRenderer.Paint(box.Rect, visual, w, h); }
             finally { BoxRenderer.ActiveClip = outer; }
 
-            ApplyTransform(box.Rect, from, to, t);
-
             if (box.Text != null)
                 box.Text.color = Color.Lerp(new Color(from.Color.R, from.Color.G, from.Color.B, from.Color.A),
                                             new Color(to.Color.R, to.Color.G, to.Color.B, to.Color.A), t);
+        }
+
+        private static void ApplyOpacity(RectTransform rt, float opacity)
+        {
+            if (rt == null) return;
+
+            // `opacity` fades the box and everything inside it as one: the fill, the picture, the text and every
+            // child box. A CanvasGroup on the box's object is exactly that. It is added only to a box that fades and
+            // kept at 1 afterwards, so a box that never fades carries no extra component.
+            CanvasGroup group = rt.GetComponent<CanvasGroup>();
+            if (group == null)
+            {
+                if (opacity >= 1f) return;
+                group = rt.gameObject.AddComponent<CanvasGroup>();
+            }
+
+            group.alpha = opacity;
         }
 
         /// <summary>
@@ -880,6 +916,7 @@ namespace Sideload.Paint
         {
             kept.SetParent(parent, worldPositionStays: false);
             UiFactory.PlaceFromTopLeft(kept, node.X, node.Y, node.Width, node.Height);
+            ApplyOpacity(kept, node.Style.Opacity);
 
             if (Paints(node.Style))
                 BoxRenderer.Paint(kept, ToVisual(node.Style, node.Width, node.Height), node.Width, node.Height);
@@ -1239,7 +1276,8 @@ namespace Sideload.Paint
 
             // `color` tints the picture, which is how a white glyph becomes any colour the stylesheet asks for -
             // the cheapest way to ship one image and use it on both a light and a dark bar.
-            image.color = new Color(s.Color.R, s.Color.G, s.Color.B, s.Color.A * s.Opacity);
+            // Its opacity is the box's CanvasGroup, which already covers the picture.
+            image.color = new Color(s.Color.R, s.Color.G, s.Color.B, s.Color.A);
 
             ClipTo(image, BoxRenderer.ActiveClip);
         }
@@ -1657,16 +1695,8 @@ namespace Sideload.Paint
 
             if (s.HasGradient) ApplyGradient(ref visual, s, width, height);
 
-            if (s.Opacity < 1f)
-            {
-                visual.FillTL = Fade(visual.FillTL, s.Opacity);
-                visual.FillTR = Fade(visual.FillTR, s.Opacity);
-                visual.FillBR = Fade(visual.FillBR, s.Opacity);
-                visual.FillBL = Fade(visual.FillBL, s.Opacity);
-                visual.BorderColor = Fade(visual.BorderColor, s.Opacity);
-                visual.ShadowColor = Fade(visual.ShadowColor, s.Opacity);
-            }
-
+            // No opacity here: that is the CanvasGroup ApplyOpacity puts on the box, which fades the fill together
+            // with the text and children. Fading the fill as well would apply it twice.
             return visual;
         }
 
@@ -1703,7 +1733,6 @@ namespace Sideload.Paint
 
         private static Color ToColor(RgbaColor c) => new Color(c.R, c.G, c.B, c.A);
 
-        private static Color Fade(Color c, float factor) => new Color(c.r, c.g, c.b, c.a * factor);
 
         private static string NameOf(LayoutNode node, int depth)
         {
