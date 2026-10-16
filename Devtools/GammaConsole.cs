@@ -9,13 +9,11 @@ namespace Sideload.Devtools
     /// DEBUG-only: <c>sideloadgamma [hex]</c> - for every mounted page, say which canvas carries it and what a
     /// declared colour turns into on the way to the shader.
     ///
-    /// Boxes reach the shader as raw mesh vertices, which skips the sRGB-to-linear step uGUI does for its own
-    /// meshes, so <see cref="Paint.BoxRenderer.ToVertex"/> does it instead. Whether that is right depends on
-    /// whether something downstream converts back, and the only thing deciding that today is
-    /// "is this canvas ScreenSpaceOverlay" - justified in a comment by the phone drawing into a render texture.
-    /// That justification has never been measured, and a world-space clipboard gets the same answer as the phone
-    /// while rendering a step dark, so this prints the facts the condition should have been written from:
-    /// the render mode, the camera, and whether that camera has a target texture at all.
+    /// Boxes reach the shader as raw mesh vertices and the box shader does no colour conversion of its own, so
+    /// <see cref="Paint.BoxRenderer.ToVertex"/> pre-converts wherever the canvas will not. Which canvases those are
+    /// is read from <c>vertexColorAlwaysGammaSpace</c> (see <see cref="Host.WebView.WantsLinearColors"/>), and this
+    /// prints it next to the render mode and camera so a wrong answer shows which fact it came from.
+    /// <c>sideloadgamma force on|off|auto</c> overrides the answer for every page, to compare both on screen.
     ///
     /// The uploaded value is the arithmetic <c>ToVertex</c> performs, not a mesh read-back - the useful unknown
     /// here is which surfaces convert, not whether the conversion works. Ground truth on screen stays the cheap
@@ -56,6 +54,14 @@ namespace Sideload.Devtools
 
             try
             {
+                if (parts.Length > 2 && parts[1].Equals("force", StringComparison.OrdinalIgnoreCase))
+                {
+                    string how = parts[2].ToLowerInvariant();
+                    Host.WebView.ForceLinear = how == "on" ? true : how == "off" ? (bool?)false : null;
+                    Core.Log?.Msg($"sideloadgamma: convertToLinear forced to {(Host.WebView.ForceLinear?.ToString() ?? "auto")} - reload the page to repaint.");
+                    return true;
+                }
+
                 Color probe = new Color(0.5f, 0.5f, 0.5f, 1f);
                 string probeText = "#808080";
                 if (parts.Length > 1)
@@ -94,8 +100,6 @@ namespace Sideload.Devtools
             string mode = canvas == null ? "NO CANVAS" : canvas.renderMode.ToString();
             Camera cam = canvas != null ? canvas.worldCamera : null;
 
-            // The claim the discriminator rests on. A camera with no target texture renders straight into the
-            // frame, which is the same path an overlay canvas takes and the opposite of what the comment assumes.
             RenderTexture target = cam != null ? cam.targetTexture : null;
             string camText = cam == null
                 ? "worldCamera=NONE"
@@ -110,9 +114,11 @@ namespace Sideload.Devtools
                 uploaded.a = probe.a;
             }
 
-            Core.Log?.Msg($"  [{view.AppId}] canvas='{(canvas == null ? "-" : canvas.name)}' mode={mode} {camText}");
+            Canvas root = canvas != null ? canvas.rootCanvas : null;
+            string gammaText = root == null ? "" : $" vertexGamma={root.vertexColorAlwaysGammaSpace}";
+            Core.Log?.Msg($"  [{view.AppId}] canvas='{(canvas == null ? "-" : canvas.name)}' mode={mode} {camText}{gammaText}");
             Core.Log?.Msg($"      wantsLinear={wantsLinear}  {probeText} uploaded as {Hex(uploaded)}"
-                        + (wantsLinear ? "  (a step dark unless something downstream converts back)" : ""));
+                        + (wantsLinear ? "  (right only where the canvas does not convert)" : ""));
         }
 
         private static string Hex(Color c) =>
