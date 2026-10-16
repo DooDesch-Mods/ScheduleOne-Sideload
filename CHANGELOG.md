@@ -3,6 +3,26 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.33.4] - 2026-10-16
+
+### Fixed
+
+- `opacity` fades the box with its text and children, as in a browser. It used to fade only the box's own fill
+  and picture.
+- Text in a column box with `justify-content: center` sits in the middle; it stayed on the top edge.
+- `font-style: italic` at weight 400 and 300 draws slanted instead of upright.
+- Text in a box shorter than its line plus a thick border no longer disappears.
+- Borders keep their width and colour on a scaled page; a 1.8px frame came out 2.9px and tinted yellow.
+
+### Added
+
+- `scrollbar-color` sets the scrollbar thumb colour. `overflow-y: scroll` keeps the bar visible while the
+  content fits.
+
+### Changed
+
+- `overflow: hidden` clips content inside the border instead of on top of it.
+
 ## [1.33.3] - 2026-10-16
 
 ### Fixed
