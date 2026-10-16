@@ -147,30 +147,72 @@ namespace Sideload.Host
         /// Decided from the canvas rather than asked of the caller: a mod mounting a panel has no way to know which
         /// answer its canvas needs, and getting it wrong is invisible until somebody looks at a dark surface.
         ///
-        /// <para><b>What converts back is a RENDER TEXTURE, not a world-space canvas.</b> This used to answer
-        /// "anything that is not an overlay", on the reasoning that the phone's screen is drawn by a camera into a
-        /// render texture and that path converts back. `sideloadgamma` measured it in the running game and the
-        /// premise is false - every phone app reports:</para>
+        /// <para>The answer is the root canvas's <c>vertexColorAlwaysGammaSpace</c>. With it off (Unity's default,
+        /// and every canvas a mod creates) the canvas converts vertex colours to linear itself, so a pre-converted
+        /// colour is converted twice and sinks into black. With it on, the canvas hands the sRGB value through and
+        /// leaves the conversion to the shader - UI/Default does it, the box shader does not - so nothing converts
+        /// unless the painter does. The game turns it on for the phone, which is why every app there lifted its
+        /// dark fills to grey:</para>
         /// <code>
-        ///   canvas='AppsCanvas' mode=WorldSpace worldCamera='OverlayCamera' targetTexture=NONE
-        ///   wantsLinear=True  #3a3d42 uploaded as #0B0C0E
+        ///   canvas='AppsCanvas' mode=WorldSpace vertexGamma=True   #0b0c0e arrives as 59, pre-converted as 13
+        ///   canvas='SideloadSurfaceTest' mode=ScreenSpaceOverlay vertexGamma=False   #0b0c0e arrives as 13
         /// </code>
-        /// <para>No render texture, so nothing converts back, so every colour on the phone shipped a step dark -
-        /// #d7d9dc (215) arriving as 177 and #3a3d42 (58) as 13. The camera is the wrong thing to ask about. The
-        /// texture is the right one, and a camera without one is just a camera.</para>
+        /// <para>Render mode and the camera's target texture were asked before and both are the wrong question: the
+        /// same world-space phone canvas has needed both answers, and only this flag tells them apart.</para>
         /// </summary>
         internal bool WantsLinearColors()
         {
+#if DEBUG
+            if (ForceLinear.HasValue) return ForceLinear.Value;
+#endif
+            if (QualitySettings.activeColorSpace != ColorSpace.Linear) return false;
             try
             {
                 Canvas canvas = _root != null ? _root.GetComponentInParent<Canvas>() : null;
-                if (canvas == null) return true;
-                if (canvas.renderMode == RenderMode.ScreenSpaceOverlay) return false;
-
-                Camera cam = canvas.worldCamera;
-                return cam != null && cam.targetTexture != null;
+                if (canvas == null) return false;
+                Canvas root = canvas.rootCanvas;
+                return (root != null ? root : canvas).vertexColorAlwaysGammaSpace;
             }
-            catch { return true; }
+            catch (System.Exception e)
+            {
+                if (!_colourFailed)
+                {
+                    _colourFailed = true;
+                    Core.Log?.Warning($"[Sideload/colour] [{_appId}] could not read the canvas, painting colours unconverted: {e.Message}");
+                }
+                return false;
+            }
+        }
+
+        private bool _colourFailed;
+
+#if DEBUG
+        /// <summary>Set by <c>sideloadgamma force on|off</c> to try both answers on a live page; null = decide.</summary>
+        internal static bool? ForceLinear;
+#endif
+
+        private bool _colourLogged;
+
+        /// <summary>Once per view: the facts the colour decision rests on.</summary>
+        private void LogColourPath()
+        {
+            if (_colourLogged) return;
+            _colourLogged = true;
+            try
+            {
+                Canvas canvas = _root != null ? _root.GetComponentInParent<Canvas>() : null;
+                Canvas root = canvas != null ? canvas.rootCanvas : null;
+                Camera cam = canvas != null ? canvas.worldCamera : null;
+                Core.Log?.Msg($"[Sideload/colour] [{_appId}] canvas='{(canvas == null ? "-" : canvas.name)}' " +
+                              $"mode={(canvas == null ? "NONE" : canvas.renderMode.ToString())} " +
+                              $"root='{(root == null ? "-" : root.name)}' " +
+                              $"vertexGamma={(canvas == null ? "-" : canvas.vertexColorAlwaysGammaSpace.ToString())}/" +
+                              $"{(root == null ? "-" : root.vertexColorAlwaysGammaSpace.ToString())} " +
+                              $"camera='{(cam == null ? "-" : cam.name)}' " +
+                              $"targetTexture={(cam == null || cam.targetTexture == null ? "NONE" : cam.targetTexture.name)} " +
+                              $"colorSpace={QualitySettings.activeColorSpace} convertToLinear={WantsLinearColors()}");
+            }
+            catch (System.Exception e) { Core.Log?.Warning($"[Sideload/colour] [{_appId}] could not read the canvas: {e.Message}"); }
         }
 
         /// <summary>Device units per css pixel as of this view's last render - the number <see cref="Render"/>
@@ -635,6 +677,7 @@ namespace Sideload.Host
             // a whole one instead of being smeared across two. Remembered as well as published, because a repaint
             // that happens outside this method has to be handed the same two numbers - see PaintSettings.
             _cssToDevice = scale;
+            LogColourPath();
             PaintSettings.Apply();
             long started = System.Diagnostics.Stopwatch.GetTimestamp();
             _interaction.ResetForRender(_document);

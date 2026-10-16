@@ -288,10 +288,10 @@ namespace Sideload.Paint
         }
 
         /// <summary>
-        /// Colours reach the shader through raw mesh vertices, which bypasses the sRGB-to-linear conversion uGUI's
-        /// Graphic does for its own meshes. The game renders in linear space, so an untouched #101218 would be read as
-        /// a LINEAR 0.063 and come back out at roughly 0.28 - dark surfaces lift to grey while bright ones barely
-        /// move. Converting here restores what the hex value means.
+        /// The colour a vertex carries. The game renders in linear space; whether the canvas converts vertex colours
+        /// from sRGB on the way to the shader depends on that canvas (see <see cref="ConvertToLinear"/>), and where it
+        /// does not, an untouched #0b0c0e would be read as a LINEAR 0.043 and come back out at roughly 0.23 - dark
+        /// surfaces lift to grey while bright ones barely move. Converting here restores what the hex value means.
         /// </summary>
         private static Color ToVertex(Color c)
         {
@@ -303,14 +303,14 @@ namespace Sideload.Paint
 
         /// <summary>
         /// Whether the conversion above applies to the view being painted right now. Set per render by
-        /// <see cref="Host.WebView"/> from the canvas the view hangs under, and true for the phone.
+        /// <see cref="Host.WebView"/> from the canvas the view hangs under.
         ///
-        /// It is not a global truth, which is what made this so quiet: the phone's screen is drawn by a camera into
-        /// a render texture, and that path converts back on the way out, so pre-converting is exactly right there.
-        /// A screen-space-OVERLAY canvas is composited straight into the frame with no such step, so the same
-        /// pre-conversion is applied and never undone - a measured #808080 arrives as #383838 and every dark
-        /// surface collapses into the black behind it, while text (which TextMeshPro converts itself) stays right.
-        /// A page that looks correct on the phone and unlit anywhere else is the symptom.
+        /// It is not a global truth, which is what made this so quiet. A canvas with
+        /// <c>vertexColorAlwaysGammaSpace</c> on (the phone) passes the sRGB value straight to the shader, and the box
+        /// shader does not convert it, so the painter has to. A canvas with it off (Unity's default, and any overlay a
+        /// mod creates) converts on its own, so the same pre-conversion is applied twice - a measured #808080
+        /// arrives as #383838 and every dark surface collapses into the black behind it, while text (which
+        /// TextMeshPro converts itself) stays right. Either symptom means this flag was answered for the wrong canvas.
         /// </summary>
         internal static bool ConvertToLinear = true;
 
