@@ -669,6 +669,7 @@ namespace Sideload.Host
 
             _painted = Painter.Paint(tree, _root, new Vector2(cssW, cssH),
                                      _inputs, OnInputChanged, OnInputSubmitted, _survivors, _bundle, _appId);
+            DropUnusedSurvivors();
             _survivors = null;
             long tPaint = split.ElapsedMilliseconds;
 
@@ -770,6 +771,29 @@ namespace Sideload.Host
                 rescued[pair.Key] = pair.Value.Rect;
             }
             return rescued;
+        }
+
+        /// <summary>
+        /// Destroy every rescued control the new tree did not slot back in. They are parked directly under the view
+        /// root and the destroy loop in Rebuild has already passed, so without this an input that left the document
+        /// stayed on screen as an empty field at the top of the view until the rebuild after.
+        /// </summary>
+        private void DropUnusedSurvivors()
+        {
+            if (_survivors == null) return;
+
+            int dropped = 0;
+            foreach (KeyValuePair<IElement, RectTransform> pair in _survivors)
+            {
+                if (pair.Value == null) continue;
+                if (_painted.TryGetValue(pair.Key, out Painter.PaintedBox box) && box.Rect == pair.Value) continue;
+
+                Object.Destroy(pair.Value.gameObject);
+                dropped++;
+            }
+
+            if (dropped > 0 && Config.Preferences.LogPageBuilds)
+                Core.Log?.Msg($"{_appId}: dropped {dropped} form control(s) the page no longer has.");
         }
 
         private bool IsRescued(GameObject candidate)
