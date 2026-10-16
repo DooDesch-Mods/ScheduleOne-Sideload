@@ -156,6 +156,7 @@ namespace Sideload.Paint
 
             _scopes = new List<ClipScope>();
             _scope = null;
+            ClipMemory.Sweep();
 
             var topLayer = new List<LayoutNode>();
             _topLayer = topLayer;
@@ -660,7 +661,7 @@ namespace Sideload.Paint
             clip = ClipRectInCanvasSpace(absX + bLeft, absY + bTop,
                                          node.Width - bLeft - bRight, node.Height - bTop - bBottom);
 
-            // Put the clip back on every child each time the list moves.
+            // Put the clips back on every child each time the list moves - each child its own, as it was painted.
             //
             // Scrolling is not a passive act in uGUI: moving the content makes every MaskableGraphic under it
             // recompute which mask it belongs to, and the phone's own panel HAS a RectMask2D that our content sits
@@ -676,7 +677,7 @@ namespace Sideload.Paint
             RectTransform viewportRect = viewport;
             scroll.onValueChanged.AddListener((UnityEngine.Events.UnityAction<Vector2>)(_ =>
             {
-                Reclip(content, settled);
+                Reassert(content, settled);
                 CullHitTargets(content, viewportRect);
                 PlaceThumb(thumb, viewportRect, content);
             }));
@@ -1535,11 +1536,32 @@ namespace Sideload.Paint
             // actually right for this page.
             if (graphic is MaskableGraphic maskable) maskable.maskable = false;
 
-            CanvasRenderer renderer = graphic.canvasRenderer;
-            if (renderer == null) return;
+            ClipMemory.Set(graphic.canvasRenderer, clip);
+        }
 
-            if (clip.HasValue) renderer.EnableRectClipping(clip.Value);
-            else renderer.DisableRectClipping();
+        /// <summary>
+        /// Give every renderer in a subtree back the clip it was painted with - each its own, so an `overflow: hidden`
+        /// box inside a scrolled list keeps its narrower rectangle instead of taking the list's. A renderer the
+        /// painter never clipped gets <paramref name="fallback"/>.
+        /// </summary>
+        internal static void Reassert(Transform root, Rect? fallback)
+        {
+            try { ClipMemory.Reassert(root, fallback, useFallback: true); }
+            catch (Exception e) { Core.Log?.Msg("reassert skipped: " + e.Message); }
+        }
+
+        /// <summary>
+        /// Give a whole page its clips back after it was switched off and on again, which is when uGUI takes them -
+        /// see <see cref="ClipMemory"/>. Renderers the painter never clipped are left as they are.
+        /// </summary>
+        internal static void ReassertPage(Transform root)
+        {
+            try
+            {
+                int n = ClipMemory.Reassert(root, null, useFallback: false);
+                if (Config.Preferences.LogPageBuilds) Core.Log?.Msg($"reasserted {n} clip(s) on show.");
+            }
+            catch (Exception e) { Core.Log?.Warning("reasserting the page's clips failed: " + e.Message); }
         }
 
         /// <summary>
@@ -1564,8 +1586,7 @@ namespace Sideload.Paint
                     CanvasRenderer cr = renderers[i];
                     if (cr == null) continue;
 
-                    if (clip.HasValue) cr.EnableRectClipping(clip.Value);
-                    else cr.DisableRectClipping();
+                    ClipMemory.Set(cr, clip);
                 }
             }
             catch (Exception e)

@@ -217,8 +217,7 @@ namespace Sideload.Paint
             cr.materialCount = 1;
             cr.SetMaterial(material, 0);
 
-            if (ActiveClip.HasValue) cr.EnableRectClipping(ActiveClip.Value);
-            else cr.DisableRectClipping();
+            ClipMemory.Set(cr, ActiveClip);
         }
 
         /// <summary>One list for every four-component channel. Mesh has no array property for those, only the List

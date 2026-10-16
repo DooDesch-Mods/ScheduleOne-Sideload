@@ -1218,6 +1218,14 @@ namespace Sideload.Host
         /// goes to the game instead, which starts opening things. Restoring it here means a page never has to
         /// notice it was hidden, whichever way the player opened it.
         /// </summary>
+        /// <summary>Give the page its clip rectangles back after its panel was switched off and on - see
+        /// Paint/ClipMemory.cs. Called on every open of an app whose page was already built.</summary>
+        internal void ReassertClips()
+        {
+            if (!_built || _root == null) return;
+            Painter.ReassertPage(_root);
+        }
+
         internal void RestoreFocus()
         {
             if (_focused == null) return;
