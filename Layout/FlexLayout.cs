@@ -246,6 +246,10 @@ namespace Sideload.Layout
                 // Only when the text needs MORE room than the box has. Anything else is the ordinary case and the
                 // painter can size the text to the content box without asking.
                 node.TextWrapWidth = text.WrapWidth > contentW + 0.01f ? text.WrapWidth : float.NaN;
+
+                // Recorded unconditionally, unlike the width above: whether the box ends up shorter than this is
+                // decided further down by the height clamp, not here.
+                node.TextHeight = text.Height;
             }
             else
             {

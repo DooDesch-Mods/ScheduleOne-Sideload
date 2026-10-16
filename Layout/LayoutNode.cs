@@ -99,6 +99,18 @@ namespace Sideload.Layout
         /// </summary>
         internal float TextWrapWidth = float.NaN;
 
+        /// <summary>
+        /// How tall the text inside this leaf measured, in css pixels - <see cref="float.NaN"/> on every node that
+        /// is not a text leaf.
+        ///
+        /// The vertical twin of <see cref="TextWrapWidth"/>, and it exists for the same reason. A box can end up
+        /// SHORTER than the text it holds: a fixed height, a max-height, or a border that costs the content a
+        /// pixel. Handing TextMeshPro that shorter rect does not clip the line, it drops it - the whole run, with
+        /// nothing in the log and nothing an author can point at. So the painter grows the rect it hands TMP back
+        /// to this height and lets the box's own clip cut it, which is what `overflow` promises.
+        /// </summary>
+        internal float TextHeight = float.NaN;
+
         internal LayoutNode() { }
 
         internal LayoutNode(ComputedStyle style, string text = null)
