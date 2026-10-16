@@ -3,6 +3,13 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.33.3] - 2026-10-16
+
+### Fixed
+
+- Dark fills on the phone show their declared colour instead of a washed-out grey (`#0b0c0e` arrived as `#3b3d42`).
+  Drop any CSS you darkened to make up for it.
+
 ## [1.33.2] - 2026-10-16
 
 ### Fixed
