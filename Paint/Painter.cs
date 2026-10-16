@@ -586,7 +586,6 @@ namespace Sideload.Paint
 
             // Under the clip it was built with - see PaintedBox.Clip. Restored rather than assigned, because a
             // repaint can be triggered from inside a paint walk and must not leave the walk's clip behind.
-            // Placed before it is painted: the paint reads the box's final matrix (see BoxRenderer.Paint).
             ApplyTransform(box.Rect, style);
             ApplyOpacity(box.Rect, style.Opacity);
 

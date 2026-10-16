@@ -47,9 +47,7 @@ namespace Sideload.Paint
         private const AdditionalCanvasShaderChannels RequiredChannels =
             AdditionalCanvasShaderChannels.TexCoord1 |
             AdditionalCanvasShaderChannels.TexCoord2 |
-            AdditionalCanvasShaderChannels.TexCoord3 |
-            AdditionalCanvasShaderChannels.Normal |
-            AdditionalCanvasShaderChannels.Tangent;
+            AdditionalCanvasShaderChannels.TexCoord3;
 
         /// <summary>Cached mesh per GameObject, tagged with the VIEW that painted it. The owner matters: two apps
         /// are mounted at once and each renders on its own schedule, so a pass that swept everything would destroy
@@ -81,7 +79,7 @@ namespace Sideload.Paint
         /// EVERY canvas between the box and the root, not only the root. A nested Canvas BATCHES its own subtree, and
         /// it strips there - asking the root alone leaves the extra data at zero on the way through. The failure is
         /// silent and reads as a missing feature rather than a broken one: COLOR is never stripped, so fills and
-        /// gradients still draw, while TEXCOORD1/2/3, NORMAL and TANGENT arrive as zeroes and every corner radius,
+        /// gradients still draw, while TEXCOORD1/2/3 arrive as zeroes and every corner radius,
         /// border and shadow disappears. Which is exactly "the box is there, it is square, and it has no border".
         ///
         /// The cheap guard first, because this runs per box: once the chain has been walked, the nearest canvas and
@@ -138,11 +136,9 @@ namespace Sideload.Paint
             var vertices = new Vector3[vertexCount];
             var colors = new Color32[vertexCount];
             var uv0 = new Vector2[vertexCount];
-            var uv1 = new Vector2[vertexCount];
-            var uv2 = new Vector2[vertexCount];
-            var uv3 = new Vector2[vertexCount];
-            var normals = new Vector3[vertexCount];
-            var tangents = new Vector4[vertexCount];
+            var uv1 = new Vector4[vertexCount];
+            var uv2 = new Vector4[vertexCount];
+            var uv3 = new Vector4[vertexCount];
             var triangles = new int[quads * 6];
 
             // Where the rect's centre sits in local space depends on the pivot: the rect spans -pivot*size to
@@ -153,13 +149,6 @@ namespace Sideload.Paint
             var half = new Vector2(width * 0.5f, height * 0.5f);
             var radii = new Vector4(visual.RadiusTL, visual.RadiusTR, visual.RadiusBR, visual.RadiusBL);
 
-            // The canvas carries every vertex into its own space when it batches, and it does that to the normal and
-            // the tangent as well - with the same matrix and without normalising them. Those two channels hold the
-            // border width and blur and the border colour, so under a page scaled by 1.637 a 1.8px #505050 frame came
-            // out 2.9px wide and (101,101,80): x and y grew with the scale, z did not. Writing them through the
-            // inverse matrix makes the batch hand the shader back the values that were meant.
-            Matrix4x4 undo = CanvasMatrix(rt).inverse;
-
             int v = 0, t = 0;
 
             if (visual.HasShadow)
@@ -169,7 +158,7 @@ namespace Sideload.Paint
                 Vector2 shadowCentre = centre + new Vector2(visual.ShadowOffsetX, -visual.ShadowOffsetY);
                 Color shadow = visual.ShadowColor;
 
-                EmitQuad(vertices, colors, uv0, uv1, uv2, uv3, normals, tangents, triangles, ref v, ref t, undo,
+                EmitQuad(vertices, colors, uv0, uv1, uv2, uv3, triangles, ref v, ref t,
                          shadowCentre, half + new Vector2(pad, pad), half, radii,
                          shadow, shadow, shadow, shadow,
                          borderWidth: 0f, blur: Mathf.Max(visual.ShadowBlur, 0.5f),
@@ -193,7 +182,7 @@ namespace Sideload.Paint
                 fillTL = fillTR = fillBR = fillBL = ghost;
             }
 
-            EmitQuad(vertices, colors, uv0, uv1, uv2, uv3, normals, tangents, triangles, ref v, ref t, undo,
+            EmitQuad(vertices, colors, uv0, uv1, uv2, uv3, triangles, ref v, ref t,
                      centre, half, half, radii,
                      fillTL, fillTR, fillBR, fillBL,
                      visual.BorderWidth, blur: 0f, borderColor: visual.BorderColor);
@@ -201,16 +190,16 @@ namespace Sideload.Paint
             // Single-side borders, drawn over the fill. Adjacent sides overlap in the corner by a fraction of a pixel;
             // at hairline widths that is invisible, and anything thicker wants a uniform border anyway.
             Color edge = visual.BorderColor;
-            EmitEdge(vertices, colors, uv0, uv1, uv2, uv3, normals, tangents, triangles, ref v, ref t, undo,
+            EmitEdge(vertices, colors, uv0, uv1, uv2, uv3, triangles, ref v, ref t,
                      centre + new Vector2(0f, half.y - visual.EdgeTop * 0.5f),
                      new Vector2(half.x, visual.EdgeTop * 0.5f), visual.EdgeTop, edge);
-            EmitEdge(vertices, colors, uv0, uv1, uv2, uv3, normals, tangents, triangles, ref v, ref t, undo,
+            EmitEdge(vertices, colors, uv0, uv1, uv2, uv3, triangles, ref v, ref t,
                      centre - new Vector2(0f, half.y - visual.EdgeBottom * 0.5f),
                      new Vector2(half.x, visual.EdgeBottom * 0.5f), visual.EdgeBottom, edge);
-            EmitEdge(vertices, colors, uv0, uv1, uv2, uv3, normals, tangents, triangles, ref v, ref t, undo,
+            EmitEdge(vertices, colors, uv0, uv1, uv2, uv3, triangles, ref v, ref t,
                      centre - new Vector2(half.x - visual.EdgeLeft * 0.5f, 0f),
                      new Vector2(visual.EdgeLeft * 0.5f, half.y), visual.EdgeLeft, edge);
-            EmitEdge(vertices, colors, uv0, uv1, uv2, uv3, normals, tangents, triangles, ref v, ref t, undo,
+            EmitEdge(vertices, colors, uv0, uv1, uv2, uv3, triangles, ref v, ref t,
                      centre + new Vector2(half.x - visual.EdgeRight * 0.5f, 0f),
                      new Vector2(visual.EdgeRight * 0.5f, half.y), visual.EdgeRight, edge);
 
@@ -219,11 +208,9 @@ namespace Sideload.Paint
             mesh.vertices = vertices;
             mesh.colors32 = colors;
             mesh.uv = uv0;
-            mesh.uv2 = uv1;
-            mesh.uv3 = uv2;
-            mesh.uv4 = uv3;
-            mesh.normals = normals;
-            mesh.tangents = tangents;
+            SetChannel(mesh, 1, uv1);
+            SetChannel(mesh, 2, uv2);
+            SetChannel(mesh, 3, uv3);
             mesh.triangles = triangles;
 
             cr.SetMesh(mesh);
@@ -234,31 +221,31 @@ namespace Sideload.Paint
             else cr.DisableRectClipping();
         }
 
-        /// <summary>
-        /// The matrix the canvas batches <paramref name="rt"/> with: from its local space into the space of the canvas
-        /// it renders under. Only the linear part matters here, so the translation is irrelevant.
-        /// </summary>
-        internal static Matrix4x4 CanvasMatrix(RectTransform rt)
-        {
-            Canvas canvas = rt.GetComponentInParent<Canvas>();
-            if (canvas == null)
-            {
-                Core.Log?.Warning($"'{rt.name}' sits under no canvas - its border and blur are written unscaled.");
-                return Matrix4x4.identity;
-            }
+        /// <summary>One list for every four-component channel. Mesh has no array property for those, only the List
+        /// overload of SetUVs, and that overload copies, so the list is refilled per channel instead of allocated.</summary>
+        private static Il2CppSystem.Collections.Generic.List<Vector4> _channel;
 
-            return canvas.transform.worldToLocalMatrix * rt.localToWorldMatrix;
+        /// <summary>
+        /// Write one four-component texture coordinate channel. The per-box values travel only in texture coordinates:
+        /// the canvas carries NORMAL and TANGENT through its batch matrix, and on some frames it also normalises them,
+        /// so a blur of 12 arrived as 1 and every shadow on a page that did not change flickered between soft and hard.
+        /// </summary>
+        private static void SetChannel(Mesh mesh, int channel, Vector4[] values)
+        {
+            _channel ??= new Il2CppSystem.Collections.Generic.List<Vector4>(32);
+            _channel.Clear();
+            for (int i = 0; i < values.Length; i++) _channel.Add(values[i]);
+            mesh.SetUVs(channel, _channel);
         }
 
         /// <summary>One flat, square-cornered strip in the border colour, or nothing when that side has no width.</summary>
-        private static void EmitEdge(Vector3[] vertices, Color32[] colors, Vector2[] uv0, Vector2[] uv1,
-                                     Vector2[] uv2, Vector2[] uv3, Vector3[] normals, Vector4[] tangents,
-                                     int[] triangles, ref int v, ref int t, Matrix4x4 undo,
+        private static void EmitEdge(Vector3[] vertices, Color32[] colors, Vector2[] uv0, Vector4[] uv1,
+                                     Vector4[] uv2, Vector4[] uv3, int[] triangles, ref int v, ref int t,
                                      Vector2 centre, Vector2 half, float width, Color color)
         {
             if (width <= 0f || color.a <= 0f) return;
 
-            EmitQuad(vertices, colors, uv0, uv1, uv2, uv3, normals, tangents, triangles, ref v, ref t, undo,
+            EmitQuad(vertices, colors, uv0, uv1, uv2, uv3, triangles, ref v, ref t,
                      centre, half, half, Vector4.zero,
                      color, color, color, color,
                      borderWidth: 0f, blur: 0f, borderColor: new Color(0f, 0f, 0f, 0f));
@@ -268,9 +255,8 @@ namespace Sideload.Paint
         /// One quad. <paramref name="quadHalf"/> is how far the geometry reaches, <paramref name="shapeHalf"/> is the
         /// size of the rounded rectangle the shader evaluates - they differ only for a shadow.
         /// </summary>
-        private static void EmitQuad(Vector3[] vertices, Color32[] colors, Vector2[] uv0, Vector2[] uv1,
-                                     Vector2[] uv2, Vector2[] uv3, Vector3[] normals, Vector4[] tangents,
-                                     int[] triangles, ref int v, ref int t, Matrix4x4 undo,
+        private static void EmitQuad(Vector3[] vertices, Color32[] colors, Vector2[] uv0, Vector4[] uv1,
+                                     Vector4[] uv2, Vector4[] uv3, int[] triangles, ref int v, ref int t,
                                      Vector2 centre, Vector2 quadHalf, Vector2 shapeHalf, Vector4 radii,
                                      Color cTL, Color cTR, Color cBR, Color cBL,
                                      float borderWidth, float blur, Color borderColor)
@@ -287,10 +273,8 @@ namespace Sideload.Paint
             };
             var fills = new[] { cTL, cTR, cBR, cBL };
 
-            // Through the inverse of the batch matrix - see Paint. The tangent's w is not transformed and stays alpha.
-            Vector3 normal = undo.MultiplyVector(new Vector3(borderWidth, blur, 0f));
-            Vector3 rgb = undo.MultiplyVector(new Vector3(borderColor.r, borderColor.g, borderColor.b));
-            var tangent = new Vector4(rgb.x, rgb.y, rgb.z, borderColor.a);
+            var shape = new Vector4(shapeHalf.x, shapeHalf.y, borderWidth, blur);
+            var ring = new Vector4(borderColor.r, borderColor.g, borderColor.b, borderColor.a);
 
             int baseIndex = v;
             for (int i = 0; i < 4; i++)
@@ -299,11 +283,9 @@ namespace Sideload.Paint
                 vertices[v] = new Vector3(centre.x + local.x, centre.y + local.y, 0f);
                 colors[v] = fills[i];
                 uv0[v] = local;                       // px from the shape centre
-                uv1[v] = shapeHalf;
-                uv2[v] = new Vector2(radii.x, radii.y);
-                uv3[v] = new Vector2(radii.z, radii.w);
-                normals[v] = normal;
-                tangents[v] = tangent;
+                uv1[v] = shape;
+                uv2[v] = radii;
+                uv3[v] = ring;
                 v++;
             }
 
