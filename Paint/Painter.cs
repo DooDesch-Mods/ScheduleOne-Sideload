@@ -46,6 +46,10 @@ namespace Sideload.Paint
             /// <summary>The innermost `overflow: hidden` box this one was painted under, or null.</summary>
             internal readonly ClipScope Scope;
 
+            /// <summary>The scroll area this box was painted in, or null. Its <see cref="Clip"/> is then the part
+            /// that moves with the list - see <see cref="ClipMemory"/>.</summary>
+            internal readonly ScrollFrame Frame;
+
             /// <summary>Every `overflow: hidden` box of the render this box belongs to, in paint order.</summary>
             internal readonly List<ClipScope> Scopes;
 
@@ -57,6 +61,7 @@ namespace Sideload.Paint
                 _clip = BoxRenderer.ActiveClip;
                 Scope = _scope;
                 Scopes = _scopes;
+                Frame = ClipMemory.Frame;
             }
         }
 
@@ -86,6 +91,10 @@ namespace Sideload.Paint
 
             internal RectTransform ViewRoot;
             internal Vector2 ViewSize;
+
+            /// <summary>The scroll area the box sits in, or null. <see cref="Clip"/> and <see cref="Outer"/> are then
+            /// measured without the scroll area's own rectangle, which <see cref="ClipMemory"/> adds.</summary>
+            internal ScrollFrame Frame;
         }
 
         /// <summary>The scopes of the render in progress, and the innermost one the walk is inside.</summary>
@@ -156,6 +165,7 @@ namespace Sideload.Paint
 
             _scopes = new List<ClipScope>();
             _scope = null;
+            ClipMemory.Frame = null;
             ClipMemory.Sweep();
 
             var topLayer = new List<LayoutNode>();
@@ -195,6 +205,7 @@ namespace Sideload.Paint
                 _topLayer = null;
                 _scopes = null;
                 _scope = null;
+                ClipMemory.Frame = null;
                 BoxRenderer.EndPass();
                 _reuse = null;
                 _inputs = null;
@@ -301,7 +312,7 @@ namespace Sideload.Paint
                 {
                     Rect = rt, Node = node, AbsX = absX, AbsY = absY,
                     Outer = outerClip, Parent = _scope, Clip = BoxRenderer.ActiveClip,
-                    ViewRoot = _viewRoot, ViewSize = _viewSize,
+                    ViewRoot = _viewRoot, ViewSize = _viewSize, Frame = ClipMemory.Frame,
                 };
                 _scopes?.Add(scope);
 
@@ -321,14 +332,19 @@ namespace Sideload.Paint
                 return;
             }
 
-            Transform content = BuildScrollArea(node, rt, absX, absY, out Rect? clip);
+            Transform content = BuildScrollArea(node, rt, absX, absY, out ScrollFrame frame);
 
-            // Everything painted below here clips to this rectangle. A nested scroll area restores the outer one on
-            // the way out, so the stack unwinds correctly. Inside it no `overflow: hidden` box is the clip any more,
-            // so the scope chain starts again from nothing.
+            // Everything painted below here clips to the scroll area's rectangle, which ClipMemory adds to every
+            // clip set under the frame. ActiveClip starts again from nothing: inside the list it carries only what
+            // moves with the rows - the `overflow: hidden` boxes in it - so a scroll can shift that part on its own.
+            // A nested scroll area restores the outer frame on the way out, so the stack unwinds correctly, and the
+            // scope chain starts again from nothing as well.
             Rect? previous = BoxRenderer.ActiveClip;
             ClipScope previousScope = _scope;
-            BoxRenderer.ActiveClip = clip ?? previous;
+            ScrollFrame previousFrame = ClipMemory.Frame;
+            frame.Clip ??= previous;
+            BoxRenderer.ActiveClip = null;
+            ClipMemory.Frame = frame;
             _scope = null;
             try
             {
@@ -338,6 +354,7 @@ namespace Sideload.Paint
             finally
             {
                 BoxRenderer.ActiveClip = previous;
+                ClipMemory.Frame = previousFrame;
                 _scope = previousScope;
             }
         }
@@ -356,6 +373,7 @@ namespace Sideload.Paint
 
             RectTransform viewRoot = _viewRoot;
             Vector2 viewSize = _viewSize;
+            ScrollFrame frame = ClipMemory.Frame;
             var moved = new HashSet<ClipScope>();
 
             try
@@ -374,6 +392,7 @@ namespace Sideload.Paint
                     scope.Clip = Narrow(ClipRectOf(scope.Rect, scope.Node, scope.AbsX, scope.AbsY), outer);
                     moved.Add(scope);
 
+                    ClipMemory.Frame = scope.Frame;
                     for (int i = 0; i < scope.Rect.childCount; i++) Reclip(scope.Rect.GetChild(i), scope.Clip);
                 }
             }
@@ -381,6 +400,7 @@ namespace Sideload.Paint
             {
                 _viewRoot = viewRoot;
                 _viewSize = viewSize;
+                ClipMemory.Frame = frame;
             }
         }
 
@@ -592,16 +612,7 @@ namespace Sideload.Paint
         }
 
         /// <summary>The part of an inner clip that survives an outer one. Null outer means nothing narrows it.</summary>
-        private static Rect? Narrow(Rect? inner, Rect? outer)
-        {
-            if (!inner.HasValue) return outer;
-            if (!outer.HasValue) return inner;
-
-            Rect a = inner.Value, b = outer.Value;
-            float xMin = Math.Max(a.xMin, b.xMin), xMax = Math.Min(a.xMax, b.xMax);
-            float yMin = Math.Max(a.yMin, b.yMin), yMax = Math.Min(a.yMax, b.yMax);
-            return new Rect(xMin, yMin, Math.Max(0f, xMax - xMin), Math.Max(0f, yMax - yMin));
-        }
+        private static Rect? Narrow(Rect? inner, Rect? outer) => ClipMemory.Narrow(inner, outer);
 
         /// <summary>Furthest a child reaches down, in the box's own coordinates - the height the scroll content needs.</summary>
         private static float ContentBottom(LayoutNode node)
@@ -623,7 +634,7 @@ namespace Sideload.Paint
         /// and would erase the box's mesh. Children keep the coordinates the layout gave them, because the content
         /// node starts at the box's top-left.
         /// </summary>
-        private static Transform BuildScrollArea(LayoutNode node, RectTransform box, float absX, float absY, out Rect? clip)
+        private static Transform BuildScrollArea(LayoutNode node, RectTransform box, float absX, float absY, out ScrollFrame frame)
         {
             RectTransform viewport = UiFactory.Rect("scroll-viewport", box);
             UiFactory.Stretch(viewport);
@@ -640,6 +651,14 @@ namespace Sideload.Paint
 
             RectTransform content = UiFactory.Rect("scroll-content", viewport);
             UiFactory.PlaceFromTopLeft(content, 0f, 0f, node.Width, ContentBottom(node));
+
+            Canvas canvas = _viewRoot != null ? _viewRoot.GetComponentInParent<Canvas>() : null;
+            frame = new ScrollFrame
+            {
+                Content = content,
+                Home = content.anchoredPosition,
+                Space = canvas == null ? null : (canvas.rootCanvas != null ? canvas.rootCanvas : canvas).transform,
+            };
 
             var scroll = viewport.gameObject.AddComponent<ScrollRect>();
             scroll.content = content;
@@ -658,8 +677,9 @@ namespace Sideload.Paint
             if (node.Style.SmoothScroll) Input.SmoothScroll.Install(scroll, viewport, 24f);
 
             Border(node, out float bTop, out float bRight, out float bBottom, out float bLeft);
-            clip = ClipRectInCanvasSpace(absX + bLeft, absY + bTop,
-                                         node.Width - bLeft - bRight, node.Height - bTop - bBottom);
+            Rect? clip = ClipRectInCanvasSpace(absX + bLeft, absY + bTop,
+                                               node.Width - bLeft - bRight, node.Height - bTop - bBottom);
+            frame.Clip = clip;
 
             // Put the clips back on every child each time the list moves - each child its own, as it was painted.
             //
@@ -673,11 +693,11 @@ namespace Sideload.Paint
             // one subscription rather than two, and no chance of the two drifting a frame apart.
             RectTransform thumb = BuildScrollbar(node, viewport, content, clip);
 
-            Rect? settled = clip;
+            ScrollFrame settled = frame;
             RectTransform viewportRect = viewport;
             scroll.onValueChanged.AddListener((UnityEngine.Events.UnityAction<Vector2>)(_ =>
             {
-                Reassert(content, settled);
+                Reassert(content, settled.Clip);
                 CullHitTargets(content, viewportRect);
                 PlaceThumb(thumb, viewportRect, content);
             }));
@@ -716,7 +736,9 @@ namespace Sideload.Paint
             ApplyOpacity(box.Rect, style.Opacity);
 
             Rect? outer = BoxRenderer.ActiveClip;
+            ScrollFrame outerFrame = ClipMemory.Frame;
             BoxRenderer.ActiveClip = box.Clip;
+            ClipMemory.Frame = box.Frame;
             try
             {
                 // A native control draws itself. Handing this one the element's own computed style would paint a
@@ -729,7 +751,11 @@ namespace Sideload.Paint
                 BoxRenderer.Paint(box.Rect, visual, box.Node.Width, box.Node.Height);
                 PaintOutline(box.Rect, style, box.Node.Width, box.Node.Height);
             }
-            finally { BoxRenderer.ActiveClip = outer; }
+            finally
+            {
+                BoxRenderer.ActiveClip = outer;
+                ClipMemory.Frame = outerFrame;
+            }
 
             if (box.Text != null)
                 box.Text.color = new Color(style.Color.R, style.Color.G, style.Color.B, style.Color.A);
@@ -773,9 +799,15 @@ namespace Sideload.Paint
 
             // Same as Repaint: a transition frame is a repaint, and an unclipped one escapes its scroll area.
             Rect? outer = BoxRenderer.ActiveClip;
+            ScrollFrame outerFrame = ClipMemory.Frame;
             BoxRenderer.ActiveClip = box.Clip;
+            ClipMemory.Frame = box.Frame;
             try { BoxRenderer.Paint(box.Rect, visual, w, h); }
-            finally { BoxRenderer.ActiveClip = outer; }
+            finally
+            {
+                BoxRenderer.ActiveClip = outer;
+                ClipMemory.Frame = outerFrame;
+            }
 
             if (box.Text != null)
                 box.Text.color = Color.Lerp(new Color(from.Color.R, from.Color.G, from.Color.B, from.Color.A),
