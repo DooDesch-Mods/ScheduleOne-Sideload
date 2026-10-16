@@ -516,7 +516,7 @@ namespace Sideload.Paint
             // TMP folds both axes into one enum. Its "Top*" family is top-aligned, the unprefixed family is vertically
             // centred - which is what `align-items: center` means on a box whose only content is text, and the reason
             // a button label sits on the middle of the button instead of clinging to its top edge.
-            bool middle = s.AlignItems == AlignKind.Center;
+            bool middle = IsMiddleAligned(s);
 
             tmp.alignment = s.TextAlign switch
             {
@@ -532,6 +532,33 @@ namespace Sideload.Paint
             if ((s.TextDecoration & TextDecorationKind.LineThrough) != 0) lines |= FontStyles.Strikethrough;
 
             tmp.fontStyle = lines;
+        }
+
+        /// <summary>
+        /// Is this box's text centred on its rectangle rather than sitting on the top edge.
+        ///
+        /// Shared, because the painter has to grow an undersized rect around the same point TMP will draw on. Two
+        /// copies of the rule would drift apart in silence: the line would be centred confidently on a rectangle
+        /// that is no longer the box.
+        /// </summary>
+        internal static bool IsMiddleAligned(ComputedStyle s) => s != null && s.AlignItems == AlignKind.Center;
+
+        /// <summary>
+        /// How tall ONE line of this text is, in css pixels, or <see cref="float.NaN"/> when the face cannot be
+        /// read.
+        ///
+        /// The painter needs it as a CEILING, not as a size. A box shorter than a single line makes TMP paint the
+        /// whole run as nothing, so the rect handed to it has to be at least this tall - but growing it any further
+        /// than that would undo the vertical truncation a multi-line `overflow: hidden` box is asking for, and
+        /// would push whole lines outside a box that said they must not leave it.
+        /// </summary>
+        internal static float OneLine(ComputedStyle s)
+        {
+            if (s == null || s.FontSize <= 0f) return float.NaN;
+            if (s.LineHeight.IsDefinite) return s.ResolvedLineHeight;
+
+            TMP_FontAsset font = FontRegistry.Resolve(s.FontFamily, s.FontWeight, s.FontStyle);
+            return font == null ? float.NaN : NaturalLineHeight(font, s.FontSize);
         }
 
         /// <summary>

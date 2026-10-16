@@ -219,7 +219,7 @@ namespace Sideload.Paint
 
             if (node.IsTextLeaf)
             {
-                Il2CppTMPro.TextMeshProUGUI text = PaintText(node, rt);
+                Il2CppTMPro.TextMeshProUGUI text = PaintText(node, rt, absX, absY);
                 if (node.Tag is AngleSharp.Dom.IElement leaf) painted[leaf] = new PaintedBox(node, rt, text);
                 return;
             }
@@ -229,7 +229,7 @@ namespace Sideload.Paint
                 // `overflow: hidden` clips without scrolling. Until this existed it did nothing at all, so a box
                 // meant as a window onto something bigger - a map, a graph - let its contents draw right across the
                 // rest of the screen.
-                Rect? own = NeedsClipping(node) ? ClipRectOf(rt, absX, absY, node.Width, node.Height) : null;
+                Rect? own = NeedsClipping(node) ? ClipRectOf(rt, node, absX, absY) : null;
 
                 // In stacking order rather than document order, which is the whole of z-index: later is on top, so
                 // the order the children are handed to this loop IS their paint order. StackingOrder hands the very
@@ -278,10 +278,15 @@ namespace Sideload.Paint
         /// The box's own corners carry the whole ancestor chain, so they are the honest source. The layout figure
         /// stays as the fallback: a node the canvas has not measured yet reports a degenerate rectangle, and a
         /// degenerate clip culls everything.
+        ///
+        /// The rectangle is the PADDING box, inside the border, which is where CSS cuts overflow. Clipping at the
+        /// outer edge let a child paint over the border it is meant to sit inside.
         /// </summary>
-        private static Rect? ClipRectOf(RectTransform rt, float absX, float absY, float width, float height)
+        private static Rect? ClipRectOf(RectTransform rt, LayoutNode node, float absX, float absY)
         {
-            Rect? fromLayout = ClipRectInCanvasSpace(absX, absY, width, height);
+            Border(node, out float bTop, out float bRight, out float bBottom, out float bLeft);
+            Rect? fromLayout = ClipRectInCanvasSpace(absX + bLeft, absY + bTop,
+                                                     node.Width - bLeft - bRight, node.Height - bTop - bBottom);
             if (rt == null || _viewRoot == null) return fromLayout;
 
             try
@@ -297,7 +302,9 @@ namespace Sideload.Paint
                 // rectangle then collapsed, the guard below read that as "not measured yet", and the fallback won
                 // silently: this whole method was dead in an IL2CPP build, and a panned or zoomed window clipped
                 // where its layout said rather than where its pixels were.
-                Rect local = rt.rect;
+                Rect border = rt.rect;
+                var local = Rect.MinMaxRect(border.xMin + bLeft, border.yMin + bBottom,
+                                            border.xMax - bRight, border.yMax - bTop);
 
                 var corners = new Vector3[4];
                 corners[0] = rt.TransformPoint(new Vector3(local.xMin, local.yMin, 0f));
@@ -326,6 +333,16 @@ namespace Sideload.Paint
             {
                 return fromLayout;
             }
+        }
+
+        /// <summary>The four border widths of a box in css px, which is how far its padding box sits inside it.</summary>
+        private static void Border(LayoutNode node, out float top, out float right, out float bottom, out float left)
+        {
+            Edges b = node.Style.BorderWidth;
+            top = Math.Max(b.Top.Resolve(node.Width), 0f);
+            right = Math.Max(b.Right.Resolve(node.Width), 0f);
+            bottom = Math.Max(b.Bottom.Resolve(node.Width), 0f);
+            left = Math.Max(b.Left.Resolve(node.Width), 0f);
         }
 
         /// <summary>
@@ -504,7 +521,9 @@ namespace Sideload.Paint
             // straight to the ScrollRect and never passes through anything Sideload wired.
             if (node.Style.SmoothScroll) Input.SmoothScroll.Install(scroll, viewport, 24f);
 
-            clip = ClipRectInCanvasSpace(absX, absY, node.Width, node.Height);
+            Border(node, out float bTop, out float bRight, out float bBottom, out float bLeft);
+            clip = ClipRectInCanvasSpace(absX + bLeft, absY + bTop,
+                                         node.Width - bLeft - bRight, node.Height - bTop - bBottom);
 
             // Put the clip back on every child each time the list moves.
             //
@@ -1238,7 +1257,8 @@ namespace Sideload.Paint
             return natural.width <= contentW && natural.height <= contentH;
         }
 
-        private static Il2CppTMPro.TextMeshProUGUI PaintText(LayoutNode node, RectTransform box)
+        private static Il2CppTMPro.TextMeshProUGUI PaintText(LayoutNode node, RectTransform box,
+                                                            float absX, float absY)
         {
             ComputedStyle s = node.Style;
 
@@ -1256,14 +1276,56 @@ namespace Sideload.Paint
                 ? 0f
                 : Math.Max(node.TextWrapWidth - (node.Width - padLeft - padRight), 0f);
 
+            // The same argument downwards, and it is the one that bites hardest. A content box shorter than the text
+            // it holds does not squeeze the line and does not clip it - TMP paints NOTHING, the entire run, silently.
+            // One pixel of extra border is enough to reach that state, so a box that looked right yesterday can lose
+            // its first line today with no CSS anyone can point at. Growing the rect back to what the line needs puts
+            // the line where the measurement said it goes and leaves the cutting to whatever clips the box, which is
+            // what `overflow` promises in the first place.
+            //
+            // Capped at ONE line, and that cap is the difference between a fix and a new bug. Growing the rect to
+            // the full measured height would hand a three-line run to a two-line box, which is exactly the
+            // truncation `overflow: hidden` asked for - and after a scroll event repaints the clips (see Reclip)
+            // those extra lines have nothing holding them in. One line is all TMP needs before it stops refusing
+            // to paint, so one line is all it gets.
+            float ceiling = TmpMeasure.OneLine(s);
+            float need = float.IsNaN(ceiling) ? node.TextHeight : Math.Min(node.TextHeight, ceiling);
+
+            float dropBelow = float.IsNaN(need)
+                ? 0f
+                : Math.Max(need - (node.Height - padTop - padBottom), 0f);
+
+            // Which edge gives way follows the alignment TmpMeasure.Apply picks, or the line would be centred on a
+            // rectangle that is no longer the box: a centred label grows both ways and stays on the middle, a
+            // top-aligned one keeps its top edge and spills downwards.
+            bool middle = TmpMeasure.IsMiddleAligned(s);
+            float growTop = middle ? dropBelow / 2f : 0f;
+            float growBottom = middle ? dropBelow / 2f : dropBelow;
+
             RectTransform rt = UiFactory.Rect("text", box);
-            UiFactory.Stretch(rt, top: padTop, right: padRight - overhang, bottom: padBottom, left: padLeft);
+            UiFactory.Stretch(rt, top: padTop - growTop, right: padRight - overhang,
+                              bottom: padBottom - growBottom, left: padLeft);
 
             var tmp = rt.gameObject.AddComponent<TextMeshProUGUI>();
             TmpMeasure.Apply(tmp, s);
             tmp.text = TmpMeasure.Content(node.Text, s);
             tmp.raycastTarget = false;
-            ClipTo(tmp, BoxRenderer.ActiveClip);
+
+            // The leaf's OWN overflow, which nothing else applies. PaintNode returns here before it reaches the
+            // clipping branch, so a text leaf that says `overflow: hidden` has never had a clip of its own - it did
+            // not show, because the rect handed to TMP was the box and the spill had nowhere to go. Both directions
+            // this method widens the rect now DO have somewhere to go, so the promise has to be kept here: hidden
+            // means the line stops at the border, visible means it spills and the author can see that it did.
+            //
+            // `hidden` only, deliberately. A text leaf never gets a scroll area - PaintNode returns above the branch
+            // that would build one - so clipping an `overflow: auto` leaf would cut text off with no viewport, no
+            // bar and no wheel to reach the rest with. Unreachable text is worse than text that spills, and today it
+            // spills. `hidden` is the one value where cutting is the whole request.
+            Rect? clip = BoxRenderer.ActiveClip;
+            if (NeedsClipping(node))
+                clip = Narrow(ClipRectOf(box, node, absX, absY), clip);
+
+            ClipTo(tmp, clip);
             return tmp;
         }
 
