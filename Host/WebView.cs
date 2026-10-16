@@ -1518,12 +1518,19 @@ namespace Sideload.Host
             // A layout node's X/Y are RELATIVE TO ITS PARENT, so they have to be summed up the tree to mean anything
             // to a page. Without this every rect reported the same y - the offset of a row inside its own container
             // - and a tooltip anchored to it landed in the top left corner whichever icon you pointed at.
+            //
+            // A fixed box is the exception: the layout gives it viewport coordinates already. So the sum stops at the
+            // first fixed box on the way up, after adding it - and a fixed box itself adds nothing above it. Summing
+            // past it reported a full-screen fixed overlay at the offset of whatever it was written inside.
             float x = box.Node.X, y = box.Node.Y;
+            if (box.Node.Style.Position == PositionKind.Fixed) return new[] { x, y, box.Node.Width, box.Node.Height };
+
             for (IElement up = element.ParentElement; up != null; up = up.ParentElement)
             {
                 if (!_painted.TryGetValue(up, out Painter.PaintedBox parent) || parent.Node == null) continue;
                 x += parent.Node.X;
                 y += parent.Node.Y;
+                if (parent.Node.Style.Position == PositionKind.Fixed) break;
             }
             return new[] { x, y, box.Node.Width, box.Node.Height };
         }
