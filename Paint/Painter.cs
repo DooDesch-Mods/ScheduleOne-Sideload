@@ -1169,6 +1169,18 @@ namespace Sideload.Paint
                 : rest;
         }
 
+        /// <summary>Keep the horizontal alignment, move the line to the vertical middle.</summary>
+        private static void CentreVertically(TextMeshProUGUI tmp)
+        {
+            tmp.alignment = tmp.alignment switch
+            {
+                TextAlignmentOptions.Top => TextAlignmentOptions.Center,
+                TextAlignmentOptions.TopRight => TextAlignmentOptions.Right,
+                TextAlignmentOptions.TopLeft => TextAlignmentOptions.Left,
+                _ => tmp.alignment,
+            };
+        }
+
         private static void PaintInput(LayoutNode node, RectTransform box, bool multiline, float absX, float absY)
         {
             ComputedStyle s = node.Style;
@@ -1222,6 +1234,16 @@ namespace Sideload.Paint
             ghost.raycastTarget = false;
             ClipTo(ghost, clip);
             WriteGhost(ghost, element, s);
+
+            // A one-line field centres its line between the top and bottom padding, the way a browser draws an
+            // `<input>`. The cascade picks TMP's top-aligned family for a box that is not a centred flex box, so a
+            // field taller than its font showed the text glued to its top edge.
+            if (!multiline)
+            {
+                CentreVertically(text);
+                CentreVertically(placeholder);
+                CentreVertically(ghost);
+            }
 
             var field = box.gameObject.AddComponent<TMP_InputField>();
             field.textViewport = viewport;
