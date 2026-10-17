@@ -3,6 +3,23 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.33.6] - 2026-10-17
+
+### Fixed
+
+- `<img>` pictures stay sharp on the "Low" graphics preset. They loaded at a quarter of their resolution.
+- `overflow: hidden` keeps its clip after a `transform` change, after an app is reopened and inside a scrolling
+  list. Content vanished after a pan or drew uncut over the rows below.
+- `el.rect()` measures a `position: fixed` box and its children from the viewport. They carried the offset of the
+  element they were written in.
+- One-line `<input>` text and placeholder sit on the vertical middle of the field instead of its top edge.
+- A `transform` set from script lands where it says after another app has built. It used to add onto the box's
+  previous translate.
+
+### Changed
+
+- Phone app pages build while the loading screen is up. The first open of an app no longer stalls.
+
 ## [1.33.5] - 2026-10-16
 
 ### Fixed
