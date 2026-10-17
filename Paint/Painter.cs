@@ -146,7 +146,7 @@ namespace Sideload.Paint
             _inputChanged = inputChanged;
             _inputSubmitted = inputSubmitted;
             _inputs?.Clear();
-            _placement.Clear();
+            SweepPlacements();
 
             _viewSize = viewSize;
             _viewRoot = host;
@@ -896,16 +896,46 @@ namespace Sideload.Paint
         {
             // The layout's own offset is remembered the first time, so repeated transforms compose against the
             // placement rather than against each other.
-            if (!_placement.TryGetValue(rt.GetInstanceID(), out Vector2 anchored))
-                _placement[rt.GetInstanceID()] = anchored = rt.anchoredPosition;
+            if (!_placement.TryGetValue(rt.GetInstanceID(), out Placement placed))
+                _placement[rt.GetInstanceID()] = placed = new Placement(rt, rt.anchoredPosition);
 
             // CSS y grows downwards, Unity's grows up.
-            rt.anchoredPosition = anchored + new Vector2(tx, -ty) + OriginShift(rt, style, sx, sy, rotation);
+            rt.anchoredPosition = placed.At + new Vector2(tx, -ty) + OriginShift(rt, style, sx, sy, rotation);
             rt.localScale = new Vector3(sx, sy, 1f);
             rt.localRotation = Quaternion.Euler(0f, 0f, -rotation);
         }
 
-        private static readonly Dictionary<int, Vector2> _placement = new();
+        /// <summary>
+        /// Drop the remembered placements of boxes that no longer exist.
+        ///
+        /// Every app shares this table, and a build of one app must not wipe the entries of another. A cleared entry
+        /// is taken again from the box's current position, which already carries its last transform, so the next
+        /// transform lands on top of the previous one: a box moved after another app has built shows up shifted by
+        /// the translate it had before.
+        /// </summary>
+        private static void SweepPlacements()
+        {
+            List<int> gone = null;
+            foreach (KeyValuePair<int, Placement> entry in _placement)
+                if (entry.Value.Rect == null) (gone ??= new List<int>()).Add(entry.Key);
+
+            if (gone == null) return;
+            foreach (int id in gone) _placement.Remove(id);
+        }
+
+        private readonly struct Placement
+        {
+            public readonly RectTransform Rect;
+            public readonly Vector2 At;
+
+            public Placement(RectTransform rect, Vector2 at)
+            {
+                Rect = rect;
+                At = at;
+            }
+        }
+
+        private static readonly Dictionary<int, Placement> _placement = new();
 
 #if DEBUG
         /// <summary>A hairline around the box itself, drawn on its own node so it cannot disturb the real geometry.</summary>
@@ -1079,6 +1109,7 @@ namespace Sideload.Paint
         {
             kept.SetParent(parent, worldPositionStays: false);
             UiFactory.PlaceFromTopLeft(kept, node.X, node.Y, node.Width, node.Height);
+            _placement.Remove(kept.GetInstanceID());
             ApplyOpacity(kept, node.Style.Opacity);
 
             if (Paints(node.Style))
