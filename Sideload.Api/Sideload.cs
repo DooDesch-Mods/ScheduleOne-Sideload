@@ -24,6 +24,26 @@ namespace Sideload.Api
     ///
     /// All calls MUST be made from the Unity main thread.
     /// </summary>
+    /// <remarks>
+    /// Ids are compared case-insensitively and trimmed. Call and event names are compared case-insensitively.
+    /// A bundle path is resolved in two places, and the file on disk wins: <c>Mods/&lt;id&gt;/&lt;path&gt;</c>, then the
+    /// embedded resource <c>&lt;bundlePrefix&gt;.&lt;path with / turned into .&gt;</c>. So <c>css/app.css</c> with
+    /// prefix <c>"MyMod.Assets.mystash"</c> is the resource <c>MyMod.Assets.mystash.css.app.css</c>.
+    /// </remarks>
+    /// <example>
+    /// The csproj embeds the web files under the prefix you pass to <see cref="Register"/>:
+    /// <code>
+    /// &lt;EmbeddedResource Include="Assets/mystash/*"&gt;
+    ///   &lt;LogicalName&gt;MyMod.Assets.mystash.%(Filename)%(Extension)&lt;/LogicalName&gt;
+    /// &lt;/EmbeddedResource&gt;
+    /// </code>
+    /// Then in <c>OnInitializeMelon</c>:
+    /// <code>
+    /// Apps.Register("mystash", "MyMod.Assets.mystash", title: "Stash", iconLabel: "Stash")
+    ///     .OnCall("items.list", _ =&gt; string.Join("\n", Items))
+    ///     .OnCall("items.add", text =&gt; { Items.Add(text.Trim()); return "ok"; });
+    /// </code>
+    /// </example>
     public static class Apps
     {
         private static bool _bound;
@@ -59,12 +79,17 @@ namespace Sideload.Api
         /// <c>index.html</c> from your bundle. Load-order-proof: registering before Sideload has loaded is fine, the
         /// call is replayed once the host appears.
         /// </summary>
-        /// <param name="id">Stable, unique id. Also the folder name under Mods/ that overrides the embedded files.</param>
-        /// <param name="bundlePrefix">Embedded-resource prefix of your web files inside the calling assembly.</param>
-        /// <param name="title">App title. Defaults to <paramref name="id"/>.</param>
-        /// <param name="iconLabel">Caption under the home-screen icon. Defaults to the title.</param>
+        /// <param name="id">Stable, unique id, e.g. "mystash". Also the folder name under Mods/ that overrides the
+        /// embedded files. Compared case-insensitively. Registering the same id again replaces the earlier app. Null
+        /// or empty registers nothing and returns a handle whose calls do nothing.</param>
+        /// <param name="bundlePrefix">Embedded-resource prefix of your web files inside the calling assembly, e.g.
+        /// "MyMod.Assets.mystash" for <c>MyMod.Assets.mystash.index.html</c>. It is the <c>LogicalName</c> prefix in
+        /// your csproj. Null means no prefix.</param>
+        /// <param name="title">App title, e.g. "Stash". Null or blank uses <paramref name="id"/>.</param>
+        /// <param name="iconLabel">Caption under the home-screen icon. Null or blank uses the title.</param>
         /// <param name="hostAssembly">The assembly holding the embedded bundle. Defaults to the caller's assembly;
         /// pass it explicitly if you wrap this call in a helper of your own.</param>
+        /// <returns>The handle for the app's calls, events, badge and notifications. Every method on it chains.</returns>
         public static AppHandle Register(string id, string bundlePrefix, string title = null, string iconLabel = null,
                                          Assembly hostAssembly = null)
         {
@@ -223,6 +248,22 @@ namespace Sideload.Api
 
     /// <summary>Handle to a registered app: the two-way channel between your C# and the app's JavaScript. Kept
     /// deliberately thin; every method stays a no-op when Sideload is absent.</summary>
+    /// <remarks>
+    /// Strings cross the boundary in both directions. Send JSON for anything structured. Every call is queued until
+    /// Sideload binds, except <see cref="Icon"/> and <see cref="Show"/>.
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// AppHandle app = Apps.Register("mystash", "MyMod.Assets.mystash", "Stash")
+    ///     .Orientation("landscape", "portrait")
+    ///     .OnCall("items.list", _ =&gt; string.Join("\n", Items));
+    ///
+    /// // Later, when the game changes something the page did not ask for:
+    /// app.Emit("items.changed", Items.Count.ToString());
+    /// app.Badge(Items.Count);
+    /// if (!app.IsOnScreen) app.Notify("Stash", "New item");
+    /// </code>
+    /// </example>
     public sealed class AppHandle
     {
         private readonly string _id;
@@ -240,6 +281,11 @@ namespace Sideload.Api
         ///   app.OnCall("chat.send", text =&gt; { Chat.Send(text); return "ok"; });
         /// </code>
         /// </summary>
+        /// <param name="name">The name the page passes to <c>s1.call</c>, e.g. "chat.send". Compared
+        /// case-insensitively. Null or blank registers nothing. The same name again replaces the handler.</param>
+        /// <param name="handler">Gets the page's argument, or an empty string when it passed none. Its return
+        /// value is what <c>s1.call</c> returns; null returns an empty string. An exception is logged and the page
+        /// gets an empty string.</param>
         public AppHandle OnCall(string name, Func<string, string> handler)
         {
             string id = _id;
@@ -249,6 +295,9 @@ namespace Sideload.Api
 
         /// <summary>Push an event at this app's page, where <c>s1.on("&lt;name&gt;", fn)</c> is waiting for it. Use it when
         /// the game changes something the page did not ask for - a message arriving, a timer expiring.</summary>
+        /// <param name="name">The name the page listens on with <c>s1.on</c>, e.g. "chat.message". Compared
+        /// case-insensitively. Null or blank sends nothing.</param>
+        /// <param name="payload">The string the page's listener receives, e.g. JSON. Null sends an empty string.</param>
         public void Emit(string name, string payload = "")
         {
             string id = _id;
@@ -269,6 +318,8 @@ namespace Sideload.Api
         ///       .AllowHost("*.cdn.example.com");
         /// </code>
         /// </summary>
+        /// <param name="host">A bare host name such as "api.example.com", or <c>*.example.com</c> for any single label
+        /// under it. A full URL is accepted and only its host is kept. A port is ignored.</param>
         public AppHandle AllowHost(string host)
         {
             string id = _id;
@@ -292,6 +343,9 @@ namespace Sideload.Api
         ///   .Orientation("portrait", "landscape")   // both, opens portrait
         /// </code>
         /// </summary>
+        /// <param name="supported">"landscape", "portrait" or both, in preference order. Case-insensitive. Any other
+        /// value is logged as a warning and ignored. Nothing recognisable keeps the previous setting, landscape only by
+        /// default.</param>
         public AppHandle Orientation(params string[] supported)
         {
             string id = _id;
@@ -310,6 +364,7 @@ namespace Sideload.Api
         ///   app.Badge(unreadMessages);
         /// </code>
         /// </summary>
+        /// <param name="count">The unread count. 0 clears the badge. A negative value counts as 0.</param>
         public AppHandle Badge(int count)
         {
             string id = _id;
@@ -327,11 +382,14 @@ namespace Sideload.Api
         ///   app.Notify("Jessi Waters", "on my way");
         /// </code>
         /// </summary>
+        /// <param name="title">The headline, e.g. a sender name like "Jessi Waters". Null counts as empty.</param>
+        /// <param name="subtitle">The line under it, e.g. "on my way". Empty by default.</param>
         /// <param name="seconds">
-        /// How long it stays up. Leave it at zero for Sideload's own timing, which suits a headline plus a
+        /// How long it stays up. Leave it at zero for Sideload's own timing (9 seconds), which suits a headline plus a
         /// sentence. Raise it for something the player has to act on, lower it for a passing remark. Clamped to
         /// between 2 and 30 seconds - the slide-in cannot be dismissed, so an app does not get to hold the corner
-        /// of the screen. Ignored, without failing, on a Sideload too old to have it.
+        /// of the screen. Zero or below means Sideload's own timing. Ignored, without failing, on a Sideload too old
+        /// to have it.
         /// </param>
         public AppHandle Notify(string title, string subtitle = "", float seconds = 0f)
         {
@@ -361,6 +419,9 @@ namespace Sideload.Api
         ///   app.Image("avatar/" + steamId, pngBytes);
         /// </code>
         /// </summary>
+        /// <param name="name">The name after <c>s1://</c> in the page, e.g. "avatar/76561198". Trimmed. Null or blank
+        /// does nothing.</param>
+        /// <param name="png">PNG file bytes. Null or empty removes the picture.</param>
         public AppHandle Image(string name, byte[] png)
         {
             string id = _id;
@@ -379,6 +440,7 @@ namespace Sideload.Api
         /// otherwise pile up one queued call per check against a host that never arrives; an unbound host simply
         /// ignores it, which is the right answer for a decision that is re-stated anyway.
         /// </summary>
+        /// <param name="visible">True shows the icon, false hides it.</param>
         public AppHandle Icon(bool visible)
         {
             Apps.HideIcon(_id, !visible);
@@ -492,8 +554,16 @@ namespace Sideload.Api
         ///   app.OnKey("Enter", _ =&gt; { if (!Online) return false; return app.Show(); });
         /// </code>
         /// </summary>
-        /// <param name="keys">One or more key declarations, separated by whitespace or commas.</param>
-        /// <param name="handler">Runs on the Unity main thread. Null gives back every key this app holds.</param>
+        /// <param name="keys">One or more key declarations, separated by whitespace or commas, e.g. "Enter F8".
+        /// A declaration is optional modifiers <c>Ctrl</c> (or <c>Control</c>), <c>Shift</c> and <c>Alt</c>, joined by
+        /// <c>+</c> to one key name. Key names: the letters a to z, the digits 0 to 9, <c>F1</c> to <c>F12</c>,
+        /// <c>Enter</c> (or <c>Return</c>), <c>Tab</c>, <c>Backspace</c>, <c>Delete</c>, <c>Insert</c>, <c>Home</c>,
+        /// <c>End</c>, <c>PageUp</c>, <c>PageDown</c>, <c>ArrowUp</c>, <c>ArrowDown</c>, <c>ArrowLeft</c>,
+        /// <c>ArrowRight</c> and <c>Space</c>. Case-insensitive. Punctuation keys are not accepted. A declaration that
+        /// does not parse is logged as a warning and dropped; the rest still count.</param>
+        /// <param name="handler">Runs on the Unity main thread. Gets the key that fired in its canonical spelling, e.g.
+        /// "Enter", "Ctrl+Shift+k" or "F8"; letters come back lower-case. Returns whether it took the press. Null gives
+        /// back every key this app holds.</param>
         public AppHandle OnKey(string keys, Func<string, bool> handler)
         {
             string id = _id;
@@ -540,6 +610,13 @@ namespace Sideload.Api
     /// <see cref="Available"/> is false, so a mod ships this without a hard version pin and keeps its own UI as the
     /// fallback.
     /// </summary>
+    /// <example>
+    /// A panel survives no scene reload, so mount again whenever it is gone:
+    /// <code>
+    /// if (Surfaces.Available &amp;&amp; !Surfaces.IsMounted("sidehustle-menu"))
+    ///     Surfaces.Mount(myPanelRectTransform, "sidehustle-menu", "SideHustle.Assets.menu");
+    /// </code>
+    /// </example>
     public static class Surfaces
     {
         /// <summary>Whether the installed Sideload can render outside the phone at all.</summary>
@@ -551,12 +628,18 @@ namespace Sideload.Api
         /// <param name="hostRect">Your <c>UnityEngine.RectTransform</c>. Typed as object only so this file stays
         /// compilable in a mod with no Unity reference; pass the RectTransform straight in.</param>
         /// <param name="id">Stable id, unique across apps AND surfaces - they share one namespace, so a surface
-        /// cannot take an app's <c>s1.call</c> handlers. Also the folder under Mods/ that overrides the bundle.</param>
-        /// <param name="bundlePrefix">Embedded-resource prefix of the web files inside the calling assembly.</param>
+        /// cannot take an app's <c>s1.call</c> handlers. Also the folder under Mods/ that overrides the bundle. E.g.
+        /// "sidehustle-menu". Compared case-insensitively and trimmed. Mounting the same id again replaces the old
+        /// surface. Null or empty mounts nothing.</param>
+        /// <param name="bundlePrefix">Embedded-resource prefix of the web files inside the calling assembly, e.g.
+        /// "SideHustle.Assets.menu". Null means no prefix.</param>
         /// <param name="designShortSide">What the panel's short side is worth in CSS pixels. 0 (the default) maps
         /// one CSS pixel to one device unit, which is what a panel uGUI has already laid out wants. Give a number
-        /// instead to get the phone's contract: the page is written for that width and scales with the panel.</param>
+        /// instead to get the phone's contract: the page is written for that width and scales with the panel. The
+        /// phone uses 400.</param>
         /// <param name="hostAssembly">The assembly holding the bundle. Defaults to the caller's.</param>
+        /// <returns>The handle for the surface's calls and events. It is returned even when nothing was mounted; check
+        /// <see cref="IsMounted"/> to know.</returns>
         public static SurfaceHandle Mount(object hostRect, string id, string bundlePrefix,
                                           float designShortSide = 0f, Assembly hostAssembly = null)
         {
@@ -571,10 +654,12 @@ namespace Sideload.Api
         }
 
         /// <summary>Take a surface down. Safe for an id that was never mounted.</summary>
+        /// <param name="id">The id passed to <see cref="Mount"/>. Compared case-insensitively.</param>
         public static void Unmount(string id) { Apps.UnmountSurface(id); }
 
         /// <summary>Whether a surface under this id is on screen. False once its panel is destroyed - a scene reload
         /// does that - so this is the check to remount on.</summary>
+        /// <param name="id">The id passed to <see cref="Mount"/>. Compared case-insensitively.</param>
         public static bool IsMounted(string id) { return Apps.SurfaceIsMounted(id); }
     }
 
@@ -591,6 +676,11 @@ namespace Sideload.Api
 
         /// <summary>Answer <c>s1.call(name, arg)</c> from this surface's page. Same rules as an app's handler: it
         /// runs on the Unity main thread in the same frame, and returns a string.</summary>
+        /// <param name="name">The name the page passes to <c>s1.call</c>, e.g. "chat.send". Compared
+        /// case-insensitively. Null or blank registers nothing. The same name again replaces the handler.</param>
+        /// <param name="handler">Gets the page's argument, or an empty string when it passed none. Its return
+        /// value is what <c>s1.call</c> returns; null returns an empty string. An exception is logged and the page
+        /// gets an empty string.</param>
         public SurfaceHandle OnCall(string name, Func<string, string> handler)
         {
             string id = _id;
@@ -600,6 +690,9 @@ namespace Sideload.Api
 
         /// <summary>Push an event at this surface's page - <c>s1.on(name, fn)</c>. Nothing happens when the surface
         /// is not mounted; the page picks the state up when it next builds.</summary>
+        /// <param name="name">The name the page listens on with <c>s1.on</c>, e.g. "chat.message". Compared
+        /// case-insensitively. Null or blank sends nothing.</param>
+        /// <param name="payload">The string the page's listener receives, e.g. JSON. Null sends an empty string.</param>
         public SurfaceHandle Emit(string name, string payload = "")
         {
             string id = _id;
@@ -608,6 +701,8 @@ namespace Sideload.Api
         }
 
         /// <summary>Let this surface's page reach one host with <c>fetch</c>. The allowlist starts empty.</summary>
+        /// <param name="host">A bare host name such as "api.example.com", or <c>*.example.com</c> for any single label
+        /// under it. A full URL is accepted and only its host is kept. A port is ignored.</param>
         public SurfaceHandle AllowHost(string host)
         {
             string id = _id;
@@ -630,6 +725,9 @@ namespace Sideload.Api
         ///   surface.Image("icon/" + itemId, pngBytes);
         /// </code>
         /// </summary>
+        /// <param name="name">The name after <c>s1://</c> in the page, e.g. "avatar/76561198". Trimmed. Null or blank
+        /// does nothing.</param>
+        /// <param name="png">PNG file bytes. Null or empty removes the picture.</param>
         public SurfaceHandle Image(string name, byte[] png)
         {
             string id = _id;
