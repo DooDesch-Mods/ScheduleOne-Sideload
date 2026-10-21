@@ -462,4 +462,4 @@ Honest limits, because a browser sets different expectations:
 
 ## License
 
-Provided as-is under the [MIT License](LICENSE.md).
+DooDesch API License - build on the API, do not copy the code. See [LICENSE.md](LICENSE.md).
