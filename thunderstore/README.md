@@ -62,4 +62,4 @@ folder holding your own copy.
 
 ## License
 
-MIT. See the included LICENSE.md. Bundles AngleSharp (MIT) and Jint with Esprima (BSD-2).
+DooDesch API License - build on the API, do not copy the code. See [LICENSE.md](https://github.com/DooDesch-Mods/ScheduleOne-Sideload/blob/main/LICENSE.md). Bundles AngleSharp (MIT) and Jint with Esprima (BSD-2).
