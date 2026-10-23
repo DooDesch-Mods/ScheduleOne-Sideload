@@ -222,6 +222,12 @@ namespace Sideload.Css
         internal readonly Dictionary<string, string> InitialVariables =
             new Dictionary<string, string>(StringComparer.Ordinal);
 
+        /// <summary>
+        /// Every <c>@font-face</c> the sheet declared, in source order. A later face for the same family, weight
+        /// and style replaces an earlier one, because <see cref="FontFaces.Pick"/> gives an exact tie to the later.
+        /// </summary>
+        internal readonly List<FontFaceRule> FontFaces = new List<FontFaceRule>();
+
         internal void RegisterLayer(string name)
         {
             if (!string.IsNullOrEmpty(name) && !LayerOrder.Contains(name)) LayerOrder.Add(name);
@@ -234,8 +240,8 @@ namespace Sideload.Css
     ///
     /// Handled at-rules: <c>@media</c> (orientation, width and height conditions including the range form),
     /// <c>@layer</c> (unwrapped, order recorded), <c>@supports</c> (evaluated against what the engine really does),
-    /// <c>@property</c> (initial values kept), and CSS nesting inside any rule body. Everything else - and every
-    /// condition this cannot read - is skipped whole and reported, because applying a block the author gated is
+    /// <c>@property</c> (initial values kept), <c>@font-face</c> (recorded for the host to load), and CSS nesting
+    /// inside any rule body. Everything else - and every condition this cannot read - is skipped whole and reported, because applying a block the author gated is
     /// worse than ignoring it.
     /// </summary>
     internal static class CssParser
@@ -461,8 +467,19 @@ namespace Sideload.Css
                     break;
                 }
 
+                case "font-face":
+                {
+                    // Recorded, not applied: a face is a resource the host loads from the bundle, and the cascade
+                    // only needs to know that the family exists. Inside @media or @supports it still counts, as
+                    // it does in a browser - a font is not a style that a breakpoint turns off.
+                    FontFaceRule face = FontFaces.Parse(src.Substring(bodyStart, blockEnd - bodyStart));
+                    if (face != null) state.Sheet.FontFaces.Add(face);
+                    else Model.Diagnostics.Report(Model.DiagnosticKind.AtRuleSkipped, prelude.Trim() + " without font-family");
+                    break;
+                }
+
                 default:
-                    // @keyframes, @font-face, @container, @page and anything newer. The block and everything in it.
+                    // @keyframes, @container, @page and anything newer. The block and everything in it.
                     Model.Diagnostics.Report(Model.DiagnosticKind.AtRuleSkipped, prelude.Trim());
                     break;
             }

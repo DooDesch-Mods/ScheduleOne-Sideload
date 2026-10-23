@@ -368,7 +368,7 @@ Honest limits, because a browser sets different expectations:
   box out of the subtree it was written in), auto margins, and `@media` on width, height and orientation.
   Units are `px`, `%`, `em`, `rem`, the viewport units and the physical ones, with `calc()` over all of them.
   Colours in hex, `rgb()`, `hsl()`, `oklch()`, `color-mix()`, `currentColor` and the CSS names. `@layer`,
-  `@property`, `@supports` and nesting are read. No `float` and no block flow - every box is a flex or grid
+  `@property`, `@supports`, `@font-face` and nesting are read. No `float` and no block flow - every box is a flex or grid
   container. Anything unsupported is named in the log, once per app, so a rule that never took effect is
   findable instead of a mystery.
 - **Text that has to line up.** `font-family: monospace` draws in a real monospaced face - the game ships none,
@@ -377,6 +377,29 @@ Honest limits, because a browser sets different expectations:
   them exists, the game's pixel face steps in, and then `white-space: pre` plus `-s1-mono-advance: 7px` are what
   keep a column straight: the first keeps the spaces you wrote, the second gives every glyph the same advance. `pre` also tells the layout that a block is text, so one built from
   nothing but coloured spans stays a single row instead of one full-width box per span.
+- **Fonts.** Built in: `game-ui` (Open Sans, the default; weights 300 to 700 and italics pick the matching
+  cut), `game-hand`, `game-comic`, `game-pixel`, `game-segment` and `monospace`. Generic names such as
+  `sans-serif` or `system-ui` land on `game-ui`. Your own font ships in the bundle and is declared with
+  `@font-face`:
+
+  ```css
+  @font-face { font-family: Archivo; src: url(fonts/archivo-400.ttf); }
+  @font-face { font-family: Archivo; src: url(fonts/archivo-700.ttf); font-weight: 700; }
+  @font-face { font-family: Archivo; src: url(fonts/archivo-400-italic.ttf); font-style: italic; }
+  h1 { font-family: Archivo, game-ui; font-weight: 800; }
+  ```
+
+  `src` takes a TTF or OTF file from your bundle, path relative to the bundle root (where `index.html` is);
+  `format("truetype")` / `format("opentype")` are accepted, and in a list the first TTF/OTF wins. WOFF, WOFF2,
+  `local()`, `data:` and remote URLs are not loaded. `font-weight` is one weight or a range (`100 900`),
+  `font-style` is `normal` or `italic`. Each file becomes a TextMeshPro font with a dynamic atlas, so any
+  glyph in the file renders; a glyph the file lacks falls back to Open Sans. A weight you did not ship takes
+  the nearest one you did (800 above lands on 700), and italic without an italic file slants the upright one.
+  Text is measured with the same font it is drawn with. Fonts are cached per app and reused across reloads
+  until the file changes. A family that is neither built in nor declared draws in `game-ui`, and the log names
+  it once. Embed the font files like the rest of the bundle, for example
+  `<EmbeddedResource Include="Assets/mystash/fonts/*.ttf"><LogicalName>MyMod.Assets.mystash.fonts.%(Filename)%(Extension)</LogicalName></EmbeddedResource>`,
+  and ship the font's licence.
 - **Text fields.** `caret-color` and `-s1-caret-width` draw the cursor - a block cursor is two lines of CSS.
   `data-ghost="rest"` writes the rest of a suggestion behind the caret in the field's own font, styled by
   `-s1-ghost-color`; nothing has to be measured and no monospaced font is needed.
