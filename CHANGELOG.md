@@ -3,6 +3,17 @@
 All notable changes to Sideload are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [1.34.0] - 2026-10-24
+
+### Added
+
+- Apps can ship their own fonts: `@font-face` loads a TTF/OTF from your bundle, one file per weight and italic. A
+  missing weight takes the nearest one.
+
+### Changed
+
+- A `font-family` Sideload cannot draw is named in the log once. It used to fall back to Open Sans silently.
+
 ## [1.33.6] - 2026-10-17
 
 ### Fixed
