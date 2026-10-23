@@ -197,6 +197,14 @@
     </EmbeddedResource>
   </ItemGroup>
 
+  <!-- The self-test's @font-face probe: two OFL faces (licences in the same folder). Debug only, like the app that
+       uses them, so a player's Sideload.dll does not carry 150 KB of fonts nothing draws. -->
+  <ItemGroup Condition="'$(Configuration)' == 'Debug'">
+    <EmbeddedResource Include="Assets/selftest/fonts/*.ttf">
+      <LogicalName>Sideload.Assets.selftest.fonts.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
   <!-- Assets/Bundles/sideload-ui: precompiled UI box shader AssetBundle, built by
        Workspace/tools/sideload-ui-bundle (Unity 2022.3.32f1, menu Build > Sideload UI Bundle).
        Exists-guarded so a fresh clone without the bundle still compiles; Paint/BoxMaterial.cs then

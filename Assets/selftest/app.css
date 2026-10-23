@@ -1,3 +1,10 @@
+/* Fonts the bundle ships (fonts/, OFL - licences next to the files). Archivo maps 400, 700 and 400 italic to three
+   files; Big Shoulders Display has only 800, so the 900 asked for below lands on the nearest weight. */
+@font-face { font-family: Archivo; src: url(fonts/archivo-400.ttf) format("truetype"); font-weight: 400; }
+@font-face { font-family: Archivo; src: url(fonts/archivo-700.ttf) format("truetype"); font-weight: 700; }
+@font-face { font-family: Archivo; src: url(fonts/archivo-400-italic.ttf); font-weight: 400; font-style: italic; }
+@font-face { font-family: "Big Shoulders"; src: url(fonts/bigshoulders-800.ttf); font-weight: 800; }
+
 :root {
   --bg-base:     #101218;
   --bg-panel:    #161922;
@@ -226,3 +233,24 @@ body {
 .diagnostic-probe:not(:hover) {
   color: #00ff00;
 }
+
+/* The @font-face probe: the game's Open Sans first, then the bundle's own faces in the same size, so the difference
+   is visible side by side. `.f-missing` names a family nobody declared - it draws in Open Sans and the log says so
+   once. */
+.fonts {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 14px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--bg-panel);
+  border: 1px solid var(--hairline);
+  font-size: 20px;
+}
+
+.f-ui       { font-family: game-ui; font-weight: 700; }
+.f-archivo  { font-family: Archivo, game-ui; }
+.f-archivo.b { font-weight: 700; }
+.f-archivo.i { font-style: italic; }
+.f-shoulders { font-family: "Big Shoulders", game-ui; font-weight: 900; font-size: 24px; color: var(--warning); }
+.f-missing  { font-family: "Not Shipped Face", game-ui; color: var(--text-muted); }

@@ -576,6 +576,10 @@ namespace Sideload.Host
             {
                 _sheet = CssParser.Parse(CollectCss(_document));
 
+                // The page's own fonts, loaded before anything is measured so the first layout already uses them.
+                // Per page build, not per rebuild: a reload reuses every face whose file did not change.
+                Paint.BundleFonts.Prepare(_appId, _bundle, _sheet.FontFaces);
+
                 // The whole sheet, not only what ends up matching. See SheetAudit for why that distinction is the
                 // difference between a useful report and silence on exactly the stylesheets that need one.
                 Css.SheetAudit.Scan(_sheet);
@@ -598,6 +602,9 @@ namespace Sideload.Host
                     // Opt-in and not a new default - every existing app is written against the column, and
                     // flipping it under them would reflow every box they did not think to declare.
                     WebDefaults = WantsWebDefaults(_document),
+
+                    // Where the cascade files this page's @font-face families, and where BundleFonts keeps them.
+                    FontScope = _appId,
                 };
 
                 // The script runs BEFORE the first render, not after: it may build half the page and it registers

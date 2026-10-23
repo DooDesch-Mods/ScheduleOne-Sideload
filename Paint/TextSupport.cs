@@ -7,9 +7,10 @@ using UnityEngine;
 namespace Sideload.Paint
 {
     /// <summary>
-    /// Maps CSS font-family names onto the TMP font assets the game already ships. Measured on the live build: the
-    /// house typeface is Open Sans in five weights plus italics, with Unity's LiberationSans as the safety net and a
-    /// handful of decorative faces.
+    /// Maps CSS font-family names onto the TMP font assets the game already ships, and hands a page's own
+    /// <c>@font-face</c> families to <see cref="BundleFonts"/>. Measured on the live build: the house typeface is Open
+    /// Sans in five weights plus italics, with Unity's LiberationSans as the safety net and a handful of decorative
+    /// faces.
     /// </summary>
     internal static class FontRegistry
     {
@@ -25,6 +26,16 @@ namespace Sideload.Paint
             Scan();
 
             bool italic = style == FontStyleKind.Italic;
+
+            // A page's own @font-face family. Null when none of its faces loaded, and then the text takes the UI
+            // face below at the same weight - BundleFonts has said so in the log, once.
+            if (FontFamilies.TryParseFace(family, out string scope, out string face))
+            {
+                TMP_FontAsset own = BundleFonts.Resolve(scope, face, weight, italic);
+                if (own != null) return own;
+                family = FontFamilies.Default;
+            }
+
             string wanted = (family ?? "game-ui").Trim().ToLowerInvariant();
 
             switch (wanted)

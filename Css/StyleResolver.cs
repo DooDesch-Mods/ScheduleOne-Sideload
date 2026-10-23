@@ -35,6 +35,12 @@ namespace Sideload.Css
         /// built by a web toolchain says `.flex` and means a row. See ComputedStyle.DefaultDirection.
         /// </summary>
         internal bool WebDefaults = false;
+
+        /// <summary>
+        /// What keeps this page's <c>@font-face</c> families apart from every other app's: the host passes the
+        /// bundle's app id, and the painter looks the face up under it. Null in a test, where no file is loaded.
+        /// </summary>
+        internal string FontScope;
     }
 
     /// <summary>
@@ -125,7 +131,11 @@ namespace Sideload.Css
                 foreach (var initial in sheet.InitialVariables)
                     root.SetVariable(initial.Key, initial.Value);
 
-            Walk(document.DocumentElement, root, matches, context, result, generated);
+            // The page's own font families, for the length of this walk only - the next page to resolve may be
+            // another app with a family of the same name and a different file.
+            PageFonts outer = FontFamilies.Enter(sheet, context.FontScope);
+            try { Walk(document.DocumentElement, root, matches, context, result, generated); }
+            finally { FontFamilies.Page = outer; }
             return result;
         }
 

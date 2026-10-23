@@ -27,6 +27,15 @@ namespace Sideload.Css
             Dictionary<string, string> variables = CollectVariables(sheet);
             var scratch = new ComputedStyle();
 
+            // The sheet's own @font-face families count as known here too, or every family the page declared
+            // would be reported as one it cannot draw.
+            PageFonts outer = FontFamilies.Enter(sheet, null);
+            try { Audit(sheet, variables, scratch); }
+            finally { FontFamilies.Page = outer; }
+        }
+
+        private static void Audit(Stylesheet sheet, Dictionary<string, string> variables, ComputedStyle scratch)
+        {
             foreach (StyleRule rule in sheet.Rules)
             {
                 foreach (Declaration declaration in rule.Declarations)
