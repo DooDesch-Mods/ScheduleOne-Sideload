@@ -258,12 +258,18 @@ namespace Sideload.Integrations.S1Api
 
             switch (topic)
             {
-                case "money": S1API.Money.Money.OnBalanceChanged += () => Push("money", Money); break;
+                case "money":
+                    S1API.Money.Money.OnBalanceChanged += () => PushIfChanged("money", Money);
+                    WatchOnTick("money", Money);
+                    break;
                 case "time": TimeManager.OnTick += () => Push("time", Time); break;
                 case "hour": TimeManager.OnHourPass += () => Push("hour", Time); break;
                 case "day": TimeManager.OnDayPass += () => Push("day", Time); break;
                 case "sleep": TimeManager.OnSleepEnd += _ => Push("sleep", Time); break;
-                case "xp": LevelManager.OnXPChanged += (_, __) => Push("xp", Leveling); break;
+                case "xp":
+                    LevelManager.OnXPChanged += (_, __) => PushIfChanged("xp", Leveling);
+                    WatchOnTick("xp", Leveling);
+                    break;
                 case "rank": LevelManager.OnRankUp += (_, __) => Push("rank", Leveling); break;
                 case "delivery":
                     DeliveryRegistry.Created += d => Push("delivery", () => DeliveryEvent("created", d));
@@ -283,8 +289,37 @@ namespace Sideload.Integrations.S1Api
         private static void Push(string topic, Func<string> payload)
         {
             string json = Guard("event " + topic, payload);
+            Emit(topic, json);
+        }
+
+        private static void Emit(string topic, string json)
+        {
             try { _emit?.Invoke(null, "s1api:" + topic, json); }
             catch (Exception e) { Report("event " + topic, e); }
+        }
+
+        private static readonly Dictionary<string, string> _lastSent = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        /// <summary>Push only when the area reads differently from the last push, so a change seen both by an S1API
+        /// event and by the tick below reaches the page once.</summary>
+        private static void PushIfChanged(string topic, Func<string> payload)
+        {
+            string json = Guard("event " + topic, payload);
+            if (_lastSent.TryGetValue(topic, out string last) && last == json) return;
+            _lastSent[topic] = json;
+            Emit(topic, json);
+        }
+
+        /// <summary>
+        /// S1API's events cover only part of what changes these areas: Money.OnBalanceChanged fires for changes made
+        /// through S1API alone (a sale, a purchase or the console go past it), and LevelManager.OnXPChanged is the
+        /// game's onRankChanged, which a plain XP gain does not raise. So the area is also read once a game minute and
+        /// pushed when it differs - a game minute is about a second, and the read is a few property gets.
+        /// </summary>
+        private static void WatchOnTick(string topic, Func<string> payload)
+        {
+            _lastSent[topic] = Guard("event " + topic, payload);
+            TimeManager.OnTick += () => PushIfChanged(topic, payload);
         }
 
         // ---------------------------------------------------------------- writes --
