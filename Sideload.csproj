@@ -139,6 +139,11 @@
       <HintPath>$(GameManagedPath)/UnityEngine.InputLegacyModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <!-- ScreenCapture, for a picture of an app on screen (Bridge/StudioAccess.cs). -->
+    <Reference Include="UnityEngine.ScreenCaptureModule">
+      <HintPath>$(GameManagedPath)/UnityEngine.ScreenCaptureModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <!-- Texture2D.LoadImage, for an app's icon.png (Phone/AppIconSprite.cs). -->
     <Reference Include="UnityEngine.ImageConversionModule">
       <HintPath>$(GameManagedPath)/UnityEngine.ImageConversionModule.dll</HintPath>
