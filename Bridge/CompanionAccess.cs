@@ -152,7 +152,7 @@ namespace Sideload.Bridge
             return sb.Append(']').ToString();
         }
 
-        private static string Quote(string s)
+        internal static string Quote(string s)
         {
             if (string.IsNullOrEmpty(s)) return "\"\"";
 
@@ -167,7 +167,7 @@ namespace Sideload.Bridge
                     case '\r': sb.Append("\\r"); break;
                     case '\t': sb.Append("\\t"); break;
                     default:
-                        if (c < ' ') sb.Append("\\u").Append(((int)c).ToString("x4"));
+                        if (c < ' ' || c == (char)0x2028 || c == (char)0x2029) sb.Append("\\u").Append(((int)c).ToString("x4"));
                         else sb.Append(c);
                         break;
                 }

@@ -115,8 +115,7 @@ namespace Sideload.Script
             string answer = Run(appId, name, argument);
             double ms = (System.Diagnostics.Stopwatch.GetTimestamp() - started) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
 
-            Action<string, string, string, string, double, string> tap = CallTap;
-            if (tap != null) Taps.Each(tap, t => t(appId, name, argument ?? "", answer, ms, origin));
+            Taps.Each(CallTap, t => t(appId, name, argument ?? "", answer, ms, origin));
             return answer;
         }
 

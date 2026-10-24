@@ -197,34 +197,13 @@ namespace Sideload.Bridge
             return true;
         }
 
+        private static string Quote(string s) => CompanionAccess.Quote(s);
+
         private static string Error(string message) => "{\"ok\":false,\"error\":" + Quote(message) + "}";
 
         private static string Bool(bool b) => b ? "true" : "false";
 
         private static string Num(float f) =>
             float.IsNaN(f) || float.IsInfinity(f) ? "0" : Math.Round(f, 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
-
-        private static string Quote(string s)
-        {
-            if (string.IsNullOrEmpty(s)) return "\"\"";
-
-            var sb = new StringBuilder(s.Length + 8).Append('"');
-            foreach (char c in s)
-            {
-                switch (c)
-                {
-                    case '"': sb.Append("\\\""); break;
-                    case '\\': sb.Append("\\\\"); break;
-                    case '\n': sb.Append("\\n"); break;
-                    case '\r': sb.Append("\\r"); break;
-                    case '\t': sb.Append("\\t"); break;
-                    default:
-                        if (c < ' ' || c == (char)0x2028 || c == (char)0x2029) sb.Append("\\u").Append(((int)c).ToString("x4"));
-                        else sb.Append(c);
-                        break;
-                }
-            }
-            return sb.Append('"').ToString();
-        }
     }
 }
