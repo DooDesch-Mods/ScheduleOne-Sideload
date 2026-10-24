@@ -148,7 +148,7 @@ namespace Sideload.Bridge
                 {
                     png = ImageConversion.EncodeToPNG(full);
                 }
-                else if (ScreenRectOf(appId, full.width, full.height, out RectInt area))
+                else if (ScreenRectOf(appId, full.width, full.height, out RectInt area, out string why))
                 {
                     cut = new Texture2D(area.width, area.height, TextureFormat.RGBA32, false);
                     cut.SetPixels(full.GetPixels(area.x, area.y, area.width, area.height));
@@ -157,7 +157,7 @@ namespace Sideload.Bridge
                 }
                 else
                 {
-                    Core.Log?.Msg($"[Sideload/studio] capture of '{appId}' skipped: the app is not on screen.");
+                    Core.Log?.Msg($"[Sideload/studio] capture of '{appId}' skipped: {why}.");
                 }
             }
             catch (Exception e)
@@ -178,20 +178,30 @@ namespace Sideload.Bridge
         }
 
         /// <summary>Where the app's root rect lands on screen, in texture pixels (origin bottom left), clamped to the
-        /// screen. False when the app is not on screen or the rect is empty.</summary>
-        private static bool ScreenRectOf(string appId, int screenW, int screenH, out RectInt area)
+        /// screen. False when the app is not on screen or the rect is empty; <paramref name="why"/> says which.</summary>
+        private static bool ScreenRectOf(string appId, int screenW, int screenH, out RectInt area, out string why)
         {
             area = default;
-            if (!Registry.IsOnScreen(appId)) return false;
+            why = "";
+            if (!Registry.IsOnScreen(appId)) { why = "the app is not on screen"; return false; }
 
             RectTransform root = WebView.Mounted(appId)?.RootRect;
-            if (root == null) return false;
+            if (root == null) { why = "the app has no mounted page"; return false; }
 
             Canvas canvas = root.GetComponentInParent<Canvas>();
             Camera camera = canvas != null && canvas.renderMode != RenderMode.ScreenSpaceOverlay ? canvas.worldCamera : null;
 
-            var corners = new Vector3[4];
-            root.GetWorldCorners(corners);
+            // Through the transform one corner at a time, not GetWorldCorners: under Il2CppInterop that call fills a
+            // copy of the caller's array and hands back four zeroes, which collapses the rect to a point (Painter
+            // has the same note).
+            Rect r = root.rect;
+            var corners = new[]
+            {
+                root.TransformPoint(new Vector3(r.xMin, r.yMin, 0f)),
+                root.TransformPoint(new Vector3(r.xMin, r.yMax, 0f)),
+                root.TransformPoint(new Vector3(r.xMax, r.yMax, 0f)),
+                root.TransformPoint(new Vector3(r.xMax, r.yMin, 0f)),
+            };
             float minX = float.MaxValue, minY = float.MaxValue, maxX = float.MinValue, maxY = float.MinValue;
             foreach (Vector3 corner in corners)
             {
@@ -202,7 +212,11 @@ namespace Sideload.Bridge
 
             int x0 = Mathf.Clamp(Mathf.FloorToInt(minX), 0, screenW), y0 = Mathf.Clamp(Mathf.FloorToInt(minY), 0, screenH);
             int x1 = Mathf.Clamp(Mathf.CeilToInt(maxX), 0, screenW), y1 = Mathf.Clamp(Mathf.CeilToInt(maxY), 0, screenH);
-            if (x1 - x0 < 2 || y1 - y0 < 2) return false;
+            if (x1 - x0 < 2 || y1 - y0 < 2)
+            {
+                why = $"the app's rect on screen is empty ({minX:0},{minY:0} to {maxX:0},{maxY:0} on {screenW}x{screenH})";
+                return false;
+            }
 
             area = new RectInt(x0, y0, x1 - x0, y1 - y0);
             return true;
