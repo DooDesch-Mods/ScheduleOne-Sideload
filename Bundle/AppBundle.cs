@@ -114,9 +114,16 @@ namespace Sideload.Bundle
             {
                 string full = Path.GetFullPath(candidate);
                 string root = Path.GetFullPath(FolderRoot).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-                return full.StartsWith(root, StringComparison.OrdinalIgnoreCase) ? full : null;
+                if (full.StartsWith(root, StringComparison.OrdinalIgnoreCase)) return full;
+
+                Core.Log?.Warning($"app file '{path}' leaves {FolderRoot} - refused.");
+                return null;
             }
-            catch { return null; }
+            catch (Exception e)
+            {
+                Core.Log?.Warning($"app file path rejected ({candidate}): {e.Message}");
+                return null;
+            }
         }
 
         private Stream OpenEmbedded(string path)
