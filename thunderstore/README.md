@@ -46,7 +46,7 @@ step by step guide, the exact CSS subset and the layout rules that differ from a
 
 ## Requirements
 
-**Schedule I** (IL2CPP) with **MelonLoader 0.7.3+**. No S1API.
+**Schedule I** (IL2CPP) with **MelonLoader 0.7.3+**. S1API is optional: with it installed, pages can read the game by name (`s1api`).
 
 ## Settings
 

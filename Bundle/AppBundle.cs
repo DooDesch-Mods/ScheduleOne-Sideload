@@ -19,15 +19,23 @@ namespace Sideload.Bundle
         private readonly string _prefix;
         private readonly Assembly _asm;
 
-        internal AppBundle(string appId, string bundlePrefix, Assembly hostAssembly)
+        internal AppBundle(string appId, string bundlePrefix, Assembly hostAssembly, string folderRoot = null)
         {
             _prefix = bundlePrefix ?? "";
             _asm = hostAssembly;
             OverrideRoot = SafeCombine(MelonEnvironment.ModsDirectory, appId);
+            FolderRoot = string.IsNullOrEmpty(folderRoot) ? null : folderRoot;
         }
 
         /// <summary>Folder that overrides embedded files. It does not have to exist.</summary>
         internal string OverrideRoot { get; }
+
+        /// <summary>
+        /// Where an app that is nothing but files keeps them - a folder with a sideload.json (<see cref="ManifestApps"/>).
+        /// Null for an app a mod registered. Read after the override and before any embedded copy, so a player can
+        /// still reskin a file-only app through <c>Mods/&lt;id&gt;/</c> exactly like any other.
+        /// </summary>
+        internal string FolderRoot { get; }
 
         /// <summary>Absolute path the override would live at - also the path the hot-reload watcher reports.</summary>
         internal string OverridePathOf(string path) => SafeCombine(OverrideRoot, (path ?? "").Replace('/', Path.DirectorySeparatorChar));
@@ -42,6 +50,7 @@ namespace Sideload.Bundle
         internal bool Exists(string path)
         {
             if (File.Exists(OverridePathOf(path))) return true;
+            if (FolderPathOf(path) is string folder && File.Exists(folder)) return true;
             using var s = OpenEmbedded(path);
             return s != null;
         }
@@ -66,6 +75,13 @@ namespace Sideload.Bundle
                 catch (Exception e) { Core.Log?.Warning($"override unreadable ({file}): {e.Message}"); }
             }
 
+            string fromFolder = FolderPathOf(path);
+            if (fromFolder != null && File.Exists(fromFolder))
+            {
+                try { return File.ReadAllBytes(fromFolder); }
+                catch (Exception e) { Core.Log?.Warning($"app file unreadable ({fromFolder}): {e.Message}"); }
+            }
+
             using Stream s = OpenEmbedded(path);
             if (s == null) return null;
             try
@@ -83,6 +99,29 @@ namespace Sideload.Bundle
             catch (Exception e)
             {
                 Core.Log?.Warning($"embedded resource unreadable ({ResourceNameOf(path)}): {e.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>The file in <see cref="FolderRoot"/>, or null for an app without one or a path that tries to leave
+        /// it. A file-only app is data from a download, so ".." is refused here rather than trusted.</summary>
+        private string FolderPathOf(string path)
+        {
+            if (FolderRoot == null || string.IsNullOrEmpty(path)) return null;
+
+            string candidate = SafeCombine(FolderRoot, path.Replace('/', Path.DirectorySeparatorChar));
+            try
+            {
+                string full = Path.GetFullPath(candidate);
+                string root = Path.GetFullPath(FolderRoot).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+                if (full.StartsWith(root, StringComparison.OrdinalIgnoreCase)) return full;
+
+                Core.Log?.Warning($"app file '{path}' leaves {FolderRoot} - refused.");
+                return null;
+            }
+            catch (Exception e)
+            {
+                Core.Log?.Warning($"app file path rejected ({candidate}): {e.Message}");
                 return null;
             }
         }

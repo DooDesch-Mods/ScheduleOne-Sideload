@@ -54,8 +54,9 @@ it is off unless you switch it on. It is a single file - there is nothing else t
 | Schedule I | IL2CPP (current Steam public build) |
 | MelonLoader | `0.7.3+` |
 
-Sideload has no other hard dependency. It does **not** use S1API: it patches `HomeScreen.Start` itself,
-because S1API discovers phone apps by type and Sideload declares them at runtime.
+Sideload has no other hard dependency. S1API is optional: it is not used to put apps on the phone (Sideload
+patches `HomeScreen.Start` itself, because S1API discovers phone apps by type and Sideload declares them at
+runtime), but when it is installed every page gets [`s1api`](#game-data-with-s1api), the game's data by name.
 
 ## Installation
 
@@ -332,6 +333,11 @@ app.Open(); app.Close();             // open it exactly as pressing its icon wou
 bool open = app.IsOpen;              // is it the app the phone currently has open
 
 app.Show(); app.Hide();              // take the phone out AND open the app, or reverse both
+
+app.Reload();                        // rebuild the page from disk now, as saving a file in Mods/<id>/ would
+app.Unregister();                    // take the app off the phone while the game runs; Register brings it back
+bool live = AppHandle.CanEditLive;   // does the installed Sideload understand the two above
+app.AllowGameWrites("money");        // let this page CHANGE the game through s1api in one area
 PhoneScreen.Raise(); PhoneScreen.Lower();   // move the phone on its own, no app involved
 
 app.OnKey("Enter", key => app.Show());     // a key that reaches you with the phone still in the pocket;
@@ -354,6 +360,67 @@ rather than leave the player an app with no way in.
 Everything is queued while the host is absent and replayed once it appears, so the load order between your
 mod and Sideload never matters. Strings cross the boundary in both directions; send JSON for anything
 structured. `s1.call` is synchronous and returns a string, not a Promise.
+
+## Game data with S1API
+
+With [S1API](https://thunderstore.io/c/schedule-i/p/ifBars/S1API_Forked/) installed, every page has an `s1api`
+global: the game's data by name, with no C# handler of your own.
+
+```js
+if (s1api.available) {
+  $('cash').textContent = '$' + s1api.money.cash.toFixed(2);
+  $('clock').textContent = s1api.time.formatted;          // "2:30 PM"
+  $('rank').textContent = s1api.leveling.rank;            // "Hoodlum"
+
+  s1api.on('money', m => $('cash').textContent = '$' + m.cash.toFixed(2));
+  s1api.on('time', t => $('clock').textContent = t.formatted);
+}
+```
+
+| Area | Fields |
+|---|---|
+| `s1api.money` | `cash`, `online`, `netWorth`, and `change(amount)` with permission |
+| `s1api.time` | `day`, `dayIndex`, `time` (1430), `hour`, `minute`, `formatted`, `night`, `endOfDay`, `elapsedDays`, `sleeping`; `now` is all of it |
+| `s1api.leveling` | `rank`, `rankIndex`, `tier`, `xp`, `totalXp`, `xpToNextTier`, and `addXp(amount)` with permission |
+| `s1api.law` | `wantedLevel`, `wanted`, `investigated`, `curfewEnabled`, `curfewActive`, `intensity` |
+| `s1api.player` | `name`, `health`, `maxHealth`, `dead`, `arrested`, `inVehicle`, `region`, `property` |
+| `s1api.deliveries.list()` | `[{ id, store, destination, dock, status, minutes, items: [{ id, quantity }] }]` |
+| `s1api.products.list()` | `[{ id, name, type, price, marketValue, listed, favourite }]`; `listed()` filters |
+
+`s1api.on(topic, fn)` takes `money`, `time` (every game minute), `hour`, `day`, `sleep`, `xp`, `rank` and
+`delivery`; `s1api.off(topic, fn)` removes it. `area.get()` reads a whole area at once, and `s1api.schema()` lists
+everything for tools.
+
+- **Every value is read fresh when you access it.** Before a save is loaded, and without S1API, a field reads as
+  `null` - `s1api.available` tells the two apart. Nothing breaks either way: the object always exists.
+- **Reading is free, writing needs your mod.** `s1api.money.change(50)` returns `false` unless the app's own mod
+  called `app.AllowGameWrites("money")`. A page is a file anyone can edit, so the permission comes from C#, the same
+  rule as `AllowHost`.
+- **It costs nothing you do not use.** The S1API side ships inside `Sideload.dll` and is loaded only when S1API is
+  there; a page pays for one small prepared script, and nothing calls into the game until a property is read. An
+  event topic is subscribed the first time a page asks for it.
+- TypeScript: `/// <reference types="@doodesch/sideload-vite/s1api" />`.
+
+## Apps without a mod
+
+A folder holding `sideload.json` next to `index.html`, `app.css` and `app.js` is an app on its own - no DLL, no C#.
+Sideload registers every one it finds at start-up in `Mods/<folder>/` (where a mod manager unpacks a package) and
+in `UserData/Sideload/apps/<folder>/`.
+
+```json
+{
+  "id": "bank-dashboard",
+  "title": "Bank",
+  "iconLabel": "Bank",
+  "orientation": "landscape,portrait",
+  "version": "1.0.0",
+  "author": "You"
+}
+```
+
+Such an app can show, store (`s1.storage`) and read the game (`s1api`), and that is all: it has no mod to call
+`AllowHost` or `AllowGameWrites`, so its `fetch` reaches nothing and every `s1api` write is refused. A mod that
+registers the same id wins over the folder. For a page that needs C# handlers, register it from a mod as above.
 
 ## What the engine renders
 

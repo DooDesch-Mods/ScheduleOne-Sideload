@@ -97,7 +97,62 @@ namespace Sideload.Bridge
             Registry.NotifyTap = onNotify;
         }
 
-        private static string Quote(string s)
+        /// <summary>
+        /// The same three pushes as <see cref="SetTaps"/>, as one more listener rather than THE listener. Nulls are
+        /// skipped, so a caller may tap only what it needs. Remove with the same delegates it added.
+        /// </summary>
+        internal static void AddTaps(Action<string, string, string> onEmit,
+                                     Action<string, int> onBadge,
+                                     Action<string, string, string> onNotify)
+        {
+            if (onEmit != null) Script.Bridge.EmitTaps += onEmit;
+            if (onBadge != null) Registry.BadgeTaps += onBadge;
+            if (onNotify != null) Registry.NotifyTaps += onNotify;
+        }
+
+        internal static void RemoveTaps(Action<string, string, string> onEmit,
+                                        Action<string, int> onBadge,
+                                        Action<string, string, string> onNotify)
+        {
+            if (onEmit != null) Script.Bridge.EmitTaps -= onEmit;
+            if (onBadge != null) Registry.BadgeTaps -= onBadge;
+            if (onNotify != null) Registry.NotifyTaps -= onNotify;
+        }
+
+        internal static void AddCallTap(Action<string, string, string, string, double, string> tap)
+        {
+            if (tap != null) Script.Bridge.CallTap += tap;
+        }
+
+        internal static void RemoveCallTap(Action<string, string, string, string, double, string> tap)
+        {
+            if (tap != null) Script.Bridge.CallTap -= tap;
+        }
+
+        internal static void AddConsoleTap(Action<string, string, string> tap)
+        {
+            if (tap != null) Script.ScriptHost.ConsoleTap += tap;
+        }
+
+        internal static void RemoveConsoleTap(Action<string, string, string> tap)
+        {
+            if (tap != null) Script.ScriptHost.ConsoleTap -= tap;
+        }
+
+        /// <summary>The call names a page of this app can reach, as a JSON array of strings.</summary>
+        internal static string ListHandlersJson(string appId)
+        {
+            List<string> names = Script.Bridge.HandlerNames(appId);
+            var sb = new StringBuilder("[");
+            for (int i = 0; i < names.Count; i++)
+            {
+                if (i > 0) sb.Append(',');
+                sb.Append(Quote(names[i]));
+            }
+            return sb.Append(']').ToString();
+        }
+
+        internal static string Quote(string s)
         {
             if (string.IsNullOrEmpty(s)) return "\"\"";
 
@@ -112,7 +167,7 @@ namespace Sideload.Bridge
                     case '\r': sb.Append("\\r"); break;
                     case '\t': sb.Append("\\t"); break;
                     default:
-                        if (c < ' ') sb.Append("\\u").Append(((int)c).ToString("x4"));
+                        if (c < ' ' || c == (char)0x2028 || c == (char)0x2029) sb.Append("\\u").Append(((int)c).ToString("x4"));
                         else sb.Append(c);
                         break;
                 }

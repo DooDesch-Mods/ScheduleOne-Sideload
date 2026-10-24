@@ -1,0 +1,58 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The S1API half of `s1api`. Compiled against S1API's IL2CPP build and nothing of Sideload: it is handed BCL
+    delegates by Integrations/S1ApiLoader.cs and talks to the page through them alone.
+
+    It does not ship on its own. Sideload.csproj builds it and embeds the DLL as the resource
+    Sideload.Integrations.S1API.dll, and the loader only reads that resource when S1API is in the process - so a player
+    without S1API never loads a byte of it, and Sideload itself keeps no reference to S1API at all.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Sideload.Integrations.S1Api</RootNamespace>
+    <AssemblyName>Sideload.Integrations.S1API</AssemblyName>
+    <Version Condition="'$(Version)' == ''">0.0.0-dev</Version>
+    <NoWarn>$(NoWarn);MSB3277;MSB3245</NoWarn>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <WorkspaceLibPath Condition="'$(WorkspaceLibPath)' == ''">$(MSBuildThisFileDirectory)../../../Workspace/lib</WorkspaceLibPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="S1API.Il2Cpp.MelonLoader">
+      <HintPath>$(WorkspaceLibPath)/il2cpp/s1api/S1API.Il2Cpp.MelonLoader.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- Only for the types S1API's public signatures carry; nothing here calls into them directly. -->
+    <Reference Include="Il2CppInterop.Runtime">
+      <HintPath>$(WorkspaceLibPath)/il2cpp/melonloader/Il2CppInterop.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Il2Cppmscorlib">
+      <HintPath>$(WorkspaceLibPath)/il2cpp/game/Il2Cppmscorlib.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(WorkspaceLibPath)/il2cpp/game/UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(WorkspaceLibPath)/il2cpp/game/Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Il2CppScheduleOne.Core">
+      <HintPath>$(WorkspaceLibPath)/il2cpp/game/Il2CppScheduleOne.Core.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Il2CppFishNet.Runtime">
+      <HintPath>$(WorkspaceLibPath)/il2cpp/game/Il2CppFishNet.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>

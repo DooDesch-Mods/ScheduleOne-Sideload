@@ -186,13 +186,21 @@ namespace Sideload.Phone
         /// page lay itself out again against the new viewport - document and script intact, so nothing on screen is
         /// lost and `@media (orientation: ...)` decides what changes.
         /// </summary>
-        private void OnOrientationChanged()
+        private void OnOrientationChanged(bool requested)
         {
             try
             {
-                if (!ApplyOrientation()) return;
+                // A late declaration is the app's default, not a turn. The player's remembered choice still outranks
+                // it, as it does at spawn, and the default is not written back as if the player had picked it.
+                if (!requested)
+                {
+                    bool? remembered = OrientationStore.Remembered(_reg);
+                    if (remembered.HasValue) _reg.Portrait = remembered.Value;
+                }
 
-                OrientationStore.Remember(_reg.Id, _reg.Portrait);
+                if (!ApplyOrientation()) { Core.Log?.Warning($"'{_reg.Id}' could not be turned - no vanilla app panel to measure."); return; }
+
+                if (requested) OrientationStore.Remember(_reg.Id, _reg.Portrait);
 
                 if (IsOpen && Il2CppScheduleOne.UI.Phone.Phone.InstanceExists)
                 {
@@ -606,6 +614,32 @@ namespace Sideload.Phone
 
         /// <summary>True while this host's panel still exists - a destroyed one means the phone was rebuilt.</summary>
         internal bool IsAlive => _panel != null;
+
+        /// <summary>
+        /// Throw the page away and build it again from disk, script engine included - what a save in the override
+        /// folder means to the person editing it. A page that was never opened has nothing to throw away and builds
+        /// from disk anyway the first time it is.
+        /// </summary>
+        internal void Reload() => _view?.Reload();
+
+        /// <summary>
+        /// Take this app off the phone while the game runs: closed first if it is open, its game listeners released,
+        /// its icon and panel destroyed. The page goes with the panel - the view notices its root is gone on the
+        /// next tick and lets go of its engine, exactly as it does when the scene ends.
+        /// </summary>
+        internal void Teardown()
+        {
+            try { if (IsOpen) Close(); }
+            catch (Exception e) { Core.Log?.Warning($"'{_reg.Id}' did not close before removal: {e.Message}"); }
+
+            Release();
+
+            if (_icon != null) Object.Destroy(_icon);
+            if (_panel != null) Object.Destroy(_panel);
+            _icon = null;
+            _panel = null;
+            _view = null;
+        }
 
         /// <summary>Whether this app's page owns the keyboard, or would take it back next frame. The question
         /// <see cref="TypingExit"/> asks before rescuing a press, so it never takes one meant for the console.</summary>

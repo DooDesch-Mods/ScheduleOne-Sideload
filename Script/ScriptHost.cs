@@ -36,6 +36,18 @@ namespace Sideload.Script
         /// </summary>
         internal static Action<string, string, object[], string> Diagnostics = null;
 
+        /// <summary>
+        /// The same stream as <see cref="Diagnostics"/>, reduced to text, for listeners other than the devtools server:
+        /// (appId, level, the formatted line). Multicast with += and -=, so a studio connector can listen without
+        /// unplugging an attached inspector. Null unless something listens.
+        /// </summary>
+        internal static Action<string, string, string> ConsoleTap = null;
+
+        private static void NotifyConsoleTap(string appId, string level, string line)
+        {
+            if (ConsoleTap != null) Taps.Each(ConsoleTap, t => t(appId, level, line));
+        }
+
         /// <summary>One registration. The capture flag is part of the identity: the DOM lets the same function be
         /// registered twice for one type, once per phase, and removing one must not remove the other.</summary>
         private readonly struct Listener
@@ -337,6 +349,7 @@ namespace Sideload.Script
                 LastError = Describe(e);
                 Model.Platform.Error($"{fileName} failed: {LastError}");
                 Diagnostics?.Invoke(_appId, "exception", null, $"{fileName}: {LastError}");
+                NotifyConsoleTap(_appId, "exception", $"{fileName}: {LastError}");
             }
         }
 
@@ -707,6 +720,7 @@ namespace Sideload.Script
                 LastError = Describe(e);
                 Model.Platform.Error($"{what} failed: {LastError}");
                 Diagnostics?.Invoke(_appId, "exception", null, $"{what} failed: {LastError}");
+                NotifyConsoleTap(_appId, "exception", $"{what} failed: {LastError}");
             }
         }
 
@@ -722,6 +736,7 @@ namespace Sideload.Script
         {
             Model.Platform.Error($"[{_appId}] {line}");
             Diagnostics?.Invoke(_appId, "error", null, $"[{_appId}] {line}");
+            NotifyConsoleTap(_appId, "error", $"[{_appId}] {line}");
         }
 
         private void Bind()
@@ -732,6 +747,9 @@ namespace Sideload.Script
             Engine.SetValue("document", _documentObject);
             _bridge = new Bridge(this, _appId);
             Engine.SetValue("s1", _bridge);
+
+            // Game data by name when S1API is installed, and an honest "not available" when it is not.
+            S1Api.Install(Engine);
 
             // The same store under the name a library knows. `sessionStorage` is the same object rather than a
             // second one that empties on reload: an app is reloaded by a developer saving a file, and losing the
@@ -868,6 +886,8 @@ namespace Sideload.Script
                 }
 
                 Diagnostics?.Invoke(_appId, level, args, line);
+
+                NotifyConsoleTap(_appId, level, line);
             }
 
             private string Format(object[] args)

@@ -480,6 +480,26 @@ namespace Sideload.Host
         /// mutation does, so a burst of edits costs one rebuild.</summary>
         internal void MarkDirty() => QueueRebuild();
 
+        // ------------------------------------------------------------------ studio --
+        //
+        // What Bridge/StudioAccess reads for an editor beside the game (Sideload Studio, an agent through it): the
+        // laid-out tree, and where the page sits on screen. Read-only, main thread only, like the rest of this block.
+
+        /// <summary>The tree that was actually laid out, with each node's element in <see cref="LayoutNode.Tag"/>.
+        /// Null until the view has been built.</summary>
+        internal LayoutNode LayoutTree => _tree;
+
+        /// <summary>The page's root rect, in CSS pixels times <see cref="RectTransform.localScale"/>.</summary>
+        internal RectTransform RootRect => _root;
+
+        /// <summary>The mounted view of one app, or null. Several pages stand at once, so this is by id.</summary>
+        internal static WebView Mounted(string appId)
+        {
+            for (int i = _live.Count - 1; i >= 0; i--)
+                if (string.Equals(_live[i]._appId, appId, StringComparison.OrdinalIgnoreCase)) return _live[i];
+            return null;
+        }
+
         /// <summary>
         /// The host rect is about to change shape. Deferred to the next tick rather than applied on the spot, because
         /// the caller may be a script running inside the very build that is about to render: re-laying out underneath

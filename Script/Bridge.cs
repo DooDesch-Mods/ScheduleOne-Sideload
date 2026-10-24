@@ -65,6 +65,7 @@ namespace Sideload.Script
             // once it has been built, so an app that is open on a companion device but was never opened in-game has
             // no in-game listener at all - taking the early return first would drop exactly the normal case.
             Tap?.Invoke(appId, name, payload ?? "");
+            if (EmitTaps != null) Taps.Each(EmitTaps, t => t(appId, name, payload ?? ""));
 
             if (!_subscribers.TryGetValue(name, out List<Bridge> bridges)) return;
 
@@ -81,15 +82,45 @@ namespace Sideload.Script
         internal static Action<string, string, string> Tap = null;
 
         /// <summary>
+        /// More listeners on the same pushes as <see cref="Tap"/>, for consumers that must not displace the one
+        /// companion that owns it - a studio connector next to a phone companion is the case. Multicast, added and
+        /// removed with += and -=, and each is called on its own so a throwing one cannot silence the rest.
+        /// </summary>
+        internal static Action<string, string, string> EmitTaps = null;
+
+        /// <summary>
+        /// Every <c>s1.call</c> as it is answered: (appId, name, argument, answer, milliseconds, origin). The origin
+        /// is "page" for a call a page made and "companion" for one that arrived through <see cref="Invoke"/> from
+        /// outside the game. Null unless something listens, and nothing is timed or built while it is null.
+        /// </summary>
+        internal static Action<string, string, string, string, double, string> CallTap = null;
+
+        /// <summary>
         /// Run a registered `s1.call` handler without a page. Same lookup and the same failure behaviour as
         /// <see cref="Call"/>, which delegates here - one path, so the two cannot drift.
         ///
         /// MUST be called on the Unity main thread: handlers touch game state.
         /// </summary>
-        internal static string Invoke(string appId, string name, string argument)
+        internal static string Invoke(string appId, string name, string argument) =>
+            Answer(appId, name, argument, "companion");
+
+        /// <summary>The same, saying where the call came from - which only the call tap ever reads.</summary>
+        internal static string Answer(string appId, string name, string argument, string origin)
         {
             if (string.IsNullOrWhiteSpace(name)) return "";
 
+            if (CallTap == null) return Run(appId, name, argument);
+
+            long started = System.Diagnostics.Stopwatch.GetTimestamp();
+            string answer = Run(appId, name, argument);
+            double ms = (System.Diagnostics.Stopwatch.GetTimestamp() - started) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+
+            Taps.Each(CallTap, t => t(appId, name, argument ?? "", answer, ms, origin));
+            return answer;
+        }
+
+        private static string Run(string appId, string name, string argument)
+        {
             // This app's own handler wins; a handler registered for every app is the fallback.
             if (!_handlers.TryGetValue(Key(appId, name), out Func<string, string, string> handler)
                 && !_handlers.TryGetValue(Key(null, name), out handler))
@@ -104,6 +135,31 @@ namespace Sideload.Script
                 Model.Platform.Error($"{appId}: s1.call('{name}') threw: {e.Message}");
                 return "";
             }
+        }
+
+        /// <summary>Whether a call name has an answer for this app - its own handler or one for every app. Lets a
+        /// caller ask without the "has no handler" warning that a real call to a missing name logs.</summary>
+        internal static bool HasHandler(string appId, string name) =>
+            !string.IsNullOrWhiteSpace(name)
+            && (_handlers.ContainsKey(Key(appId, name)) || _handlers.ContainsKey(Key(null, name)));
+
+        /// <summary>
+        /// The call names a page of this app can reach: its own handlers and every handler registered for all apps,
+        /// once each, sorted. What an editor needs to complete <c>s1.call('</c> and to point at a name the page uses
+        /// that nothing answers.
+        /// </summary>
+        internal static List<string> HandlerNames(string appId)
+        {
+            string own = (appId ?? "") + "\u0000";
+            var names = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (string key in _handlers.Keys)
+            {
+                if (key.StartsWith("\u0000", StringComparison.Ordinal)) names.Add(key.Substring(1));
+                else if (key.StartsWith(own, StringComparison.OrdinalIgnoreCase)) names.Add(key.Substring(own.Length));
+            }
+
+            return new List<string>(names);
         }
 
         private static string Key(string appId, string name) => (appId ?? "") + "\u0000" + name.Trim();
@@ -126,7 +182,7 @@ namespace Sideload.Script
         {
             try
             {
-                return Invoke(_appId, name, argument);
+                return Answer(_appId, name, argument, "page");
             }
             finally
             {
