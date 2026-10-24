@@ -149,8 +149,8 @@ namespace Sideload.Integrations.S1Api
                 .Bool("dead", local.IsDead)
                 .Bool("arrested", local.IsArrested)
                 .Bool("inVehicle", local.IsInVehicle)
-                .Str("region", Safe(() => local.CurrentRegion.ToString()))
-                .Str("property", Safe(() => local.CurrentProperty?.ToString()))
+                .Str("region", Safe("player.region", () => local.CurrentRegion.ToString()))
+                .Str("property", Safe("player.property", () => local.CurrentProperty?.ToString()))
                 .ToString();
         }
 
@@ -219,7 +219,7 @@ namespace Sideload.Integrations.S1Api
                 sb.Append(new Obj()
                     .Str("id", p.ID)
                     .Str("name", p.Name)
-                    .Str("type", Safe(() => p.DrugType.ToString()))
+                    .Str("type", Safe("products.type", () => p.DrugType.ToString()))
                     .Num("price", p.Price)
                     .Num("marketValue", p.MarketValue)
                     .Bool("listed", listed.Contains(p.ID))
@@ -276,7 +276,9 @@ namespace Sideload.Integrations.S1Api
                     DeliveryRegistry.StatusChanged += (d, _, __) => Push("delivery", () => DeliveryEvent("status", d));
                     DeliveryRegistry.Completed += d => Push("delivery", () => DeliveryEvent("completed", d));
                     break;
-                default: return "unknown";
+                default:
+                    Report("watch " + topic, new ArgumentException($"'{topic}' is not a topic."));
+                    return "unknown";
             }
 
             _watching.Add(topic);
@@ -335,7 +337,10 @@ namespace Sideload.Integrations.S1Api
 
             if (!float.TryParse(arg, NumberStyles.Float, CultureInfo.InvariantCulture, out float amount)
                 || float.IsNaN(amount) || float.IsInfinity(amount))
+            {
+                Report("write " + scope + " " + appId, new ArgumentException($"'{arg}' is not a finite number."));
                 return "error";
+            }
 
             apply(amount);
             return "ok";
@@ -362,10 +367,15 @@ namespace Sideload.Integrations.S1Api
             _warn?.Invoke($"s1api.{what}: {e.GetType().Name}: {e.Message}");
         }
 
-        private static string Safe(Func<string> read)
+        /// <summary>One member that may be unset or missing on its own: null for it, the rest of the object intact.</summary>
+        private static string Safe(string what, Func<string> read)
         {
             try { return read(); }
-            catch { return null; }
+            catch (Exception e)
+            {
+                Report(what, e);
+                return null;
+            }
         }
 
         /// <summary>A flat JSON object, written as it goes. Numbers in the invariant culture - a German Windows

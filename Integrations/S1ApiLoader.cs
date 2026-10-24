@@ -119,7 +119,13 @@ namespace Sideload.Integrations
                 read += n;
             }
 
-            return read == image.Length ? Assembly.Load(image) : null;
+            if (read != image.Length)
+            {
+                Core.Log?.Warning($"the s1api integration resource ended after {read} of {image.Length} bytes - s1api stays unavailable.");
+                return null;
+            }
+
+            return Assembly.Load(image);
         }
     }
 }
