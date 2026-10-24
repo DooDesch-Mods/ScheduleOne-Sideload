@@ -219,7 +219,7 @@ namespace Sideload.Integrations.S1Api
                 sb.Append(new Obj()
                     .Str("id", p.ID)
                     .Str("name", p.Name)
-                    .Str("type", Safe("products.type", () => p.DrugType.ToString()))
+                    .Str("type", Safe("products.type", () => p.PrimaryDrugType.ToString()))
                     .Num("price", p.Price)
                     .Num("marketValue", p.MarketValue)
                     .Bool("listed", listed.Contains(p.ID))
