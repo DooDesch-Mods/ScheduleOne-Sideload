@@ -5,24 +5,25 @@ All notable changes to Sideload are documented here. This project adheres to
 
 ## [Unreleased]
 
+## [1.35.0] - 2026-10-24
+
 ### Added
 
-- `s1api`: with S1API installed, every page reads the game by name - `s1api.money.cash`, `s1api.time.formatted`,
-  `s1api.leveling.rank`, deliveries, products, the wanted level - and hears changes with `s1api.on('money', fn)`.
-  Without S1API it reads `available: false`. Writing (`s1api.money.change`) needs `app.AllowGameWrites("money")`.
-- Apps without a mod: a folder with a `sideload.json` and a bundle in `Mods/` or `UserData/Sideload/apps/` is
-  registered as an app on its own.
-- An app registered while the game runs appears on the phone at once instead of after the next scene load.
-- `app.Reload()` rebuilds a page from disk without DevTools, and `app.Unregister()` takes an app off the phone.
+- `s1api` reads the game by name when S1API is installed: `s1api.money.cash`, `s1api.time.formatted`,
+  `s1api.leveling.rank`, deliveries, products, wanted level. Without it, `available` is false.
+- `s1api.on('money', fn)` hears every change, including cash the game moves on its own. Writes such as
+  `s1api.money.change` need `app.AllowGameWrites("money")`.
+- An app without a DLL: a folder with `sideload.json` and its bundle in `Mods/` or `UserData/Sideload/apps/`
+  shows up on the phone. A mod that registers the same id wins.
+- An app registered while the game runs appears at once, in its declared orientation. `app.Reload()` rebuilds it
+  from disk, `app.Unregister()` takes it off the phone.
 
 ### For mod authors
 
-- New bridge seams for tools beside the phone companion: taps on every `s1.call` with its answer and timing, on every
-  page's console, and on pushes without displacing the existing companion tap; `ListHandlers` names the calls a page
-  can reach.
-- Seeing the rendered page from outside: `InspectApp` returns the laid-out tree with each box's place in CSS pixels,
-  `EvalInApp` evaluates in the page's own engine, and `CaptureApp` hands back a PNG of the app as it is on screen.
-  For editors beside the game, and for an AI agent checking what it built.
+- Taps for tools beside the companion: each `s1.call` with answer and timing, console lines and pushes
+  of every page. The companion tap keeps working. `ListHandlers` names the calls a page can reach.
+- `InspectApp` returns the laid-out tree in CSS pixels, `EvalInApp` runs code in the page, `CaptureApp` returns a
+  PNG of the app as on screen. All three work in Release builds.
 
 ## [1.34.0] - 2026-10-24
 
