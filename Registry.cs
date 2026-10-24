@@ -63,8 +63,9 @@ namespace Sideload
         /// </summary>
         internal bool Iconless;
 
-        /// <summary>Raised when <see cref="Registry.SetOrientation"/> turns a live app.</summary>
-        internal Action OrientationChanged;
+        /// <summary>Raised when a live app turns. True when it was turned on request (<see cref="Registry.SetOrientation"/>),
+        /// false when its mod declared a different default after the app was already spawned.</summary>
+        internal Action<bool> OrientationChanged;
     }
 
     /// <summary>
@@ -166,9 +167,15 @@ namespace Sideload
 
             if (!set.Declared) return;
 
+            bool wasPortrait = reg.Portrait;
             reg.DeclaredPortrait = set.Portrait;
             reg.CanTurn = set.CanTurn;
             reg.Portrait = set.Portrait;
+
+            // An app registered while the game runs is spawned inside RegisterApp, before its mod can declare
+            // anything, so its panel was built landscape. Without this the phone turns for a portrait app and the
+            // page stays on its side.
+            if (wasPortrait != reg.Portrait) reg.OrientationChanged?.Invoke(false);
         }
 
         /// <summary>
@@ -193,7 +200,7 @@ namespace Sideload
             }
 
             reg.Portrait = portrait;
-            reg.OrientationChanged?.Invoke();
+            reg.OrientationChanged?.Invoke(true);
         }
 
         /// <summary>

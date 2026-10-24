@@ -186,13 +186,21 @@ namespace Sideload.Phone
         /// page lay itself out again against the new viewport - document and script intact, so nothing on screen is
         /// lost and `@media (orientation: ...)` decides what changes.
         /// </summary>
-        private void OnOrientationChanged()
+        private void OnOrientationChanged(bool requested)
         {
             try
             {
-                if (!ApplyOrientation()) return;
+                // A late declaration is the app's default, not a turn. The player's remembered choice still outranks
+                // it, as it does at spawn, and the default is not written back as if the player had picked it.
+                if (!requested)
+                {
+                    bool? remembered = OrientationStore.Remembered(_reg);
+                    if (remembered.HasValue) _reg.Portrait = remembered.Value;
+                }
 
-                OrientationStore.Remember(_reg.Id, _reg.Portrait);
+                if (!ApplyOrientation()) { Core.Log?.Warning($"'{_reg.Id}' could not be turned - no vanilla app panel to measure."); return; }
+
+                if (requested) OrientationStore.Remember(_reg.Id, _reg.Portrait);
 
                 if (IsOpen && Il2CppScheduleOne.UI.Phone.Phone.InstanceExists)
                 {
