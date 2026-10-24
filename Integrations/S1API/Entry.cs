@@ -24,6 +24,9 @@ namespace Sideload.Integrations.S1Api
     ///
     /// Everything here runs on the Unity main thread: handlers are called from <c>s1.call</c>, and S1API raises its
     /// events there.
+    ///
+    /// The areas below are the curated ones. Every other static member of S1API comes from Generated.cs, which
+    /// tools/S1ApiGen writes from the S1API DLL at build time, and goes through the same Guard, Report and Push.
     /// </summary>
     public static class Entry
     {
@@ -32,6 +35,10 @@ namespace Sideload.Integrations.S1Api
         private static Action<string> _warn;
 
         private static readonly HashSet<string> _watching = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private static readonly HashSet<string> _registered = new HashSet<string>(StringComparer.Ordinal);
+
+        /// <summary>The generated topics (Generated.cs): name -> the subscription, run the first time a page asks.</summary>
+        private static readonly Dictionary<string, Action> _topics = new Dictionary<string, Action>(StringComparer.Ordinal);
         private static readonly HashSet<string> _reported = new HashSet<string>(StringComparer.Ordinal);
 
         /// <summary>
@@ -53,6 +60,11 @@ namespace Sideload.Integrations.S1Api
             int n = 0;
             void On(string name, Func<string, string, string> body)
             {
+                if (!_registered.Add(name))
+                {
+                    Report("register " + name, new InvalidOperationException($"s1api.{name} is registered twice - the second one is left out."));
+                    return;
+                }
                 handle("s1api." + name, (app, arg) => Guard(name, () => body(app, arg)));
                 n++;
             }
@@ -69,6 +81,13 @@ namespace Sideload.Integrations.S1Api
 
             On("money.change", (app, arg) => Write(app, "money", arg, amount => S1API.Money.Money.ChangeCashBalance(amount, true, true)));
             On("leveling.addXp", (app, arg) => Write(app, "leveling", arg, amount => LevelManager.AddXP((int)Math.Round(amount))));
+
+            // Everything else S1API offers, generated from its DLL at build time (tools/S1ApiGen). Registered after the
+            // curated handlers so a curated name always wins; the generator already leaves those names out.
+            Generated.Register(
+                read: (name, body) => On(name, (_, __) => body()),
+                write: (name, scope, body) => On(name, (app, arg) => WriteArgs(app, scope, name, arg, body)),
+                topic: (name, subscribe) => _topics[name] = subscribe);
 
             return n;
         }
@@ -230,31 +249,32 @@ namespace Sideload.Integrations.S1Api
             return sb.Append(']').ToString();
         }
 
-        /// <summary>What a page can read, for an editor to complete and to fill a data panel with. Hand-kept next to
-        /// the areas above; the version in Sideload's prelude moves with it.</summary>
-        private static string Schema() =>
-            "{\"version\":1,\"areas\":{" +
-            "\"money\":{\"cash\":\"number\",\"online\":\"number\",\"netWorth\":\"number\"}," +
-            "\"time\":{\"day\":\"string\",\"dayIndex\":\"number\",\"time\":\"number\",\"hour\":\"number\",\"minute\":\"number\",\"formatted\":\"string\",\"night\":\"boolean\",\"endOfDay\":\"boolean\",\"elapsedDays\":\"number\",\"sleeping\":\"boolean\"}," +
-            "\"leveling\":{\"rank\":\"string\",\"rankIndex\":\"number\",\"tier\":\"number\",\"xp\":\"number\",\"totalXp\":\"number\",\"xpToNextTier\":\"number\"}," +
-            "\"law\":{\"wantedLevel\":\"string\",\"wanted\":\"boolean\",\"investigated\":\"boolean\",\"curfewEnabled\":\"boolean\",\"curfewActive\":\"boolean\",\"intensity\":\"number\"}," +
-            "\"player\":{\"name\":\"string\",\"health\":\"number\",\"maxHealth\":\"number\",\"dead\":\"boolean\",\"arrested\":\"boolean\",\"inVehicle\":\"boolean\",\"region\":\"string\",\"property\":\"string\"}," +
-            "\"deliveries\":{\"list\":\"[{id,store,destination,dock,status,minutes,items:[{id,quantity}]}]\"}," +
-            "\"products\":{\"list\":\"[{id,name,type,price,marketValue,listed,favourite}]\"}" +
-            "},\"topics\":[\"money\",\"time\",\"hour\",\"day\",\"sleep\",\"xp\",\"rank\",\"delivery\"]," +
-            "\"writes\":{\"money.change\":\"money\",\"leveling.addXp\":\"leveling\"}}";
+        /// <summary>What a page can read, for an editor to complete and to fill a data panel with: the curated areas
+        /// (their shapes live in tools/S1ApiGen/s1api-gen.json) with the generated members, types, topics and writes.
+        /// Written at build time by the generator.</summary>
+        private static string Schema() => Generated.Schema;
 
         // ---------------------------------------------------------------- events --
 
         /// <summary>
         /// Start pushing one topic. Subscribed the first time any page asks and never unsubscribed: an event with no
-        /// listening page is a dictionary lookup in Sideload, and these fire at most once a game minute. Keeping the
-        /// subscription is cheaper than counting pages across reloads.
+        /// listening page is a dictionary lookup in Sideload, and the payload is built only when S1API raises the event.
+        /// Keeping the subscription is cheaper than counting pages across reloads.
         /// </summary>
         private static string Watch(string topic)
         {
-            topic = (topic ?? "").Trim().ToLowerInvariant();
-            if (_watching.Contains(topic)) return "ok";
+            string named = (topic ?? "").Trim();
+            topic = named.ToLowerInvariant();
+            if (_watching.Contains(named)) return "ok";
+
+            // A generated topic is matched by its exact name, because its events go out under that name and the page
+            // listens for the name it asked with.
+            if (_topics.TryGetValue(named, out Action subscribe))
+            {
+                subscribe();
+                _watching.Add(named);
+                return "ok";
+            }
 
             switch (topic)
             {
@@ -288,7 +308,7 @@ namespace Sideload.Integrations.S1Api
         private static string DeliveryEvent(string kind, Delivery d) =>
             "{\"kind\":" + Obj.Quote(kind) + ",\"delivery\":" + (d == null ? "null" : DeliveryJson(d)) + "}";
 
-        private static void Push(string topic, Func<string> payload)
+        internal static void Push(string topic, Func<string> payload)
         {
             string json = Guard("event " + topic, payload);
             Emit(topic, json);
@@ -346,9 +366,23 @@ namespace Sideload.Integrations.S1Api
             return "ok";
         }
 
+        /// <summary>A generated write: the app's permission for the scope first, then the arguments, then the call.
+        /// A bad argument throws inside <paramref name="apply"/> and comes back from the guard as a refused write.</summary>
+        private static string WriteArgs(string appId, string scope, string name, string arg, Func<IReadOnlyList<object>, string> apply)
+        {
+            if (_mayWrite == null || !_mayWrite(appId, scope))
+            {
+                Report("write " + name + " " + appId,
+                       new UnauthorizedAccessException($"'{appId}' may not call s1api.{name} - its mod has to call AllowGameWrites(\"{scope}\")."));
+                return "denied";
+            }
+
+            return apply(Args.Parse(arg));
+        }
+
         // ---------------------------------------------------------------- plumbing --
 
-        private static string Guard(string what, Func<string> body)
+        internal static string Guard(string what, Func<string> body)
         {
             try { return body() ?? "null"; }
             catch (Exception e)
@@ -360,7 +394,7 @@ namespace Sideload.Integrations.S1Api
 
         /// <summary>Once per area and kind of failure. A page reading cash on a timer before the save has loaded
         /// would otherwise write the same line sixty times a minute.</summary>
-        private static void Report(string what, Exception e)
+        internal static void Report(string what, Exception e)
         {
             string key = what + "|" + e.GetType().Name;
             if (!_reported.Add(key)) return;

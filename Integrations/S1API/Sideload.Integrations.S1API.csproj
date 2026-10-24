@@ -55,4 +55,49 @@
     </Reference>
   </ItemGroup>
 
+  <!--
+    The generated half: tools/S1ApiGen reads the S1API DLL referenced above and writes the handlers (compiled here),
+    the surface list the page prelude builds its areas from (copied next to this DLL, embedded into Sideload.dll by
+    Sideload.csproj) and the TypeScript declarations (written into tools/sideload-vite/types, committed). It runs only
+    when the S1API DLL, the rules or the generator changed. A rule it cannot apply fails the build with S1APIGEN.
+  -->
+  <PropertyGroup>
+    <S1ApiDll>$(WorkspaceLibPath)/il2cpp/s1api/S1API.Il2Cpp.MelonLoader.dll</S1ApiDll>
+    <S1ApiGenDir>$(MSBuildThisFileDirectory)../../tools/S1ApiGen/</S1ApiGenDir>
+    <S1ApiGenProject>$(S1ApiGenDir)S1ApiGen.csproj</S1ApiGenProject>
+    <S1ApiGenConfig>$(S1ApiGenDir)s1api-gen.json</S1ApiGenConfig>
+    <S1ApiGenCs>$(MSBuildProjectDirectory)/$(BaseIntermediateOutputPath)s1api/S1ApiSurface.g.cs</S1ApiGenCs>
+    <S1ApiGenSurface>$(MSBuildProjectDirectory)/$(BaseIntermediateOutputPath)s1api/s1api-surface.json</S1ApiGenSurface>
+    <S1ApiGenReport>$(MSBuildProjectDirectory)/$(BaseIntermediateOutputPath)s1api/s1api-gen-report.txt</S1ApiGenReport>
+    <S1ApiGenDts>$(MSBuildThisFileDirectory)../../tools/sideload-vite/types/s1api.generated.d.ts</S1ApiGenDts>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <S1ApiGenSources Include="$(S1ApiGenDir)*.cs;$(S1ApiGenProject)" />
+  </ItemGroup>
+
+  <Target Name="BuildS1ApiGen" Condition="'$(_SideloadS1ApiRestore)' != 'true'">
+    <!-- Restore as its own call with a property of its own, for the reason Sideload.csproj gives at EmbedS1ApiIntegration. -->
+    <MSBuild Projects="$(S1ApiGenProject)" Targets="Restore" Properties="Configuration=Release;_S1ApiGenRestore=true" />
+    <MSBuild Projects="$(S1ApiGenProject)" Targets="Build" Properties="Configuration=Release">
+      <Output TaskParameter="TargetOutputs" ItemName="S1ApiGenTool" />
+    </MSBuild>
+  </Target>
+
+  <Target Name="GenerateS1ApiSurface" DependsOnTargets="BuildS1ApiGen" Condition="'$(_SideloadS1ApiRestore)' != 'true'"
+          Inputs="$(S1ApiDll);$(S1ApiGenConfig);@(S1ApiGenSources)"
+          Outputs="$(S1ApiGenCs);$(S1ApiGenSurface);$(S1ApiGenDts)">
+    <Exec Command="dotnet &quot;@(S1ApiGenTool)&quot; --s1api &quot;$(S1ApiDll)&quot; --lib &quot;$(WorkspaceLibPath)/il2cpp&quot; --config &quot;$(S1ApiGenConfig)&quot; --cs &quot;$(S1ApiGenCs)&quot; --surface &quot;$(S1ApiGenSurface)&quot; --dts &quot;$(S1ApiGenDts)&quot; --report &quot;$(S1ApiGenReport)&quot;"
+          StandardOutputImportance="high" />
+  </Target>
+
+  <Target Name="IncludeS1ApiSurface" DependsOnTargets="GenerateS1ApiSurface" BeforeTargets="CoreCompile;AssignTargetPaths"
+          Condition="'$(_SideloadS1ApiRestore)' != 'true'">
+    <ItemGroup>
+      <Compile Include="$(S1ApiGenCs)" />
+      <None Include="$(S1ApiGenSurface)" CopyToOutputDirectory="PreserveNewest" Link="s1api-surface.json" />
+      <FileWrites Include="$(S1ApiGenCs);$(S1ApiGenSurface);$(S1ApiGenReport)" />
+    </ItemGroup>
+  </Target>
+
 </Project>

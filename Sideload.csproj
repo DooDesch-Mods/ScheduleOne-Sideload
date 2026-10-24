@@ -67,6 +67,8 @@
     <!-- examples/ holds host mods of their own: separate csproj files, a separate assembly, and a MelonInfo of
          their own. Compiled in here they would be a second MelonMod inside Sideload.dll. -->
     <Compile Remove="examples/**/*.cs" />
+    <!-- tools/ holds build-time programs (tools/S1ApiGen) with their own csproj and their own bin/obj. -->
+    <Compile Remove="tools/**" />
   </ItemGroup>
 
   <!-- Generates DooDesch.ModVersion.Current from this project's own version property, so MelonInfo carries the
@@ -242,6 +244,12 @@
     <ItemGroup>
       <EmbeddedResource Include="@(S1ApiIntegrationOutput)">
         <LogicalName>Sideload.Integrations.S1API.dll</LogicalName>
+        <Visible>false</Visible>
+      </EmbeddedResource>
+      <!-- The generated surface (tools/S1ApiGen): which areas and members s1api has. Read by S1ApiLoader whether or
+           not S1API is installed, so a page without it gets the same objects, reading null. -->
+      <EmbeddedResource Include="@(S1ApiIntegrationOutput->'%(RootDir)%(Directory)s1api-surface.json')">
+        <LogicalName>Sideload.Integrations.S1API.surface.json</LogicalName>
         <Visible>false</Visible>
       </EmbeddedResource>
     </ItemGroup>

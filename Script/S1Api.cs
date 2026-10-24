@@ -16,17 +16,26 @@ namespace Sideload.Script
     /// a page. Without S1API the object still exists, says <c>available: false</c> and answers null everywhere, so a
     /// page can show a hint instead of dying on its first line.
     ///
+    /// Two kinds of area. The curated ones (money, time, leveling, law, player, deliveries, products) are written by
+    /// hand below. Every other static property, reading method and event of S1API is generated at build time from the
+    /// S1API DLL (tools/S1ApiGen) and arrives here as <see cref="Surface"/>: area -> property, method and write names.
+    /// A generated area joins a curated one of the same name, and a curated key wins.
+    ///
     /// Cost when unused: one small prepared script per page, parsed once per process, and no call into C# until a
-    /// property is read.
+    /// property is read. The surface is one JSON string parsed once per page.
     /// </summary>
     internal static class S1Api
     {
         /// <summary>The version of the PAGE-FACING surface, not of S1API. Bumped when a property or topic is added, so
         /// a page can ask for what it needs.</summary>
-        internal const int Version = 1;
+        internal const int Version = 2;
 
         /// <summary>Set by the loader once the integration has registered its handlers.</summary>
         internal static bool Available;
+
+        /// <summary>The generated areas, from the resource the build embeds next to the integration. Set by the loader
+        /// whether or not S1API is installed; null in a build without it, and then pages get the curated areas only.</summary>
+        internal static string Surface;
 
         private static Prepared<Esprima.Ast.Script>? _prepared;
 
@@ -40,7 +49,7 @@ namespace Sideload.Script
                 _prepared ??= Engine.PrepareScript(Prelude, "s1api.js");
 
                 JsValue factory = engine.Evaluate(_prepared.Value);
-                JsValue api = engine.Invoke(factory, Available, Version, engine.GetValue("s1"));
+                JsValue api = engine.Invoke(factory, Available, Version, engine.GetValue("s1"), Surface ?? "");
                 engine.SetValue("s1api", api);
             }
             catch (Exception e)
@@ -54,7 +63,7 @@ namespace Sideload.Script
         /// global scope. Written in ES5 on purpose: it runs in every page, and the cheapest parse is the plainest one.
         /// </summary>
         internal const string Prelude = @"(function () {
-  return function (available, version, s1) {
+  return function (available, version, s1, surface) {
     function read(name, arg) {
       if (!available) return null;
       var raw = s1.call('s1api.' + name, arg === undefined || arg === null ? '' : String(arg));
@@ -140,6 +149,35 @@ namespace Sideload.Script
 
     Object.defineProperty(api.time, 'now', { enumerable: false, get: function () { return read('time'); } });
     Object.defineProperty(api.leveling, 'current', { enumerable: false, get: function () { return read('leveling'); } });
+
+    // The generated areas. p: properties, read fresh on every access; m: reading methods; w: writes, which take
+    // their arguments as a JSON array and answer true only when the app's mod allowed the scope.
+    var generated = {};
+    if (surface) { try { generated = JSON.parse(surface); } catch (e) { generated = {}; } }
+
+    function prop(o, path, key) {
+      Object.defineProperty(o, key, { enumerable: true, get: function () { return read(path + '.' + key); } });
+    }
+    function reader(o, path, key) {
+      o[key] = function () { return read(path + '.' + key); };
+    }
+    function writer(o, path, key) {
+      o[key] = function () { return write(path + '.' + key, JSON.stringify(Array.prototype.slice.call(arguments))); };
+    }
+
+    Object.keys(generated).forEach(function (name) {
+      var d = generated[name] || {};
+      var o = api[name];
+      if (o === undefined) {
+        o = api[name] = {};
+        o.get = function () { return read(name); };
+      } else if (o === null || typeof o !== 'object') {
+        return;
+      }
+      (d.p || []).forEach(function (key) { if (!(key in o)) prop(o, name, key); });
+      (d.m || []).forEach(function (key) { if (!(key in o)) reader(o, name, key); });
+      (d.w || []).forEach(function (key) { if (!(key in o)) writer(o, name, key); });
+    });
 
     return api;
   };

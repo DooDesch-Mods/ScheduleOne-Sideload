@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Reads S1API's public static surface out of the DLL and writes what `s1api` needs to offer it to a page: the C#
+    handlers, the surface list the page prelude builds its areas from, the schema, and the TypeScript declarations.
+
+    It runs from Integrations/S1API/Sideload.Integrations.S1API.csproj before every compile whose inputs changed, so a
+    Sideload built against a newer S1API offers what that S1API has. Nothing runs at the player: the result is code
+    compiled into the integration. See Program.cs for the rules it applies.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>S1ApiGen</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Reflection.MetadataLoadContext" Version="8.0.0" />
+  </ItemGroup>
+
+</Project>

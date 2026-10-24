@@ -15,6 +15,7 @@ namespace Sideload.Integrations
     internal static class S1ApiLoader
     {
         private const string Resource = "Sideload.Integrations.S1API.dll";
+        private const string SurfaceResource = "Sideload.Integrations.S1API.surface.json";
         private const string EntryType = "Sideload.Integrations.S1Api.Entry";
 
         private static bool _tried;
@@ -26,6 +27,10 @@ namespace Sideload.Integrations
         {
             if (_tried) return;
             _tried = true;
+
+            // The generated areas exist in every page, with or without S1API: without it they read null like the
+            // curated ones, so a page checks s1api.available once instead of guarding every area.
+            Script.S1Api.Surface = ReadSurface();
 
             _s1api = FindS1Api();
             if (_s1api == null)
@@ -99,6 +104,27 @@ namespace Sideload.Integrations
             catch (Exception e) { Core.Log?.Warning($"could not read the assembly name '{args.Name}': {e.Message}"); return null; }
 
             return IsS1ApiName(simple) ? _s1api : null;
+        }
+
+        private static string ReadSurface()
+        {
+            try
+            {
+                using Stream stream = typeof(S1ApiLoader).Assembly.GetManifestResourceStream(SurfaceResource);
+                if (stream == null)
+                {
+                    Core.Log?.Warning("this Sideload build carries no generated s1api surface - pages get the curated s1api areas only.");
+                    return null;
+                }
+
+                using var reader = new StreamReader(stream);
+                return reader.ReadToEnd();
+            }
+            catch (Exception e)
+            {
+                Core.Log?.Warning("the generated s1api surface could not be read - pages get the curated s1api areas only: " + e.Message);
+                return null;
+            }
         }
 
         private static Assembly LoadEmbedded()
