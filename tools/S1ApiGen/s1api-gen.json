@@ -1,0 +1,53 @@
+{
+  "//": "Rules for tools/S1ApiGen. Everything public and static in S1API is offered unless a rule here holds it back.",
+
+  "excludeNamespaces": [
+    "S1API.Entities.NPCs",
+    "S1API.Internal"
+  ],
+
+  "//readerPrefixes": "A parameterless static method is read only when its name starts with one of these. Anything else (Create, Stop, Request, ...) may change the game and is never generated as a read.",
+  "readerPrefixes": ["Get", "Is", "Has", "Can"],
+
+  "//extraReaders": "Parameterless static methods that read, although their names do not say so.",
+  "extraReaders": [
+    "S1API.Law.CurfewManager.MinutesUntilCurfew",
+    "S1API.Law.CurfewManager.MinutesUntilCurfewEnds"
+  ],
+
+  "//exclude": "Single members held back: Class.Member by full name.",
+  "exclude": [
+    "S1API.Entities.NPC.NPCId"
+  ],
+
+  "//writes": "The only methods a page may call to CHANGE the game: full name -> the AllowGameWrites scope that unlocks it. Nothing else is generated as a write.",
+  "writes": {
+    "S1API.Money.Money.ChangeCashBalance": "money",
+    "S1API.Leveling.LevelManager.AddXP": "leveling"
+  },
+
+  "//curated": "The hand-written part of s1api (Integrations/S1API/Entry.cs, Script/S1Api.cs, types/s1api.d.ts). Generated members join a curated area of the same name; a curated key always wins.",
+  "curated": {
+    "areas": {
+      "money": { "cash": "number", "online": "number", "netWorth": "number" },
+      "time": { "day": "string", "dayIndex": "number", "time": "number", "hour": "number", "minute": "number", "formatted": "string", "night": "boolean", "endOfDay": "boolean", "elapsedDays": "number", "sleeping": "boolean" },
+      "leveling": { "rank": "string", "rankIndex": "number", "tier": "number", "xp": "number", "totalXp": "number", "xpToNextTier": "number" },
+      "law": { "wantedLevel": "string", "wanted": "boolean", "investigated": "boolean", "curfewEnabled": "boolean", "curfewActive": "boolean", "intensity": "number" },
+      "player": { "name": "string", "health": "number", "maxHealth": "number", "dead": "boolean", "arrested": "boolean", "inVehicle": "boolean", "region": "string", "property": "string" },
+      "deliveries": { "list": "[{id,store,destination,dock,status,minutes,items:[{id,quantity}]}]" },
+      "products": { "list": "[{id,name,type,price,marketValue,listed,favourite}]" }
+    },
+    "functions": {
+      "money": ["get", "change"],
+      "time": ["get", "now"],
+      "leveling": ["get", "current", "addXp"],
+      "law": ["get"],
+      "player": ["get"],
+      "deliveries": ["list"],
+      "products": ["list", "listed"]
+    },
+    "topics": ["money", "time", "hour", "day", "sleep", "xp", "rank", "delivery"],
+    "writes": { "money.change": "money", "leveling.addXp": "leveling" },
+    "reserved": ["available", "version", "on", "off", "schema", "watch"]
+  }
+}
