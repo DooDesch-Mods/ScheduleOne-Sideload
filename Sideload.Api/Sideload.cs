@@ -70,6 +70,9 @@ namespace Sideload.Api
         private static Func<object, string, string, Assembly, float, bool> _mountSurface;
         private static Action<string> _unmountSurface;
         private static Func<string, bool> _isSurfaceMounted;
+        private static Action<string> _reloadApp;
+        private static Action<string> _unregisterApp;
+        private static Action<string, string> _allowGameWrites;
 
         /// <summary>True only when the Sideload host is installed AND bound. You rarely need this - the API is a safe
         /// no-op when absent; use it to decide whether to build a fallback UI instead.</summary>
@@ -165,6 +168,16 @@ namespace Sideload.Api
 
         internal static bool SurfaceIsMounted(string id) => _isSurfaceMounted != null && _isSurfaceMounted(id);
 
+        internal static void ReloadApp(string appId) => _reloadApp?.Invoke(appId);
+
+        internal static void UnregisterApp(string appId) => _unregisterApp?.Invoke(appId);
+
+        internal static void AllowGameWrites(string appId, string scope) => _allowGameWrites?.Invoke(appId, scope);
+
+        /// <summary>Whether the installed host can reload a page and take an app off the phone while the game runs.
+        /// False before the Sideload that added live editing, where both are silent no-ops.</summary>
+        internal static bool HasLiveEditing { get { EnsureBound(); return _reloadApp != null && _unregisterApp != null; } }
+
         /// <summary>Whether the installed host can render outside the phone. False before Sideload 1.13.0, where
         /// <see cref="Surfaces.Mount"/> answers false and the caller keeps whatever UI it already had.</summary>
         internal static bool HasSurfaces { get { EnsureBound(); return _mountSurface != null; } }
@@ -219,6 +232,9 @@ namespace Sideload.Api
                 _mountSurface = Get<Func<object, string, string, Assembly, float, bool>>(t, "MountSurface");
                 _unmountSurface = Get<Action<string>>(t, "UnmountSurface");
                 _isSurfaceMounted = Get<Func<string, bool>>(t, "IsSurfaceMounted");
+                _reloadApp = Get<Action<string>>(t, "ReloadApp");
+                _unregisterApp = Get<Action<string>>(t, "UnregisterApp");
+                _allowGameWrites = Get<Action<string, string>>(t, "AllowGameWrites");
 
                 _bound = true;
 
@@ -580,6 +596,52 @@ namespace Sideload.Api
         /// host that ignores both leaves the player with an app they can neither see nor reach.
         /// </summary>
         public static bool CanClaimKeys { get { return Apps.Available && Apps.HasKeys; } }
+
+        /// <summary>
+        /// Rebuild this app's page from disk, script engine included - what saving a file in <c>Mods/&lt;id&gt;/</c>
+        /// means to someone editing it. For a tool that writes the bundle itself and wants the change on screen now,
+        /// without DevTools attached. A page that was never opened is left alone: it builds from disk the first time.
+        /// </summary>
+        public AppHandle Reload()
+        {
+            string id = _id;
+            Apps.WhenBound(() => Apps.ReloadApp(id));
+            return this;
+        }
+
+        /// <summary>
+        /// Take this app off the phone and forget it while the game runs. For an app that only exists for a while; a
+        /// mod's own apps live as long as the game and never need this. Registering the same id again brings it back,
+        /// handlers included - they are kept by id.
+        /// </summary>
+        public void Unregister()
+        {
+            string id = _id;
+            Apps.WhenBound(() => Apps.UnregisterApp(id));
+        }
+
+        /// <summary>
+        /// Whether the installed Sideload understands <see cref="Reload"/> and <see cref="Unregister"/>, and puts an
+        /// app registered while the game runs on the phone at once. False against an older host, where an app
+        /// registered after the home screen was built waits for the next scene load.
+        /// </summary>
+        public static bool CanEditLive { get { return Apps.Available && Apps.HasLiveEditing; } }
+
+        /// <summary>
+        /// Let this app's page CHANGE the game through <c>s1api</c>, for one area. Without it every <c>s1api</c> write
+        /// is refused: a page is a file anyone can edit, so the permission has to come from the mod's own code, the
+        /// same rule as <see cref="AllowHost"/>. Reading needs no permission.
+        /// <code>
+        ///   app.AllowGameWrites("money");   // s1api.money.change(amount) now works on this app's page
+        /// </code>
+        /// </summary>
+        /// <param name="scope">The area, e.g. "money". "*" allows every area, which is rarely what you mean.</param>
+        public AppHandle AllowGameWrites(string scope)
+        {
+            string id = _id;
+            Apps.WhenBound(() => Apps.AllowGameWrites(id, scope));
+            return this;
+        }
 
         /// <summary>Close this app and put the phone away. The mirror of <see cref="Show"/>.</summary>
         public AppHandle Hide()

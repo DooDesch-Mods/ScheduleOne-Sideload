@@ -607,6 +607,32 @@ namespace Sideload.Phone
         /// <summary>True while this host's panel still exists - a destroyed one means the phone was rebuilt.</summary>
         internal bool IsAlive => _panel != null;
 
+        /// <summary>
+        /// Throw the page away and build it again from disk, script engine included - what a save in the override
+        /// folder means to the person editing it. A page that was never opened has nothing to throw away and builds
+        /// from disk anyway the first time it is.
+        /// </summary>
+        internal void Reload() => _view?.Reload();
+
+        /// <summary>
+        /// Take this app off the phone while the game runs: closed first if it is open, its game listeners released,
+        /// its icon and panel destroyed. The page goes with the panel - the view notices its root is gone on the
+        /// next tick and lets go of its engine, exactly as it does when the scene ends.
+        /// </summary>
+        internal void Teardown()
+        {
+            try { if (IsOpen) Close(); }
+            catch (Exception e) { Core.Log?.Warning($"'{_reg.Id}' did not close before removal: {e.Message}"); }
+
+            Release();
+
+            if (_icon != null) Object.Destroy(_icon);
+            if (_panel != null) Object.Destroy(_panel);
+            _icon = null;
+            _panel = null;
+            _view = null;
+        }
+
         /// <summary>Whether this app's page owns the keyboard, or would take it back next frame. The question
         /// <see cref="TypingExit"/> asks before rescuing a press, so it never takes one meant for the console.</summary>
         internal bool OwnsTyping => _view != null && _view.OwnsTyping;

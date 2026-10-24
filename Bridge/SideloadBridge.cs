@@ -104,6 +104,46 @@ namespace Sideload.Bridge
         public static readonly Action<Action<string, string, string>, Action<string, int>, Action<string, string, string>>
             SetCompanionTaps = CompanionAccess.SetTaps;
 
+        /// <summary>Further taps on the same three pushes, beside the one <see cref="SetCompanionTaps"/> owns: added and
+        /// removed as a set, nulls skipped. For a second consumer - a studio next to a phone companion - that must not
+        /// unplug the first. Same rule: main thread, queue and return.</summary>
+        public static readonly Action<Action<string, string, string>, Action<string, int>, Action<string, string, string>>
+            AddCompanionTaps = CompanionAccess.AddTaps;
+
+        public static readonly Action<Action<string, string, string>, Action<string, int>, Action<string, string, string>>
+            RemoveCompanionTaps = CompanionAccess.RemoveTaps;
+
+        /// <summary>A listener on every <c>s1.call</c> as it is answered: (appId, name, argument, answer, milliseconds,
+        /// origin), origin "page" or "companion". Costs nothing while nobody listens.</summary>
+        public static readonly Action<Action<string, string, string, string, double, string>> AddCallTap = CompanionAccess.AddCallTap;
+
+        public static readonly Action<Action<string, string, string, string, double, string>> RemoveCallTap = CompanionAccess.RemoveCallTap;
+
+        /// <summary>A listener on every page's console and uncaught errors: (appId, level, line). Level is "log",
+        /// "info", "warn", "error" or "exception".</summary>
+        public static readonly Action<Action<string, string, string>> AddConsoleTap = CompanionAccess.AddConsoleTap;
+
+        public static readonly Action<Action<string, string, string>> RemoveConsoleTap = CompanionAccess.RemoveConsoleTap;
+
+        /// <summary>appId -> the call names its page can reach, own and global, as a JSON array.</summary>
+        public static readonly Func<string, string> ListHandlers = CompanionAccess.ListHandlersJson;
+
+        // ------------------------------------------------------- live editing (added after ABI 1) --
+
+        /// <summary>appId. Rebuilds the app's page from disk, script engine included - what saving a file in
+        /// <c>Mods/&lt;id&gt;/</c> means. Empty reloads every app on the phone. A page never opened is a no-op: it
+        /// builds from disk the first time anyway.</summary>
+        public static readonly Action<string> ReloadApp = Registry.ReloadApp;
+
+        /// <summary>appId. Forgets an app and takes it off the phone while the game runs. Registering an app while the
+        /// phone is up puts it there at once, so the two together let an app come and go.</summary>
+        public static readonly Action<string> UnregisterApp = Registry.UnregisterApp;
+
+        /// <summary>appId, area. Lets one app's page change the game through <c>s1api</c> in that area - "money",
+        /// "leveling", or "*" for all. Nothing is writable without it: like <see cref="AllowHost"/>, the permission comes
+        /// from the mod's code, never from the page.</summary>
+        public static readonly Action<string, string> AllowGameWrites = Script.GameWrites.Allow;
+
         // ------------------------------------------------------------ surfaces (added after ABI 1) --
 
         /// <summary>
