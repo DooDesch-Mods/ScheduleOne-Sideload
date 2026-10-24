@@ -139,6 +139,11 @@
       <HintPath>$(GameManagedPath)/UnityEngine.InputLegacyModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <!-- ScreenCapture, for a picture of an app on screen (Bridge/StudioAccess.cs). -->
+    <Reference Include="UnityEngine.ScreenCaptureModule">
+      <HintPath>$(GameManagedPath)/UnityEngine.ScreenCaptureModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <!-- Texture2D.LoadImage, for an app's icon.png (Phone/AppIconSprite.cs). -->
     <Reference Include="UnityEngine.ImageConversionModule">
       <HintPath>$(GameManagedPath)/UnityEngine.ImageConversionModule.dll</HintPath>
@@ -214,6 +219,34 @@
       <LogicalName>Sideload.Assets.Bundles.sideload-ui</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
+  <!-- The S1API half of `s1api` is its own assembly, built here and carried inside Sideload.dll as a resource
+       (Integrations/S1ApiLoader.cs loads it only when S1API is in the process). Its sources must stay out of this
+       project's compile glob - they reference S1API, and Sideload itself must not. Built only where the S1API
+       reference exists; a build without it simply ships no integration and s1api reads as unavailable. -->
+  <PropertyGroup>
+    <S1ApiIntegrationProject>$(MSBuildThisFileDirectory)Integrations/S1API/Sideload.Integrations.S1API.csproj</S1ApiIntegrationProject>
+    <BuildS1ApiIntegration Condition="'$(BuildS1ApiIntegration)' == '' And '$(Backend)' == 'il2cpp' And Exists('$(WorkspaceLibPath)/il2cpp/s1api/S1API.Il2Cpp.MelonLoader.dll')">true</BuildS1ApiIntegration>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="Integrations/S1API/**" />
+    <None Remove="Integrations/S1API/**" />
+  </ItemGroup>
+  <Target Name="EmbedS1ApiIntegration" BeforeTargets="AssignTargetPaths" Condition="'$(BuildS1ApiIntegration)' == 'true'">
+    <MSBuild Projects="$(S1ApiIntegrationProject)" Targets="Build" Properties="Configuration=$(Configuration);WorkspaceLibPath=$(WorkspaceLibPath)">
+      <Output TaskParameter="TargetOutputs" ItemName="S1ApiIntegrationOutput" />
+    </MSBuild>
+    <ItemGroup>
+      <EmbeddedResource Include="@(S1ApiIntegrationOutput)">
+        <LogicalName>Sideload.Integrations.S1API.dll</LogicalName>
+        <Visible>false</Visible>
+      </EmbeddedResource>
+    </ItemGroup>
+    <Message Importance="high" Text="[Sideload] embedded the s1api integration: @(S1ApiIntegrationOutput->'%(Filename)%(Extension)')" />
+  </Target>
+  <Target Name="WarnNoS1ApiIntegration" BeforeTargets="AssignTargetPaths" Condition="'$(BuildS1ApiIntegration)' != 'true'">
+    <Warning Text="[Sideload] no S1API reference at $(WorkspaceLibPath)/il2cpp/s1api - this build carries no s1api integration and s1api will read as unavailable." />
+  </Target>
+
   <!-- The three runtime dependencies travel INSIDE Sideload.dll as embedded resources (see EmbedRuntimeDependencies
        below and Core.PreloadRuntimeDependency). They used to ship as loose DLLs in UserLibs, and that is what players
        kept reporting: a mod that "randomly brings four files with it" and no way to tell where they came from or
