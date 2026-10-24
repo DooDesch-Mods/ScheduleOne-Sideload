@@ -28,9 +28,6 @@ namespace Sideload.Script
         /// <summary>Set by the loader once the integration has registered its handlers.</summary>
         internal static bool Available;
 
-        /// <summary>The topics <c>s1api.on</c> accepts, each pushed as the event <c>s1api:&lt;topic&gt;</c>.</summary>
-        internal static readonly string[] Topics = { "money", "time", "hour", "day", "sleep", "xp", "rank", "delivery" };
-
         private static Prepared<Esprima.Ast.Script>? _prepared;
 
         /// <summary>Define <c>s1api</c> on a fresh engine. Called right after <c>s1</c> itself.</summary>
