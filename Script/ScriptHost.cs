@@ -43,6 +43,11 @@ namespace Sideload.Script
         /// </summary>
         internal static Action<string, string, string> ConsoleTap = null;
 
+        private static void NotifyConsoleTap(string appId, string level, string line)
+        {
+            if (ConsoleTap != null) Taps.Each(ConsoleTap, t => t(appId, level, line));
+        }
+
         /// <summary>One registration. The capture flag is part of the identity: the DOM lets the same function be
         /// registered twice for one type, once per phase, and removing one must not remove the other.</summary>
         private readonly struct Listener
@@ -344,7 +349,7 @@ namespace Sideload.Script
                 LastError = Describe(e);
                 Model.Platform.Error($"{fileName} failed: {LastError}");
                 Diagnostics?.Invoke(_appId, "exception", null, $"{fileName}: {LastError}");
-                if (ConsoleTap != null) { string tapped = $"{fileName}: {LastError}"; Taps.Each(ConsoleTap, t => t(_appId, "exception", tapped)); }
+                NotifyConsoleTap(_appId, "exception", $"{fileName}: {LastError}");
             }
         }
 
@@ -715,7 +720,7 @@ namespace Sideload.Script
                 LastError = Describe(e);
                 Model.Platform.Error($"{what} failed: {LastError}");
                 Diagnostics?.Invoke(_appId, "exception", null, $"{what} failed: {LastError}");
-                if (ConsoleTap != null) { string tapped = $"{what} failed: {LastError}"; Taps.Each(ConsoleTap, t => t(_appId, "exception", tapped)); }
+                NotifyConsoleTap(_appId, "exception", $"{what} failed: {LastError}");
             }
         }
 
@@ -731,7 +736,7 @@ namespace Sideload.Script
         {
             Model.Platform.Error($"[{_appId}] {line}");
             Diagnostics?.Invoke(_appId, "error", null, $"[{_appId}] {line}");
-            if (ConsoleTap != null) { string tapped = $"[{_appId}] {line}"; Taps.Each(ConsoleTap, t => t(_appId, "error", tapped)); }
+            NotifyConsoleTap(_appId, "error", $"[{_appId}] {line}");
         }
 
         private void Bind()
@@ -882,7 +887,7 @@ namespace Sideload.Script
 
                 Diagnostics?.Invoke(_appId, level, args, line);
 
-                if (ConsoleTap != null) Taps.Each(ConsoleTap, t => t(_appId, level, line));
+                NotifyConsoleTap(_appId, level, line);
             }
 
             private string Format(object[] args)
