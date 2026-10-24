@@ -126,7 +126,12 @@ namespace Sideload.Bridge
         /// </summary>
         internal static void Capture(string appId, Action<byte[]> done)
         {
-            if (done == null) return;
+            if (done == null)
+            {
+                Core.Log?.Warning("[Sideload/studio] capture asked for without a callback - nothing to do.");
+                return;
+            }
+
             MelonCoroutines.Start(CaptureAtEndOfFrame(appId, done));
         }
 
@@ -150,6 +155,10 @@ namespace Sideload.Bridge
                     cut.Apply();
                     png = ImageConversion.EncodeToPNG(cut);
                 }
+                else
+                {
+                    Core.Log?.Msg($"[Sideload/studio] capture of '{appId}' skipped: the app is not on screen.");
+                }
             }
             catch (Exception e)
             {
@@ -161,6 +170,8 @@ namespace Sideload.Bridge
                 if (full != null) UnityEngine.Object.Destroy(full);
                 if (cut != null) UnityEngine.Object.Destroy(cut);
             }
+
+            if (png != null) Core.Log?.Msg($"[Sideload/studio] captured {(string.IsNullOrEmpty(appId) ? "the screen" : "'" + appId + "'")}: {png.Length} bytes.");
 
             try { done(png); }
             catch (Exception e) { Core.Log?.Warning("[Sideload/studio] capture consumer threw: " + e.Message); }
