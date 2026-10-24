@@ -75,22 +75,30 @@ namespace Sideload.Integrations
             {
                 string name;
                 try { name = asm.GetName().Name ?? ""; }
-                catch { continue; }
+                catch (Exception e) { Core.Log?.Warning($"skipped an assembly while looking for S1API: {e.Message}"); continue; }
 
-                // S1API.Il2Cpp.MelonLoader is the assembly; S1APILoader is the plugin that picks the build and is not it.
-                if (name.StartsWith("S1API.", StringComparison.OrdinalIgnoreCase)) return asm;
+                if (IsS1ApiName(name)) return asm;
             }
 
             return null;
         }
 
+        /// <summary>
+        /// The file is S1API.Il2Cpp.MelonLoader.dll, but the assembly inside it is named plain "S1API" (3.2.x), and
+        /// that simple name is also what the integration references. A dotted variant is accepted for builds that name
+        /// the assembly after the file. S1APILoader is the plugin that picks the build and is not it.
+        /// </summary>
+        private static bool IsS1ApiName(string name) =>
+            name.Equals("S1API", StringComparison.OrdinalIgnoreCase)
+            || name.StartsWith("S1API.", StringComparison.OrdinalIgnoreCase);
+
         private static Assembly ResolveS1Api(object sender, ResolveEventArgs args)
         {
             string simple;
             try { simple = new AssemblyName(args.Name).Name ?? ""; }
-            catch { return null; }
+            catch (Exception e) { Core.Log?.Warning($"could not read the assembly name '{args.Name}': {e.Message}"); return null; }
 
-            return simple.StartsWith("S1API.", StringComparison.OrdinalIgnoreCase) ? _s1api : null;
+            return IsS1ApiName(simple) ? _s1api : null;
         }
 
         private static Assembly LoadEmbedded()

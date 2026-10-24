@@ -232,6 +232,10 @@
     <None Remove="Integrations/S1API/**" />
   </ItemGroup>
   <Target Name="EmbedS1ApiIntegration" BeforeTargets="AssignTargetPaths" Condition="'$(BuildS1ApiIntegration)' == 'true'">
+    <!-- `dotnet build Sideload.csproj` restores ProjectReferences only, and this project is built through the MSBuild
+         task, so a clean checkout has no project.assets.json for it (NETSDK1004). Restore runs as its own call with a
+         property of its own: restore writes the props the build then reads, and a shared evaluation would miss them. -->
+    <MSBuild Projects="$(S1ApiIntegrationProject)" Targets="Restore" Properties="Configuration=$(Configuration);WorkspaceLibPath=$(WorkspaceLibPath);_SideloadS1ApiRestore=true" />
     <MSBuild Projects="$(S1ApiIntegrationProject)" Targets="Build" Properties="Configuration=$(Configuration);WorkspaceLibPath=$(WorkspaceLibPath)">
       <Output TaskParameter="TargetOutputs" ItemName="S1ApiIntegrationOutput" />
     </MSBuild>
