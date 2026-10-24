@@ -20,6 +20,9 @@ All notable changes to Sideload are documented here. This project adheres to
 - New bridge seams for tools beside the phone companion: taps on every `s1.call` with its answer and timing, on every
   page's console, and on pushes without displacing the existing companion tap; `ListHandlers` names the calls a page
   can reach.
+- Seeing the rendered page from outside: `InspectApp` returns the laid-out tree with each box's place in CSS pixels,
+  `EvalInApp` evaluates in the page's own engine, and `CaptureApp` hands back a PNG of the app as it is on screen.
+  For editors beside the game, and for an AI agent checking what it built.
 
 ## [1.34.0] - 2026-10-24
 

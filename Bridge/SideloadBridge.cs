@@ -144,6 +144,20 @@ namespace Sideload.Bridge
         /// from the mod's code, never from the page.</summary>
         public static readonly Action<string, string> AllowGameWrites = Script.GameWrites.Allow;
 
+        // ------------------------------------------------- seeing the rendered page (added after ABI 1) --
+
+        /// <summary>appId -> the mounted page as JSON: { ok, appId, open, onScreen, phoneRaised, viewport, script,
+        /// tree }, each node { tag, id, class, text, x, y, w, h, children } in CSS pixels. For an editor or an agent
+        /// that has to see what actually rendered.</summary>
+        public static readonly Func<string, string> InspectApp = StudioAccess.InspectJson;
+
+        /// <summary>appId, JavaScript -> { ok, value, failed } evaluated in the page's own engine.</summary>
+        public static readonly Func<string, string, string> EvalInApp = StudioAccess.EvalJson;
+
+        /// <summary>appId, done. A PNG of the app as it is on screen, handed to done on the main thread after the frame
+        /// rendered; null when it is not on screen. An empty appId takes the whole screen.</summary>
+        public static readonly Action<string, Action<byte[]>> CaptureApp = StudioAccess.Capture;
+
         // ------------------------------------------------------------ surfaces (added after ABI 1) --
 
         /// <summary>
