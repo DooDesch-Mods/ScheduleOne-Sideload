@@ -79,6 +79,12 @@ namespace Sideload
 
             Config.Preferences.Initialize();
 
+            // Apps that are nothing but files: a folder with a sideload.json and a bundle, no mod of their own.
+            Bundle.ManifestApps.LoadAll(typeof(Core).Assembly);
+
+            // Game data by name for every page, when S1API is installed. Nothing is loaded when it is not.
+            Integrations.S1ApiLoader.TryInstall();
+
             // Opt-in and off by default: with the preference unset nothing is constructed and no port is opened, in
             // any build configuration.
             if (Config.Preferences.DevTools) Devtools.Cdp.CdpServer.Start(Config.Preferences.DevToolsPort);

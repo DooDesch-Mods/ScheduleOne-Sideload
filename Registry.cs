@@ -81,9 +81,24 @@ namespace Sideload
         /// Declare an app. Called through the reflection bridge by Sideload.Api, so every parameter is a plain BCL
         /// type. A duplicate id replaces the earlier entry rather than adding a second icon for the same app.
         /// </summary>
-        internal static void RegisterApp(string id, string title, string iconLabel, string bundlePrefix, Assembly host)
+        internal static void RegisterApp(string id, string title, string iconLabel, string bundlePrefix, Assembly host) =>
+            RegisterApp(id, title, iconLabel, bundlePrefix, host, null);
+
+        /// <summary>
+        /// The same, for an app whose files live in a folder rather than in a mod's assembly - see
+        /// <see cref="Bundle.ManifestApps"/>. A registration by a mod wins over a folder app of the same id, whichever
+        /// came first: the mod is code someone chose to install, the folder may be a download that happens to collide.
+        /// </summary>
+        internal static void RegisterApp(string id, string title, string iconLabel, string bundlePrefix, Assembly host, string folderRoot)
         {
             if (string.IsNullOrWhiteSpace(id) || host == null) return;
+
+            AppRegistration existing = Find(id);
+            if (folderRoot != null && existing != null && existing.Bundle?.FolderRoot == null)
+            {
+                Core.Log?.Warning($"the app folder {folderRoot} uses the id '{id.Trim()}', which a mod already registered - the mod's app is kept.");
+                return;
+            }
 
             var reg = new AppRegistration
             {
@@ -93,7 +108,7 @@ namespace Sideload
                 BundlePrefix = bundlePrefix ?? "",
                 HostAssembly = host,
             };
-            reg.Bundle = new Bundle.AppBundle(reg.Id, reg.BundlePrefix, host);
+            reg.Bundle = new Bundle.AppBundle(reg.Id, reg.BundlePrefix, host, folderRoot);
 
             for (int i = 0; i < _apps.Count; i++)
             {
@@ -101,13 +116,34 @@ namespace Sideload
                 {
                     _apps[i] = reg;
                     Core.Log?.Warning($"app '{reg.Id}' registered twice; the later registration wins.");
+                    Phone.HomeScreenPatch.SpawnLate(reg);
                     return;
                 }
             }
 
             _apps.Add(reg);
             Core.Log?.Msg($"app registered: {reg.Id} ('{reg.Title}') from {host.GetName().Name}");
+            Phone.HomeScreenPatch.SpawnLate(reg);
         }
+
+        /// <summary>
+        /// Forget an app and take it off the phone. For an app that only existed for a while - a studio project that
+        /// was closed - rather than for a mod's own apps, which live as long as the game. Its handlers stay
+        /// registered: they are keyed by id, and registering the id again picks them back up.
+        /// </summary>
+        internal static void UnregisterApp(string appId)
+        {
+            AppRegistration reg = Find(appId);
+            if (reg == null) return;
+
+            _apps.Remove(reg);
+            Phone.HomeScreenPatch.Despawn(reg.Id);
+            Core.Log?.Msg($"app unregistered: {reg.Id}");
+        }
+
+        /// <summary>Reload an app's page from disk - the override folder first, as always. Empty reloads every app on
+        /// the phone. A page that was never opened is built from disk the first time anyway.</summary>
+        internal static void ReloadApp(string appId) => Phone.HomeScreenPatch.Reload(appId);
 
         /// <summary>
         /// Declare which orientations an app supports, in preference order: the first is what it opens in, and naming
@@ -171,6 +207,7 @@ namespace Sideload
 
             reg.Badge = Math.Max(0, count);
             BadgeTap?.Invoke(reg.Id, reg.Badge);
+            if (BadgeTaps != null) Script.Taps.Each(BadgeTaps, t => t(reg.Id, reg.Badge));
 
             Phone.PhoneAppHost host = LiveHost(appId);
             if (host != null) host.SetBadge(reg.Badge);
@@ -197,6 +234,7 @@ namespace Sideload
             // Before the early return, for the same reason the emit tap is: a companion device wants the
             // notification even when the app was never spawned on the in-game phone.
             NotifyTap?.Invoke(appId, title ?? "", subtitle ?? "");
+            if (NotifyTaps != null) Script.Taps.Each(NotifyTaps, t => t(appId, title ?? "", subtitle ?? ""));
 
             // "Who spoke to you last" is the tie-break for a key two apps both want, and this is the only place that
             // knows. Recorded even for an app with no phone behind it - the notification still happened, it just had
@@ -227,6 +265,12 @@ namespace Sideload
 
         /// <summary>appId, title, subtitle - every notification, mirrored the same way.</summary>
         internal static Action<string, string, string> NotifyTap;
+
+        /// <summary>Further listeners on the same two pushes, multicast, for consumers beside the companion that owns
+        /// <see cref="BadgeTap"/> and <see cref="NotifyTap"/>.</summary>
+        internal static Action<string, int> BadgeTaps;
+
+        internal static Action<string, string, string> NotifyTaps;
 
         /// <summary>
         /// Whether this app is the one the phone is showing. A mod asks before interrupting: a message arriving in
