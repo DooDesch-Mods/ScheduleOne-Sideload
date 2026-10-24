@@ -16,12 +16,17 @@ namespace Sideload.Script
         /// <summary>Let one app write one area - "money", "leveling" - or every area with "*".</summary>
         internal static void Allow(string appId, string scope)
         {
-            if (string.IsNullOrWhiteSpace(appId) || string.IsNullOrWhiteSpace(scope)) return;
+            if (string.IsNullOrWhiteSpace(appId) || string.IsNullOrWhiteSpace(scope))
+            {
+                Model.Platform.Warning("AllowGameWrites ignored: it needs an app id and an area.");
+                return;
+            }
 
             if (!_byApp.TryGetValue(appId.Trim(), out HashSet<string> scopes))
                 _byApp[appId.Trim()] = scopes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             scopes.Add(scope.Trim());
+            Model.Platform.Msg($"'{appId.Trim()}' may change '{scope.Trim()}' through s1api.");
         }
 
         internal static bool IsAllowed(string appId, string scope)

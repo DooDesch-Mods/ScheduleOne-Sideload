@@ -135,7 +135,11 @@ namespace Sideload
         internal static void UnregisterApp(string appId)
         {
             AppRegistration reg = Find(appId);
-            if (reg == null) return;
+            if (reg == null)
+            {
+                Core.Log?.Warning($"unregister of '{appId}' ignored: no such app is registered.");
+                return;
+            }
 
             _apps.Remove(reg);
             Phone.HomeScreenPatch.Despawn(reg.Id);
