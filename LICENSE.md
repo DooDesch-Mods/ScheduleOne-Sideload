@@ -37,6 +37,9 @@ The API of the Software is:
 2. Copy any other part of the source code or the assets into another work, also not in a changed form.
 3. Sell or rent the Software, a changed copy of it, or access to either.
 4. Remove or change this license, a copyright notice, or the attribution to DooDesch.
+5. Decompile, disassemble or otherwise turn the compiled files back into a readable form, or read, copy,
+   change or reuse code obtained that way. This also applies when an AI agent, an AI coding assistant or
+   another automated tool does it for you.
 
 ## When the Software is abandoned
 
@@ -50,6 +53,25 @@ with these conditions:
 3. It is free of charge and stays under this license.
 
 This permission stays valid when DooDesch publishes a release again later.
+
+## Compiled files
+
+The compiled files are for running the Software and for compiling against its API. To read the code, use
+the source code in the source repository. DooDesch never permits reading the code from the compiled files.
+
+You are responsible for what an AI agent or another automated tool does on your behalf with the Software.
+
+Acts that the law permits without the consent of the rights holder stay permitted, to the extent the law
+makes them mandatory. In the EU this covers Articles 5(3) and 6 of Directive 2009/24/EC, in Germany
+§§ 69d(3) and 69e UrhG. The information needed for interoperability is in the source code and in the API
+documentation at https://docs.doodesch.de. To fix an error, report it at https://support.doodesch.de/sideload
+or change the source code under "You may" item 4.
+
+## Text and data mining
+
+DooDesch reserves the use of the Software for text and data mining under Article 4(3) of Directive (EU)
+2019/790 and § 44b(3) UrhG. This includes using the source code or the compiled files to train, fine-tune
+or evaluate AI models. The compiled files carry this reservation in machine-readable form.
 
 ## Contributions
 
