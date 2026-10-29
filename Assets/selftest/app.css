@@ -254,3 +254,33 @@ body {
 .f-archivo.i { font-style: italic; }
 .f-shoulders { font-family: "Big Shoulders", game-ui; font-weight: 900; font-size: 24px; color: var(--warning); }
 .f-missing  { font-family: "Not Shipped Face", game-ui; color: var(--text-muted); }
+
+/* Form controls. The range, the colour input and the select bring their own look; only the accent and the sizes
+   around them are the page's. */
+.controls { align-items: center; }
+.controls input[type=range] { flex: 1; accent-color: var(--accent); }
+.readout { width: 32px; color: var(--text-muted); font-size: 13px; }
+.controls select { width: 130px; color: var(--text); font-size: 13px; }
+
+.pad {
+  width: 90px;
+  height: 26px;
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--hairline);
+}
+
+.knob {
+  position: absolute;
+  top: 6px;
+  left: 0;
+  width: 12px;
+  height: 12px;
+  border-radius: 6px;
+  background: var(--accent);
+}
+
+.events {
+  color: var(--text-muted);
+  font-size: 12px;
+}

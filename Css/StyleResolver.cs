@@ -58,6 +58,8 @@ namespace Sideload.Css
         private readonly Dictionary<IElement, ComputedStyle> _before = new Dictionary<IElement, ComputedStyle>();
         private readonly Dictionary<IElement, ComputedStyle> _after = new Dictionary<IElement, ComputedStyle>();
         private readonly Dictionary<IElement, ComputedStyle> _placeholder = new Dictionary<IElement, ComputedStyle>();
+        private readonly Dictionary<IElement, ComputedStyle> _thumb = new Dictionary<IElement, ComputedStyle>();
+        private readonly Dictionary<IElement, ComputedStyle> _track = new Dictionary<IElement, ComputedStyle>();
 
         /// <summary>How many generated boxes this page has, across both kinds.</summary>
         internal int Count => _before.Count + _after.Count;
@@ -80,6 +82,8 @@ namespace Sideload.Css
             PseudoElement.Before => _before,
             PseudoElement.After => _after,
             PseudoElement.Placeholder => _placeholder,
+            PseudoElement.SliderThumb => _thumb,
+            PseudoElement.SliderTrack => _track,
             _ => null,
         };
     }
@@ -118,6 +122,7 @@ namespace Sideload.Css
             // it - which is what "user agent origin" means. Only when the page asked for web defaults: see
             // UserAgentSheet for why switching it on under fourteen existing apps is not an option.
             if (context.WebDefaults) Add(matches, MatchRules(document, UserAgentSheet.Rules, context.Orientation));
+            Add(matches, MatchRules(document, UserAgentSheet.FormRules, context.Orientation));
 
             // `@property` declares what a custom property means when nobody has set it. Tailwind v4 leans on that
             // hard: a utility writes `transform: translate(var(--tw-translate-x), ...)` and expects the registered
@@ -231,6 +236,14 @@ namespace Sideload.Css
             if (generated != null && Targets(element, PseudoElement.Placeholder, matches))
                 generated.Set(element, PseudoElement.Placeholder,
                               ComputeFor(element, style, matches, context, PseudoElement.Placeholder));
+
+            // A range's thumb and track, the same way: parts of the control, styled when the sheet says something.
+            if (generated != null && Targets(element, PseudoElement.SliderThumb, matches))
+                generated.Set(element, PseudoElement.SliderThumb,
+                              ComputeFor(element, style, matches, context, PseudoElement.SliderThumb));
+            if (generated != null && Targets(element, PseudoElement.SliderTrack, matches))
+                generated.Set(element, PseudoElement.SliderTrack,
+                              ComputeFor(element, style, matches, context, PseudoElement.SliderTrack));
 
             foreach (IElement child in element.Children)
                 Walk(child, style, matches, context, result, generated);

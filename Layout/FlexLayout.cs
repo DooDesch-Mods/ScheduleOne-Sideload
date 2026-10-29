@@ -43,8 +43,20 @@ namespace Sideload.Layout
                 root.Y = 0f;
 
                 LayoutFixed(root, availableWidth, availableHeight, measure);
+                RunArrange(root);
             }
             finally { _sizes = null; }
+        }
+
+        /// <summary>
+        /// Let every node that places its own children by a rule of its own do so, now that its size is final. A
+        /// range thumb is the case: its position is a fraction of the travel, and the travel is only known here.
+        /// Runs once, after everything else, because <see cref="LayoutBox"/> may lay a node out more than once.
+        /// </summary>
+        private static void RunArrange(LayoutNode node)
+        {
+            node.Arrange?.Invoke(node);
+            foreach (LayoutNode child in node.Children) RunArrange(child);
         }
 
         /// <summary>

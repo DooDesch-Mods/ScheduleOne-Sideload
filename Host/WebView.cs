@@ -19,7 +19,7 @@ namespace Sideload.Host
     /// and knows nothing about the phone - the phone adapter is just the first caller. Later hosts (main menu pages,
     /// Hotline panels, screens in the world) mount the same way.
     /// </summary>
-    public sealed class WebView
+    public sealed partial class WebView
     {
         /// <summary>Short side of the CSS viewport on the phone. The host rect is scaled so that a stylesheet can
         /// always assume a 400px-wide phone, whatever the real panel measures (see decision 5 in
@@ -408,11 +408,13 @@ namespace Sideload.Host
             {
                 TickKeyboard();
                 HoldTyping();
+                TickPopupKeys();
             }
 
-            // Returns on its first line unless the page listens for `mousemove`, which is why it can sit in the
-            // per-frame path at all - uGUI has no pointer-move event to hang it on.
-            _interaction?.TickMove();
+            // A held press follows the pointer here - see WebView.Forms. Without one, the hover poll runs, which
+            // returns on its first line unless the page listens for `mousemove` or `pointermove`, which is why it can
+            // sit in the per-frame path at all - uGUI has no pointer-move event to hang it on.
+            TickPointer();
 
             // A resize lays the page out too, so it subsumes whatever rebuild was pending.
             if (_resizeQueued)
@@ -452,6 +454,7 @@ namespace Sideload.Host
             _painted = null;
             _focused = null;
             _valueAtFocus = null;
+            ForgetPointerState();
 
             EnsureBuilt();
         }
@@ -633,6 +636,8 @@ namespace Sideload.Host
                 _script = new ScriptHost(_appId, _document, QueueRebuild, Focus, PinToEnd, RepaintOnly, RectOf, Blur,
                                          FocusedElement, ViewportSize);
                 _script.OnTextOnlyChange = Retext;
+                _script.OnPointerCaptureRequested = OnPointerCapture;
+                _script.OnPointerCaptureQueried = CapturedElement;
                 RunScripts(_document);
                 script = phase.ElapsedMilliseconds;
 
@@ -727,6 +732,10 @@ namespace Sideload.Host
             LayoutNode tree = DomBuilder.Build(body, styles, generated);
             if (tree == null) { ShowError("the document has no renderable content"); return; }
 
+            // An open select list or colour picker joins the page's tree as one more fixed box, so it is laid out
+            // and painted by the same pass - see WebView.Forms.
+            AppendPopup(tree, styles, cssW, cssH);
+
             // ONE measurer for the life of the view, so its cache survives a rebuild. Its probe object does not -
             // it lives under the page root and every rebuild empties that - so the probe is rebuilt on demand and
             // the answers are kept, which is the half that costs.
@@ -745,6 +754,7 @@ namespace Sideload.Host
 
             PublishDeclaredKeys();
             WireInteraction(styles);
+            WirePopup();
 
             // The boxes under the pointer are new objects; hover was dropped with the old ones. Asking where the
             // pointer is puts it back in this frame instead of a frame later - or, for a control that survived the
@@ -759,7 +769,11 @@ namespace Sideload.Host
                       + $" / wire {tWire - tPaint} ms, text {_measure.Measured} measured + {_measure.Reused} cached";
 
             foreach (KeyValuePair<IElement, Painter.PaintedBox> pair in _painted)
+            {
                 if (styles.TryGetValue(pair.Key, out ComputedStyle painted)) _styleWas[pair.Key] = painted;
+                else if (_popupStyles != null && _popupStyles.TryGetValue(pair.Key, out ComputedStyle popupStyle))
+                    _styleWas[pair.Key] = popupStyle;
+            }
 
             _tree = tree;
             _renders++;
@@ -813,6 +827,7 @@ namespace Sideload.Host
                 });
 
                 RestoreScroll(scroll);
+                ApplyPopupScroll();
 
                 _pinToEnd = pinned;
                 ApplyPin();
@@ -1283,7 +1298,7 @@ namespace Sideload.Host
             // and without a hit target of its own the click landed on the scroll area behind it and stopped there.
             // Wrapping a checkbox and its words in a label is the ordinary way to write one, so this is most of
             // them.
-            foreach (IElement control in _document.QuerySelectorAll("button, a, input, textarea, label"))
+            foreach (IElement control in _document.QuerySelectorAll("button, a, input, textarea, label, select"))
                 stateful.Add(control);
 
             // A top-layer box is modal by nature, so it takes the pointer whether or not anything listens to it.
@@ -1319,6 +1334,13 @@ namespace Sideload.Host
                         draggable.Add(dragged);
                     }
 
+                // Pointer events need the element under the press, like a click does. A page that wants the moves
+                // without a press listens for pointermove, which switches on the same poll as mousemove below.
+                foreach (string type in new[] { "pointerdown", "pointerup", "pointerover", "pointerout",
+                                                "pointerenter", "pointerleave", "mousedown", "mouseup" })
+                    foreach (IElement pressed in _script.ElementsListeningFor(type))
+                        stateful.Add(pressed);
+
                 foreach (IElement scrolled in _script.ElementsListeningFor("wheel"))
                 {
                     stateful.Add(scrolled);
@@ -1328,11 +1350,12 @@ namespace Sideload.Host
                 // The pointer's position has to be polled for this - see Interaction.TickMove - so the poll is only
                 // switched on for a page that asked. Hit targets come from the same set as every other listener.
                 bool moves = false;
-                foreach (IElement moved in _script.ElementsListeningFor("mousemove"))
-                {
-                    stateful.Add(moved);
-                    moves = true;
-                }
+                foreach (string type in new[] { "mousemove", "pointermove" })
+                    foreach (IElement moved in _script.ElementsListeningFor(type))
+                    {
+                        stateful.Add(moved);
+                        moves = true;
+                    }
                 _interaction.WantsMove = moves;
             }
 
@@ -1480,7 +1503,10 @@ namespace Sideload.Host
         {
             try
             {
-                Dictionary<IElement, ComputedStyle> styles = StyleResolver.Resolve(_document, _sheet, _context);
+                // A popup row has its own document and its own sheet; resolving the page would not find it.
+                Dictionary<IElement, ComputedStyle> styles = _popup != null && _popup.Owns(element)
+                    ? _popup.Resolve(_context)
+                    : StyleResolver.Resolve(_document, _sheet, _context);
                 if (!styles.TryGetValue(element, out ComputedStyle style)) return;
                 if (!_painted.TryGetValue(element, out Painter.PaintedBox box)) return;
 
@@ -1564,7 +1590,11 @@ namespace Sideload.Host
 
         private void OnHover(IElement element, bool entered)
         {
-            _script?.Dispatch(element, entered ? "mouseenter" : "mouseleave", bubbles: false);
+            if (_popup != null && _popup.Owns(element)) return;
+
+            int buttons = _interaction?.ButtonsHeld() ?? 0;
+            _script?.Dispatch(element, entered ? "pointerenter" : "pointerleave", bubbles: false, buttons: buttons);
+            _script?.Dispatch(element, entered ? "mouseenter" : "mouseleave", bubbles: false, buttons: buttons);
         }
 
         /// <summary>
@@ -1607,7 +1637,12 @@ namespace Sideload.Host
         private void Pointer(IElement element, string type, Input.PointerSpot spot, Input.PointerRay ray,
                              int button, int detail)
         {
-            if (element == null || _script == null) return;
+            if (element == null) return;
+
+            // The popup's own elements never reach the page - see WebView.Forms.
+            if (_popup != null && _popup.Owns(element)) { PopupPointer(element, type, ray, button); return; }
+
+            if (_script == null) return;
 
             IElement target = DeepestUnder(element, ray) ?? element;
 
@@ -1617,6 +1652,21 @@ namespace Sideload.Host
                 : Input.Interaction.SpotIn(box.Rect, ray);
 
             Input.PointerSpot page = ray.Valid ? Input.Interaction.SpotIn(_root, ray) : default;
+            int buttons = _interaction?.ButtonsHeld() ?? 0;
+
+            // A press and a release go through the press state, which raises the pointer events and their mouse
+            // twins and keeps following the pointer in between - see WebView.Forms.
+            switch (type)
+            {
+                case "mousedown": BeginPress(target, at, page, ray, button); return;
+                case "mouseup": EndPress(ray); return;
+                case "mouseover":
+                case "mouseout":
+                case "mousemove":
+                    _script.Dispatch(target, "pointer" + type.Substring(5), spot: at, clientX: page.OffsetX,
+                                     clientY: page.OffsetY, buttons: buttons);
+                    break;
+            }
 
             // A checkbox changes BEFORE the click event, which is why a handler reading `el.checked` sees the new
             // state and not the old one. HTML calls this the activation behaviour, and without it a controlled
@@ -1630,7 +1680,10 @@ namespace Sideload.Host
             if (toggle != null) Dom.ControlKinds.Toggle(toggle);
 
             Script.JsEvent raised = _script.Dispatch(target, type, spot: at, button: button, detail: detail,
-                                                     clientX: page.OffsetX, clientY: page.OffsetY);
+                                                     clientX: page.OffsetX, clientY: page.OffsetY, buttons: buttons);
+
+            // A select and a colour input open their popup on the click, unless the page cancelled it.
+            if (type == "click" && toggle == null && (raised == null || !raised.DefaultPrevented)) OpenPopupFor(target);
 
             if (toggle == null) return;
 
@@ -1737,6 +1790,7 @@ namespace Sideload.Host
         private void OnInputChanged(IElement element, string value)
         {
             if (element == null) return;
+            if (_popup != null && _popup.Owns(element)) { PopupTyped(element, value); return; }
 
             // The field the player is typing in HAS the caret, whatever this view last remembered - so the focus
             // events fire here too when a click reached the control directly rather than through the page.
@@ -1795,7 +1849,7 @@ namespace Sideload.Host
         /// than by calling its handler.</summary>
         internal void DebugClick(string selector)
         {
-            IElement element = _document?.QuerySelector(selector);
+            IElement element = _document?.QuerySelector(selector) ?? _popup?.Document.QuerySelector(selector);
             if (element == null || _painted == null
                 || !_painted.TryGetValue(element, out Painter.PaintedBox box) || box.Rect == null)
             {
@@ -1921,6 +1975,9 @@ namespace Sideload.Host
         {
             if (element == null) return;
 
+            // Enter in the colour picker's hex field takes the colour and closes the picker.
+            if (_popup != null && _popup.Owns(element)) { PopupTyped(element, value); ClosePopup(); return; }
+
             element.SetAttribute("value", value ?? "");
             _script?.Dispatch(element, "keydown", value, "Enter");
 
@@ -1937,6 +1994,10 @@ namespace Sideload.Host
         /// </summary>
         internal bool DispatchBack(string source)
         {
+            // An open select list or colour picker takes the back for itself and closes, as Escape does in a
+            // browser - the page and the phone hear nothing of it.
+            if (_popup != null) { ClosePopup(); return true; }
+
             IElement body = _document?.Body ?? _document?.DocumentElement;
             if (body == null || _script == null) return false;
 

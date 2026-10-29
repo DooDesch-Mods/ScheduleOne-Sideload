@@ -228,6 +228,15 @@ namespace Sideload.Script
 
         internal Func<IElement, string, bool> OnTextOnlyChange { get; set; }
 
+        /// <summary>
+        /// `setPointerCapture` (true) and `releasePointerCapture` (false). The view owns the gesture, so it decides
+        /// whether there is one to capture: a call outside a press is ignored there, as a browser ignores it.
+        /// </summary>
+        internal Action<IElement, bool> OnPointerCaptureRequested { get; set; }
+
+        /// <summary>`hasPointerCapture`: the element the view currently routes pointer events to, or null.</summary>
+        internal Func<IElement> OnPointerCaptureQueried { get; set; }
+
         internal void MarkPaintDirty(IElement element)
         {
             if (OnPaintOnlyChange == null) { MarkDirty(); return; }
@@ -431,6 +440,9 @@ namespace Sideload.Script
             "wheel", "input", "change", "keydown",
             "focus", "blur", "focusin", "focusout",
             "dragstart", "drag", "dragend", "orientationchange", "back",
+            "pointerdown", "pointermove", "pointerup", "pointercancel",
+            "pointerover", "pointerout", "pointerenter", "pointerleave",
+            "gotpointercapture", "lostpointercapture",
         };
 
         /// <summary>
@@ -443,12 +455,16 @@ namespace Sideload.Script
         /// </summary>
         private static readonly HashSet<string> NonBubbling = new(StringComparer.OrdinalIgnoreCase)
         {
-            "mouseenter", "mouseleave", "focus", "blur",
+            "mouseenter", "mouseleave", "focus", "blur", "pointerenter", "pointerleave",
         };
 
         /// <summary>Whether an event of this type bubbles. Asked by the view, so the rule lives in one place rather
         /// than at each of the dozen call sites that raise one.</summary>
         internal static bool Bubbles(string type) => !NonBubbling.Contains(type ?? "");
+
+        internal static bool IsPointerEvent(string type) =>
+            type != null && (type.StartsWith("pointer", StringComparison.OrdinalIgnoreCase)
+                             || type.EndsWith("pointercapture", StringComparison.OrdinalIgnoreCase));
 
         internal void AddListener(INode node, string type, JsValue handler, bool capture = false)
         {
@@ -540,15 +556,18 @@ namespace Sideload.Script
                                   float deltaX = 0f, float deltaY = 0f, float wheelDelta = 0f,
                                   bool ctrl = false, bool shift = false, bool alt = false, bool repeat = false,
                                   bool hasSelection = false, bool? bubbles = null,
-                                  float clientX = 0f, float clientY = 0f, int button = 0, int detail = 0)
+                                  float clientX = 0f, float clientY = 0f, int button = 0, int detail = 0,
+                                  int buttons = 0)
         {
+            bool pointer = IsPointerEvent(type);
             var evt = new JsEvent(type, WrapNode(target))
             {
                 Value = value ?? "", Key = key ?? "", Source = source ?? "",
                 OffsetX = spot.OffsetX, OffsetY = spot.OffsetY, NormX = spot.NormX, NormY = spot.NormY,
                 DeltaX = deltaX, DeltaY = deltaY, WheelDelta = wheelDelta,
                 CtrlKey = ctrl, ShiftKey = shift, AltKey = alt, Repeat = repeat, HasSelection = hasSelection,
-                ClientX = clientX, ClientY = clientY, Button = button, Detail = detail,
+                ClientX = clientX, ClientY = clientY, Button = button, Detail = detail, Buttons = buttons,
+                PointerId = pointer ? 1 : 0, PointerType = pointer ? "mouse" : "", IsPrimary = pointer,
             };
             if (_failed || target == null) return evt;
 

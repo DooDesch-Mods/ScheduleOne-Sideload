@@ -19,6 +19,15 @@ namespace Sideload.Dom
 
         /// <summary>`type="hidden"` - data the page carries, never a box.</summary>
         Hidden,
+
+        /// <summary>`type="range"`: a track with a thumb the player drags.</summary>
+        Range,
+
+        /// <summary>`type="color"`: a swatch that opens a picker.</summary>
+        Color,
+
+        /// <summary>A `&lt;select&gt;`: the chosen option, and a list that opens over the page.</summary>
+        Select,
     }
 
     /// <summary>
@@ -40,6 +49,11 @@ namespace Sideload.Dom
             if (string.Equals(element.LocalName, "textarea", StringComparison.OrdinalIgnoreCase))
                 return ControlKind.Text;
 
+            // Only a single select. `multiple` and `size` > 1 are a list box in a browser, a different widget, and
+            // are left to the page's own markup rather than being drawn as a dropdown they are not.
+            if (string.Equals(element.LocalName, "select", StringComparison.OrdinalIgnoreCase))
+                return element.HasAttribute("multiple") || ListBoxSize(element) > 1 ? ControlKind.None : ControlKind.Select;
+
             if (!string.Equals(element.LocalName, "input", StringComparison.OrdinalIgnoreCase))
                 return ControlKind.None;
 
@@ -56,9 +70,15 @@ namespace Sideload.Dom
 
                 case "hidden": return ControlKind.Hidden;
 
+                case "range": return ControlKind.Range;
+                case "color": return ControlKind.Color;
+
                 default: return ControlKind.Text;
             }
         }
+
+        private static int ListBoxSize(IElement select) =>
+            int.TryParse(select.GetAttribute("size"), out int size) ? size : 0;
 
         /// <summary>Whether a toggle is on. The attribute, not a property - a rebuild has to be able to read it back.</summary>
         internal static bool IsChecked(IElement element) => element != null && element.HasAttribute("checked");

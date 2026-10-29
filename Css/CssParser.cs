@@ -781,6 +781,14 @@ namespace Sideload.Css
                 case "-webkit-input-placeholder":
                 case "-moz-placeholder":
                 case "-ms-input-placeholder": pseudo = PseudoElement.Placeholder; break;
+
+                // A range's two parts. Every engine spells them its own way and a real sheet writes both, so both
+                // spellings land on the same style. Like the placeholder they are parts of the control, not boxes the
+                // sheet generates, so `content` is not asked for.
+                case "-webkit-slider-thumb":
+                case "-moz-range-thumb": pseudo = PseudoElement.SliderThumb; break;
+                case "-webkit-slider-runnable-track":
+                case "-moz-range-track": pseudo = PseudoElement.SliderTrack; break;
                 default: return;
             }
 

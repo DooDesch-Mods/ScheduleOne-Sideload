@@ -27,6 +27,33 @@
     <button class="btn" id="clear">Clear</button>
   </div>
 
+  <div class="row gap controls">
+    <input type="range" id="vol" min="0" max="100" step="5" value="40">
+    <span class="readout" id="vol-out">40</span>
+    <input type="color" id="tint" value="#5e6ad2">
+    <select id="pick">
+      <optgroup label="Daytime">
+        <option value="morning">Morning</option>
+        <option value="noon" selected>Noon</option>
+        <option value="dusk">Dusk</option>
+      </optgroup>
+      <optgroup label="Night">
+        <option value="evening">Evening</option>
+        <option value="midnight">Midnight</option>
+        <option value="small-hours">Small hours</option>
+        <option value="blackout" disabled>Blackout</option>
+      </optgroup>
+      <option value="dawn">Dawn</option>
+      <option value="early">Early</option>
+      <option value="late">Late</option>
+      <option value="never">Never</option>
+      <option value="always">Always</option>
+    </select>
+    <div class="pad" id="pad"><div class="knob" id="knob"></div></div>
+  </div>
+
+  <div class="events" id="events">events: drag the slider, pick a colour, open the list</div>
+
   <div class="list" id="tasks"></div>
 
   <input class="field" id="entry" placeholder="Type a task, then press Add" maxlength="60"
