@@ -5,6 +5,25 @@ All notable changes to Sideload are documented here. This project adheres to
 
 ## [Unreleased]
 
+## [1.36.0] - 2026-10-29
+
+### Added
+
+- `<input type=range>` drags by its thumb and jumps on a track click: `input` per step, `change` on release.
+  `accent-color` and `::-webkit-slider-thumb` style it.
+- `<input type=color>` opens a picker with a colour field, a hue strip and a hex field. Value is `#rrggbb`,
+  `change` fires when it closes.
+- `<select>` with `<option>` and `<optgroup>` opens a scrolling list over the page, with arrow keys, Enter and
+  Escape. `value`, `selectedIndex` and `options` work as in a browser.
+- Drags with the button held: `pointerdown`, `pointermove` and `pointerup` carry `buttons` and `clientX/Y`, and
+  `setPointerCapture` keeps the moves on one element.
+- `s1api` covers the whole public S1API surface, every manager as `s1api.<area>` and its events as topics, typed
+  in `s1api.generated.d.ts`.
+
+### Changed
+
+- The license now says decompiling Sideload is not permitted. The source is on GitHub.
+
 ## [1.35.0] - 2026-10-24
 
 ### Added
