@@ -324,6 +324,15 @@ namespace Sideload.Css
         /// field wants when nobody has said otherwise.</summary>
         internal RgbaColor? CaretColor;
 
+        /// <summary>`accent-color`: the filled part of a range and the thumb on it. Unset means the engine's own
+        /// accent (<see cref="DefaultAccent"/>). Inherited, as in CSS.</summary>
+        internal RgbaColor? AccentColor;
+
+        /// <summary>`--accent` from the shipped s1.css, so a control nobody styled matches the rest of the theme.</summary>
+        internal static readonly RgbaColor DefaultAccent = new RgbaColor(0x5E / 255f, 0x6A / 255f, 0xD2 / 255f, 1f);
+
+        internal RgbaColor Accent => AccentColor ?? DefaultAccent;
+
         /// <summary>
         /// How wide the insertion point is drawn, in CSS pixels.
         ///
@@ -376,6 +385,7 @@ namespace Sideload.Css
             s.ListMarker = parent.ListMarker;
             s.SmoothScroll = parent.SmoothScroll;
             s.CaretColor = parent.CaretColor;
+            s.AccentColor = parent.AccentColor;
             s.ScrollbarThumb = parent.ScrollbarThumb;
             s.GhostColor = parent.GhostColor;
             s.CaretWidth = parent.CaretWidth;

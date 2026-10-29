@@ -133,6 +133,53 @@ class SelfTest {
 
 new SelfTest().start();
 
+// Form controls and held-button drags. Every event lands on the events line and in the log, so a scripted drag
+// (`sideloaddrag sideload-selftest 0,0.5 1,0.5 12 #vol`) can be checked from the log alone.
+const events = $('events');
+const note = (text) => {
+  events.textContent = `events: ${text}`;
+  console.log(`[selftest] ${text}`);
+};
+
+const vol = $('vol');
+vol.addEventListener('input', () => {
+  $('vol-out').textContent = vol.value;
+  note(`range input ${vol.value} as number ${vol.valueAsNumber}`);
+});
+vol.addEventListener('change', () => note(`range change ${vol.value}`));
+
+const tint = $('tint');
+tint.addEventListener('input', () => {
+  $('vol-out').style.color = tint.value;
+  note(`colour input ${tint.value}`);
+});
+tint.addEventListener('change', () => note(`colour change ${tint.value}`));
+
+const pick = $('pick');
+pick.addEventListener('input', () => note(`select input ${pick.value}`));
+pick.addEventListener('change', () =>
+  note(`select change ${pick.value} index ${pick.selectedIndex} "${pick.options[pick.selectedIndex].text}"`));
+
+// A drag pad: capture on press, so the moves keep arriving here when the pointer leaves the pad.
+const pad = $('pad');
+const knob = $('knob');
+let moves = 0;
+pad.addEventListener('pointerdown', (e) => {
+  pad.setPointerCapture(e.pointerId);
+  moves = 0;
+  note(`pad down buttons ${e.buttons} at ${Math.round(e.clientX)},${Math.round(e.clientY)} capture ${pad.hasPointerCapture(e.pointerId)}`);
+});
+pad.addEventListener('pointermove', (e) => {
+  if (!(e.buttons & 1)) return;
+  const box = pad.getBoundingClientRect();
+  const x = Math.max(0, Math.min(box.width - 12, e.clientX - box.left - 6));
+  knob.style.left = `${x}px`;
+  moves++;
+  if (moves % 4 === 1) note(`pad move buttons ${e.buttons} x ${Math.round(e.clientX)} (${moves})`);
+});
+pad.addEventListener('pointerup', (e) => note(`pad up after ${moves} move(s), buttons ${e.buttons}`));
+pad.addEventListener('lostpointercapture', () => console.log('[selftest] pad lost capture'));
+
 // Ein Listener auf ein Ereignis, das diese Engine nie zustellt - die fuenfte stille Klasse.
 // Erwartet: eine Zeile im Log, nicht ein Handler, der stumm nie laeuft. Siehe app.css unten.
 document.getElementById("clock").addEventListener("change", () => {});

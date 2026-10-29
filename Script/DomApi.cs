@@ -1,5 +1,6 @@
 using AngleSharp.Dom;
 using Jint;
+using Sideload.Dom;
 using Jint.Native;
 using Jint.Native.Object;
 using Jint.Runtime;
@@ -318,7 +319,19 @@ namespace Sideload.Script
                 case "style": return new JsStyle(Host, Native);
                 case "innerHTML": return Native.InnerHtml ?? "";
                 case "outerHTML": return Native.OuterHtml ?? "";
-                case "value": return Native.GetAttribute("value") ?? "";
+                case "value": return FormValue();
+                case "valueAsNumber": return ValueAsNumber();
+                case "selectedIndex": if (IsTag("select")) return FormValues.SelectedIndex(Native); break;
+                case "options": if (IsTag("select")) return Host.WrapNodes(FormValues.Options(Native)); break;
+                case "length": if (IsTag("select")) return FormValues.Options(Native).Count; break;
+                case "selectedOptions":
+                    if (!IsTag("select")) break;
+                    int chosen = FormValues.SelectedIndex(Native);
+                    return Host.WrapNodes(chosen < 0 ? new List<IElement>() : new List<IElement> { FormValues.Options(Native)[chosen] });
+                case "text": if (IsTag("option")) return FormValues.OptionText(Native); break;
+                case "label": if (IsTag("option")) return FormValues.OptionLabel(Native); break;
+                case "index": if (IsTag("option")) return OptionIndex(); break;
+                case "selected": if (IsTag("option")) return OptionIndex() >= 0 && OptionIndex() == FormValues.SelectedIndex(OwnerSelect()); break;
                 case "children": return Host.WrapNodes(Native.Children);
                 case "childElementCount": return Native.ChildElementCount;
                 case "firstElementChild": return Wrap(Native.FirstElementChild);
@@ -355,6 +368,27 @@ namespace Sideload.Script
                 case "htmlFor": return Write("for", Text(value));
                 case "readOnly": return Flag("readonly", TypeConverter.ToBoolean(value));
                 case "tabIndex": return Write("tabindex", Text(value));
+
+                case "value" when IsTag("select"):
+                    if (FormValues.SelectValue(Native) != Text(value) && FormValues.SetSelectValue(Native, Text(value)))
+                        Host.MarkDirty();
+                    return true;
+
+                case "selectedIndex" when IsTag("select"):
+                    int wanted = (int)TypeConverter.ToNumber(value);
+                    if (wanted != FormValues.SelectedIndex(Native) && FormValues.Select(Native, wanted)) Host.MarkDirty();
+                    return true;
+
+                case "selected" when IsTag("option") && OwnerSelect() != null:
+                    // Choosing one option un-chooses the rest, as in a browser; un-choosing the chosen one leaves
+                    // the select on its first option, which is where a single select falls back to.
+                    if (TypeConverter.ToBoolean(value)) { if (FormValues.Select(OwnerSelect(), OptionIndex())) Host.MarkDirty(); }
+                    else Flag("selected", false);
+                    return true;
+
+                case "valueAsNumber":
+                    double number = TypeConverter.ToNumber(value);
+                    return !double.IsNaN(number) && Write("value", FormValues.Format(number));
 
                 case "innerHTML":
                     if (string.Equals(Native.InnerHtml ?? "", Text(value), StringComparison.Ordinal)) return true;
@@ -405,9 +439,59 @@ namespace Sideload.Script
 
                 case "rect":
                 case "getBoundingClientRect": return _ => JsValue.FromObject(Engine, Rect());
+
+                case "setPointerCapture": return _ => { Host.OnPointerCaptureRequested?.Invoke(Native, true); return JsValue.Undefined; };
+                case "releasePointerCapture": return _ => { Host.OnPointerCaptureRequested?.Invoke(Native, false); return JsValue.Undefined; };
+                case "hasPointerCapture": return _ => ReferenceEquals(Host.OnPointerCaptureQueried?.Invoke(), Native);
             }
 
             return base.Method(name);
+        }
+
+        private bool IsTag(string tag) => string.Equals(Native.LocalName, tag, StringComparison.OrdinalIgnoreCase);
+
+        private bool IsInputType(string type) =>
+            IsTag("input") && string.Equals(Native.GetAttribute("type"), type, StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// `value` as a browser reports it: what the control holds, not the attribute it started from. A select
+        /// answers with its chosen option, a range with its value snapped into min, max and step, a colour with
+        /// lower-case `#rrggbb`, an option with its text when it has no value of its own.
+        /// </summary>
+        private JsValue FormValue()
+        {
+            if (IsTag("select")) return FormValues.SelectValue(Native);
+            if (IsTag("option")) return FormValues.OptionValue(Native);
+            if (IsInputType("range")) return FormValues.RangeValue(Native);
+            if (IsInputType("color")) return FormValues.ColorValue(Native);
+            return Native.GetAttribute("value") ?? "";
+        }
+
+        private JsValue ValueAsNumber()
+        {
+            if (IsInputType("range")) return FormValues.Range(Native).Value;
+
+            string raw = Native.GetAttribute("value");
+            return double.TryParse(raw, System.Globalization.NumberStyles.Float,
+                                   System.Globalization.CultureInfo.InvariantCulture, out double number)
+                ? number
+                : double.NaN;
+        }
+
+        private IElement OwnerSelect()
+        {
+            IElement parent = Native.ParentElement;
+            if (parent != null && string.Equals(parent.LocalName, "optgroup", StringComparison.OrdinalIgnoreCase))
+                parent = parent.ParentElement;
+            return parent != null && string.Equals(parent.LocalName, "select", StringComparison.OrdinalIgnoreCase)
+                ? parent
+                : null;
+        }
+
+        private int OptionIndex()
+        {
+            IElement select = OwnerSelect();
+            return select == null ? -1 : FormValues.Options(select).IndexOf(Native);
         }
 
         /// <summary>
@@ -1019,6 +1103,22 @@ namespace Sideload.Script
         /// <summary>How many clicks in the run this event belongs to: 1 for a click, 2 for the second of a
         /// double-click. Zero for events that do not count.</summary>
         public int Detail { get; internal set; }
+
+        /// <summary>
+        /// The mouse buttons held while the event happened, as a bit set: 1 left, 2 right, 4 middle - the DOM's
+        /// numbering, which differs from <see cref="Button"/>'s. A `pointermove` or `mousemove` handler reads this to
+        /// tell a drag from a hover.
+        /// </summary>
+        public int Buttons { get; internal set; }
+
+        /// <summary>Always 1: the phone has one pointer, the mouse. Here so a page written for a browser, which keys
+        /// its drag state by this id, finds the same number on every event of a gesture.</summary>
+        public int PointerId { get; internal set; }
+
+        /// <summary>"mouse" on pointer events, empty on the others.</summary>
+        public string PointerType { get; internal set; } = "";
+
+        public bool IsPrimary { get; internal set; }
 
         public bool DefaultPrevented { get; private set; }
 

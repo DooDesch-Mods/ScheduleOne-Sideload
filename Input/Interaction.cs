@@ -353,6 +353,7 @@ namespace Sideload.Input
 
                 _dragFrom = start;
                 Claimed(element, "dragstart", measured, data, Vector2.zero);
+                if (Captured) _dragOwned = true;
                 if (_dragOwned || around == null) return;
 
                 var pointer = data.TryCast<PointerEventData>();
@@ -442,8 +443,8 @@ namespace Sideload.Input
         /// wired, because the hierarchy above a box does not change while the page stands. It is handed back so that
         /// an element with its own wheel listener can forward to the same one after the page has had its say.
         /// </summary>
-        private static ScrollRect PassScrollingThrough(EventTrigger trigger, Transform host,
-                                                       bool forwardDrag = true, bool forwardWheel = true)
+        private ScrollRect PassScrollingThrough(EventTrigger trigger, Transform host,
+                                                bool forwardDrag = true, bool forwardWheel = true)
         {
             ScrollRect scroll = host == null ? null : host.GetComponentInParent<ScrollRect>();
             if (scroll == null) return null;
@@ -463,6 +464,11 @@ namespace Sideload.Input
 
             AddWithData(trigger, EventTriggerType.BeginDrag, data =>
             {
+                // A slider being dragged, or an element that took the pointer with setPointerCapture, owns the
+                // movement. Handing it to the list as well would scroll the page under the thumb.
+                _scrolling = !Captured;
+                if (!_scrolling) return;
+
                 var pointer = data.TryCast<PointerEventData>();
                 if (pointer == null) return;
 
@@ -474,12 +480,15 @@ namespace Sideload.Input
 
             AddWithData(trigger, EventTriggerType.Drag, data =>
             {
+                if (!_scrolling) return;
                 var pointer = data.TryCast<PointerEventData>();
                 if (pointer != null) scroll.OnDrag(pointer);
             });
 
             AddWithData(trigger, EventTriggerType.EndDrag, data =>
             {
+                if (!_scrolling) return;
+                _scrolling = false;
                 var pointer = data.TryCast<PointerEventData>();
                 if (pointer != null) scroll.OnEndDrag(pointer);
             });
@@ -557,6 +566,62 @@ namespace Sideload.Input
 
             var ray = new PointerRay(now, _lastCamera);
             _onPointer?.Invoke(_hovered, "mousemove", SpotIn(_hoveredRect, ray), ray, 0, 0);
+        }
+
+        // ------------------------------------------------------------------ press and capture --
+
+        /// <summary>
+        /// Set by the view while something owns the pointer: a slider or a colour field being dragged, or an element
+        /// that called `setPointerCapture`. The scroll area under the press does not get the drag while it is set.
+        /// </summary>
+        internal bool Captured { get; set; }
+
+        /// <summary>Whether the drag in progress was handed to a scroll area, so its end goes there too.</summary>
+        private bool _scrolling;
+
+        /// <summary>
+        /// A pointer driven by the debug probe instead of the mouse: a screen point and the buttons it holds. Null
+        /// when the real mouse is in charge, which is always outside a probe run.
+        ///
+        /// It exists because a drag cannot be faked through uGUI the way a click can: the press has to be HELD across
+        /// frames, and what holds it here is the poll in <see cref="ButtonsHeld"/>, which reads the real button.
+        /// </summary>
+        internal PointerRay? Synthetic { get; private set; }
+
+        private int _syntheticButtons;
+
+        internal void DriveSynthetic(Vector2 screen, Camera camera, int buttons)
+        {
+            Synthetic = new PointerRay(screen, camera);
+            _syntheticButtons = buttons;
+            _lastCamera = camera;
+            _sawPointer = true;
+        }
+
+        internal void EndSynthetic()
+        {
+            Synthetic = null;
+            _syntheticButtons = 0;
+        }
+
+        /// <summary>Where the pointer is now, converted with the camera the last pointer event came through. Invalid
+        /// before any pointer event has been seen, because the camera is not known yet.</summary>
+        internal PointerRay Now()
+        {
+            if (Synthetic.HasValue) return Synthetic.Value;
+            return _sawPointer ? new PointerRay(UnityEngine.Input.mousePosition, _lastCamera) : default;
+        }
+
+        /// <summary>The held buttons as the DOM's `buttons` bit set: 1 left, 2 right, 4 middle.</summary>
+        internal int ButtonsHeld()
+        {
+            if (Synthetic.HasValue) return _syntheticButtons;
+
+            int held = 0;
+            if (UnityEngine.Input.GetMouseButton(0)) held |= 1;
+            if (UnityEngine.Input.GetMouseButton(1)) held |= 2;
+            if (UnityEngine.Input.GetMouseButton(2)) held |= 4;
+            return held;
         }
 
         /// <summary>The pointer entered a wired element. Innermost wins: uGUI raises PointerEnter on the child after

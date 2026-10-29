@@ -530,6 +530,14 @@ namespace Sideload.Css
                     break;
                 }
 
+                // The colour a range, a checkbox and a picker take for the part that says "this much" or "this one".
+                // `auto` hands it back to the engine's own accent.
+                case "accent-color":
+                    if (Is(value, "auto")) s.AccentColor = null;
+                    else if (Colour(value, out RgbaColor accent)) s.AccentColor = accent;
+                    else Diagnostics.Report(DiagnosticKind.ValueRejected, "accent-color", value);
+                    break;
+
                 case "caret-color":
                     if (Is(value, "auto")) s.CaretColor = null;
                     else if (Colour(value, out RgbaColor caret)) s.CaretColor = caret;
@@ -733,6 +741,7 @@ namespace Sideload.Css
                 case "word-break": s.WordBreak = parent.WordBreak; return true;
                 case "pointer-events": s.PointerEventsNone = parent.PointerEventsNone; return true;
                 case "caret-color": s.CaretColor = parent.CaretColor; return true;
+                case "accent-color": s.AccentColor = parent.AccentColor; return true;
                 case "scrollbar-color": s.ScrollbarThumb = parent.ScrollbarThumb; return true;
 
                 // Not inherited in CSS, but `inherit` names the parent's value all the same, and these are the ones

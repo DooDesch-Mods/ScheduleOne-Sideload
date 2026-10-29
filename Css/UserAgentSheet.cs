@@ -75,6 +75,35 @@ button, input, select, textarea { font-family: inherit; font-size: inherit }
 textarea { white-space: pre-wrap }
 ";
 
+        /// <summary>
+        /// The look of the controls whose whole drawing is the engine's: a range, a colour input, a select. Applied
+        /// to every page, not only under web-defaults - without it a select is a bare line of text and a colour
+        /// input a swatch with no edge, and no page could be expected to know it has to draw them itself. Same rank
+        /// as the sheet above, so any author rule wins.
+        /// </summary>
+        internal const string FormSource = @"
+input[type=range] { width: 130px; height: 18px; flex-shrink: 0 }
+input[type=color] { width: 44px; height: 26px; padding: 3px; flex-shrink: 0; border: 1px solid rgba(128,128,128,0.55);
+                    border-radius: 4px; background-color: rgba(128,128,128,0.16) }
+select { padding: 4px 8px; border: 1px solid rgba(128,128,128,0.55); border-radius: 4px;
+         background-color: rgba(128,128,128,0.16) }
+";
+
+        private static Stylesheet _form;
+
+        internal static Stylesheet FormRules
+        {
+            get
+            {
+                if (_form != null) return _form;
+
+                Stylesheet sheet = CssParser.Parse(FormSource);
+                foreach (StyleRule rule in sheet.Rules) rule.LayerRank = Rank;
+
+                return _form = sheet;
+            }
+        }
+
         private static Stylesheet _parsed;
 
         /// <summary>

@@ -182,6 +182,10 @@ namespace Sideload.Dom
                 return true;
             }
 
+            if (kind == ControlKind.Range) { node = FormParts.Range(element, style, generated); return true; }
+            if (kind == ControlKind.Color) { node = FormParts.Color(element, style); return true; }
+            if (kind == ControlKind.Select) { node = FormParts.Select(element, style); return true; }
+
             // A button's label is its `value`, and it is a real run of text: it decides the width, it wraps, and
             // the painter draws it like any other. `<input type="button">` with no value is a blank button, which
             // is also what a browser shows.
@@ -254,7 +258,7 @@ namespace Sideload.Dom
         /// as well would draw each of them twice and inset the words by double the padding. What stays is what a
         /// run of text is made of: the font, the colour, the alignment and the whitespace handling.
         /// </summary>
-        private static ComputedStyle Contents(ComputedStyle style)
+        internal static ComputedStyle Contents(ComputedStyle style)
         {
             ComputedStyle inner = style.Clone();
 
@@ -672,7 +676,7 @@ namespace Sideload.Dom
         }
 
         /// <summary>A literal '&lt;' in page text must not be read as a rich-text tag.</summary>
-        private static string Escape(string text) => text.Replace("<", "<noparse><</noparse>");
+        internal static string Escape(string text) => text.Replace("<", "<noparse><</noparse>");
 
         private static string Hex(RgbaColor c)
         {

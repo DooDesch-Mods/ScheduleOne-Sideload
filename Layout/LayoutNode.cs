@@ -56,6 +56,9 @@ namespace Sideload.Layout
     /// One box in the layout tree. Input is <see cref="Style"/> plus either children or text; output are the four
     /// result fields, filled in by <see cref="FlexLayout"/>.
     /// </summary>
+    /// <summary>The part of a form control a synthetic box stands for. See <see cref="LayoutNode.Part"/>.</summary>
+    internal enum FormPart { None, RangeTrack, RangeFill, RangeThumb, ColorSwatch, SelectLabel, SelectArrow }
+
     internal sealed class LayoutNode
     {
         internal ComputedStyle Style = new ComputedStyle();
@@ -75,6 +78,19 @@ namespace Sideload.Layout
         /// text is not a box, so it never became a LayoutNode, and this is the only way its style reaches paint.
         /// </summary>
         internal Css.ComputedStyle PlaceholderStyle;
+
+        /// <summary>
+        /// Which part of a form control this box is, for the boxes a control draws that have no DOM node of their
+        /// own: a range's track, fill and thumb, a colour swatch, a select's label and arrow. None for everything else.
+        /// </summary>
+        internal FormPart Part;
+
+        /// <summary>
+        /// Runs once the whole tree is laid out, to place this node's children by a rule flexbox cannot state - a
+        /// range thumb sits at a FRACTION of the travel, which is the width minus the thumb, and no inset can say
+        /// that. Null for every ordinary box.
+        /// </summary>
+        internal Action<LayoutNode> Arrange;
 
         // --- results, relative to the PARENT's padding box, top-left origin, y growing downwards ---
         internal float X, Y, Width, Height;

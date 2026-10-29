@@ -149,7 +149,7 @@ namespace Sideload.Css
     /// `Before` and `After` are boxes CSS generates. `Placeholder` is not a box at all - it is the hint text a
     /// form control already draws, and this is how a page gets to say what it should look like.
     /// </summary>
-    internal enum PseudoElement { None, Before, After, Placeholder }
+    internal enum PseudoElement { None, Before, After, Placeholder, SliderThumb, SliderTrack }
 
     /// <summary>
     /// Which layout algorithm a box runs on its children.
