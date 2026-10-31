@@ -526,7 +526,10 @@ namespace Sideload.Host
             float scale = ScaleFor(hostW, hostH);
             float cssW = hostW / scale, cssH = hostH / scale;
 
-            if (Mathf.Approximately(cssW, _root.sizeDelta.x) && Mathf.Approximately(cssH, _root.sizeDelta.y)) return;
+            // The scale counts as well: a rect that shrinks with the same proportions keeps its CSS size, because the
+            // scale follows the short side, and only the scale says the page no longer fits.
+            if (Mathf.Approximately(cssW, _root.sizeDelta.x) && Mathf.Approximately(cssH, _root.sizeDelta.y)
+                && Mathf.Approximately(scale, _root.localScale.x)) return;
 
             Orientation was = _context.Orientation;
 
@@ -536,7 +539,7 @@ namespace Sideload.Host
             _context.Orientation = cssW >= cssH ? Orientation.Landscape : Orientation.Portrait;
 
             Rebuild();
-            Core.Log?.Msg($"{_appId}: viewport is now {cssW:0.#}x{cssH:0.#} css px ({_context.Orientation}).");
+            Core.Log?.Msg($"{_appId}: viewport is now {cssW:0.#}x{cssH:0.#} css px at scale {scale:0.###} ({_context.Orientation}).");
 
             // After the layout, not before: a handler that changes the document then gets one more rebuild on the
             // next tick rather than being rendered away by this one.
