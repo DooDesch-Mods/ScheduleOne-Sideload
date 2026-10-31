@@ -5,6 +5,13 @@ All notable changes to Sideload are documented here. This project adheres to
 
 ## [Unreleased]
 
+## [1.36.1] - 2026-10-31
+
+### Fixed
+
+- A surface mounted with `designShortSide` redraws when its rect changes size with the same aspect ratio. The page
+  used to stay at the old scale and overflow the rect.
+
 ## [1.36.0] - 2026-10-29
 
 ### Added
