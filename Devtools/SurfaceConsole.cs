@@ -19,6 +19,9 @@ namespace Sideload.Devtools
     /// </item>
     /// <item><c>sideloadsurface &lt;width&gt; &lt;height&gt;</c> - the same, at a size of your choosing. A surface has
     /// no agreed panel the way the phone does, so the shape is the variable a layout has to survive.</item>
+    /// <item><c>sideloadsurface resize &lt;width&gt; &lt;height&gt;</c> - change the panel of the surface that is up,
+    /// without remounting it, so the view has to follow its rect the way it does for a mod that resizes its panel.
+    /// </item>
     /// </list>
     /// </summary>
     internal static class SurfaceConsole
@@ -26,6 +29,7 @@ namespace Sideload.Devtools
         internal const string Id = "surfacetest";
 
         private static GameObject _panel;
+        private static RectTransform _rect;
         private static int _lastFrame = -1;
         private static string _lastSignature = "";
 
@@ -60,6 +64,7 @@ namespace Sideload.Devtools
             try
             {
                 if (parts.Length > 1 && parts[1].Equals("off", StringComparison.OrdinalIgnoreCase)) Down();
+                else if (parts.Length > 1 && parts[1].Equals("resize", StringComparison.OrdinalIgnoreCase)) Resize(parts);
                 else Up(Size(parts));
             }
             catch (Exception e) { Core.Log?.Warning($"sideloadsurface failed: {e.Message}"); }
@@ -75,6 +80,25 @@ namespace Sideload.Devtools
                 && w > 40f && h > 40f)
                 size = new Vector2(w, h);
             return size;
+        }
+
+        private static void Resize(string[] parts)
+        {
+            if (_rect == null)
+            {
+                Core.Log?.Warning("sideloadsurface resize: no surface is up.");
+                return;
+            }
+
+            if (parts.Length < 4 || !float.TryParse(parts[2], out float w) || !float.TryParse(parts[3], out float h)
+                || w <= 40f || h <= 40f)
+            {
+                Core.Log?.Warning("sideloadsurface resize: expected a width and a height above 40.");
+                return;
+            }
+
+            _rect.sizeDelta = new Vector2(w, h);
+            Core.Log?.Msg($"sideloadsurface: panel of '{Id}' is now {w:0}x{h:0}.");
         }
 
         private static void Up(Vector2 size)
@@ -100,6 +124,7 @@ namespace Sideload.Devtools
             rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0.5f, 0.5f);
             rect.anchoredPosition = Vector2.zero;
             rect.sizeDelta = size;
+            _rect = rect;
 
             // No trailing dot: AppBundle.ResourceNameOf joins the prefix and the path with one itself, and a spare
             // one asks for `Sideload.Assets.selftest..index.html`. That resolves to nothing, and nothing is not an
@@ -131,6 +156,7 @@ namespace Sideload.Devtools
             if (_panel == null) return;
             UnityEngine.Object.Destroy(_panel);
             _panel = null;
+            _rect = null;
         }
     }
 }
