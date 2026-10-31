@@ -14,7 +14,7 @@
 ![Status](https://img.shields.io/badge/status-working-brightgreen)
 [![Polyfill](https://polyfill.doomods.com/badge/sideload.svg)](https://polyfill.doomods.com/mod/sideload)
 
-[![MLVScan Sideload.dll](https://mlvscan.com/attestations/att_yKes5XMpPY00k8EvS57CGmvj/badge.svg)](https://mlvscan.com/attestations/att_yKes5XMpPY00k8EvS57CGmvj)
+[![MLVScan Sideload.dll](https://mlvscan.com/attestations/att_vJUYhUmn5OGARstlrNjl8kGO/badge.svg)](https://mlvscan.com/attestations/att_vJUYhUmn5OGARstlrNjl8kGO)
 
 **[Reference app (WhatsDab)](https://github.com/DooDesch-Mods/ScheduleOne-WhatsDab)** · **[Documentation](https://docs.doodesch.de/mods/sideload/)** · **[Support](https://support.doodesch.de/sideload)**
 
