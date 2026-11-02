@@ -5,6 +5,12 @@ All notable changes to Sideload are documented here. This project adheres to
 
 ## [Unreleased]
 
+## [1.36.2] - 2026-11-02
+
+### Changed
+
+- Thunderstore and Nexus Mods may now review the mod files: the license names their package review as an exception.
+
 ## [1.36.1] - 2026-10-31
 
 ### Fixed
