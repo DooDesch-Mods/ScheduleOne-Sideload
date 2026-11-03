@@ -133,6 +133,11 @@
       <HintPath>$(GameManagedPath)/UnityEngine.UIModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <!-- The phone's home button is a collider; Phone/HomeButton.cs raycasts against it like the vanilla apps. -->
+    <Reference Include="UnityEngine.PhysicsModule">
+      <HintPath>$(GameManagedPath)/UnityEngine.PhysicsModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="UnityEngine.TextRenderingModule">
       <HintPath>$(GameManagedPath)/UnityEngine.TextRenderingModule.dll</HintPath>
       <Private>false</Private>
