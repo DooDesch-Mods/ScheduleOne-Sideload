@@ -143,6 +143,9 @@ namespace Sideload
             // The rotate keys, and the "Rotate Phone" line in the game's key strip that explains them.
             using (Profiling.Phase.Of("sideload.turninput")) Phone.TurnInput.Tick();
 
+            // The home button on the phone's frame, which vanilla apps poll themselves and ours have to as well.
+            using (Profiling.Phase.Of("sideload.homebutton")) Phone.HomeButton.Tick();
+
             // Keys that reach an app with the phone still in the player's pocket. Returns on the first line when no
             // app claimed one, which is every frame unless something asked.
             using (Profiling.Phase.Of("sideload.globalkeys")) Input.GlobalKeys.Tick();
