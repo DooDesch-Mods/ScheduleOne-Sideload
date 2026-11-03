@@ -1,0 +1,8 @@
+{
+  "id": "sideload-focuslost",
+  "title": "Focus Lost Test",
+  "iconLabel": "Focus",
+  "orientation": "landscape",
+  "version": "1.0.0",
+  "author": "DooDesch"
+}
