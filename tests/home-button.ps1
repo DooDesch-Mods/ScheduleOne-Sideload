@@ -39,7 +39,14 @@ function OpenApp {
 
 Check "$App opens" (OpenApp) 'sideload_open_app did not report onScreen'
 
-$out = (& python -I $s1 --slot $Slot run sideloadhome) -join "`n"
+# The result is read from the log rather than from run's output, which carries every line the game wrote
+# meanwhile (NavMesh warnings) and gets cut before the one that matters. Comparing with the line before the press
+# keeps an older result from passing this run.
+function LastResult { ((& python -I $s1 --slot $Slot log --grep 'sideloadhome:' -n 1) -join "`n").Trim() }
+$before = LastResult
+& python -I $s1 --slot $Slot run sideloadhome --until 'sideloadhome:' | Out-Null
+$out = LastResult
+if ($out -eq $before) { $out = "no new sideloadhome line in the log (last: $before)" }
 Check 'home button closes the app' ($out -match "sideloadhome: PASS closed '$App'") ($out.Trim())
 Check 'no app is active afterwards' ($out -match 'active app now none') ($out.Trim())
 
