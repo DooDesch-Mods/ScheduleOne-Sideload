@@ -5,6 +5,13 @@ All notable changes to Sideload are documented here. This project adheres to
 
 ## [Unreleased]
 
+## [1.36.3] - 2026-11-03
+
+### Fixed
+
+- The phone's home button closes the open app. It did nothing for every Sideload app, because the game's apps check
+  the button themselves and Sideload apps did not.
+
 ## [1.36.2] - 2026-11-02
 
 ### Changed
