@@ -82,7 +82,15 @@ namespace Sideload.Phone
 
                 return false;
             }
-            catch { return false; }
+            catch (System.Exception e)
+            {
+                // Polled every frame, so only the first failure is written.
+                if (!_warned) Core.Log?.Warning("reading the exit keys failed: " + e.Message);
+                _warned = true;
+                return false;
+            }
         }
+
+        private static bool _warned;
     }
 }

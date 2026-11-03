@@ -807,6 +807,8 @@ namespace Sideload.Host
             try
             {
                 Dictionary<IElement, ScrollMark> scroll = CaptureScroll();
+                IElement caret = CaretElement();
+                IElement focusedBefore = _focused;
                 _survivors = RescueControls();
 
                 // Held across the render because ApplyPin, which runs inside it, consumes the request - and
@@ -829,6 +831,8 @@ namespace Sideload.Host
                     Render(_root.sizeDelta.x, _root.sizeDelta.y, _root.sizeDelta.x * scale, _root.sizeDelta.y * scale, scale);
                 });
 
+                ReleaseLostCaret(caret, focusedBefore);
+
                 RestoreScroll(scroll);
                 ApplyPopupScroll();
 
@@ -839,6 +843,57 @@ namespace Sideload.Host
             {
                 Core.Log?.Error("rebuilding the page failed: " + e);
             }
+        }
+
+        /// <summary>
+        /// The element whose field holds the keyboard right now, or null. Focused OR selected: Enter deactivates a
+        /// TMP field without deselecting it, and the typing flag follows the selection (onSelect/onDeselect), so a
+        /// field between Enter and its re-activation still holds the flag without reporting isFocused.
+        /// </summary>
+        private IElement CaretElement()
+        {
+            UnityEngine.EventSystems.EventSystem events = UnityEngine.EventSystems.EventSystem.current;
+            GameObject selected = events != null ? events.currentSelectedGameObject : null;
+
+            foreach (KeyValuePair<IElement, Il2CppTMPro.TMP_InputField> pair in _inputs)
+            {
+                if (pair.Value == null) continue;
+                if (pair.Value.isFocused || (selected != null && pair.Value.gameObject == selected)) return pair.Key;
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Give the keyboard back when the rebuild destroyed the field that held it.
+        ///
+        /// A page that replaces the row around its focused input (`replaceChild`, a framework redrawing a list item)
+        /// takes the old element out of the document, and the rebuild destroys its TMP_InputField. A destroyed field
+        /// never raises onDeselect, so <c>GameInput.IsTyping</c> stays true - and while it is true the game's
+        /// <c>HandleExitInputs</c> returns on its first line: Escape, right-click and the phone key do nothing and the
+        /// player is shut inside the app. The rescue in TypingExit only covers pages with a <c>data-typing</c> field,
+        /// so this has to happen here, for every page.
+        ///
+        /// Left alone when the page moved the caret to a field that is still painted (`newInput.focus()` in the same
+        /// handler): that field takes the selection on its next update, and releasing first would only flicker the
+        /// typing flag. No blur is dispatched; a browser does not raise one for a removed element either, and a page
+        /// that commits on blur would commit the same value twice.
+        /// </summary>
+        private void ReleaseLostCaret(IElement caret, IElement focusedBefore)
+        {
+            if (_focused != null && !_inputs.ContainsKey(_focused)) _focused = null;
+
+            if (caret == null) return;
+            if (_inputs.TryGetValue(caret, out Il2CppTMPro.TMP_InputField field) && field != null) return;
+
+            if (_focused != null && !ReferenceEquals(_focused, focusedBefore))
+            {
+                Core.Log?.Msg($"{_appId}: the field with the caret left the page; the caret moved to another field.");
+                return;
+            }
+
+            Paint.Painter.ReleaseKeyboard();
+            Core.Log?.Msg($"{_appId}: the field with the caret left the page; keyboard released.");
         }
 
         /// <summary>

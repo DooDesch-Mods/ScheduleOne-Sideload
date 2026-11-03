@@ -1,0 +1,4 @@
+body { background: #1b1f27; color: #e6e8ee; font-size: 18px; padding: 24px; }
+h1 { font-size: 28px; margin-bottom: 8px; }
+.row { display: flex; padding: 8px; background: #262b36; margin: 12px 0; }
+input { width: 200px; height: 36px; padding: 0 8px; background: #11141a; color: #e6e8ee; border: 1px solid #4a5468; }
