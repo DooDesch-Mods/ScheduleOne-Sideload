@@ -2,6 +2,8 @@
 
 > 🛟 **Need help or found a bug?** Get support at [support.doodesch.de/sideload](https://support.doodesch.de/sideload).
 
+**Download:** [Nexus Mods](https://www.nexusmods.com/schedule1/mods/2360) · [Thunderstore](https://thunderstore.io/c/schedule-i/p/DooDesch/Sideload/) · [GitHub Releases](https://github.com/DooDesch-Mods/ScheduleOne-Sideload/releases)
+
 > Mod interfaces, written as `index.html` + `app.css` + `app.js` instead of hand assembled uGUI panels.
 > Sideload parses the HTML, resolves the CSS, runs the JavaScript and renders the result as real Unity UI
 > objects and TextMeshPro text. No browser, no native code, no subprocess. The in game phone is the first
@@ -60,10 +62,16 @@ runtime), but when it is installed every page gets [`s1api`](#game-data-with-s1a
 
 ## Installation
 
-### Recommended: a Thunderstore mod manager
+### Recommended: Nexus Mods
+
+1. Install **MelonLoader 0.7.3** for Schedule I ([melonwiki.xyz](https://melonwiki.xyz/)).
+2. Download Sideload from [Nexus Mods](https://www.nexusmods.com/schedule1/mods/2360) and install it with Vortex,
+   or put **`Sideload.dll`** into your Schedule I `Mods/` folder.
+
+### Thunderstore mod manager
 
 Install with a mod manager (r2modman / Gale) from the Schedule I community; MelonLoader is pulled in
-automatically.
+automatically. Find it on the [Thunderstore page](https://thunderstore.io/c/schedule-i/p/DooDesch/Sideload/).
 
 ### Manual
 
