@@ -2,8 +2,6 @@
 
 > 🛟 **Need help or found a bug?** Get support at [support.doodesch.de/sideload](https://support.doodesch.de/sideload).
 
-[![Discord](https://mods.doodesch.de/img/badge.svg)](https://mods.doodesch.de)
-
 > **A framework, not a feature.** Sideload renders mod interfaces written as `index.html` + `app.css` +
 > `app.js` into real Unity UI and TextMeshPro. No browser, no native code, no subprocess. Install it because
 > a mod you want depends on it.
@@ -12,7 +10,7 @@
 ![Game](https://img.shields.io/badge/game-Schedule%20I-purple)
 ![MelonLoader](https://img.shields.io/badge/MelonLoader-0.7.3+-green)
 ![Type](https://img.shields.io/badge/type-framework-orange)
-[![Polyfill](https://polyfill.doomods.com/badge/sideload.svg)](https://polyfill.doomods.com/mod/sideload)
+[![Discord](https://mods.doodesch.de/img/badge.svg)](https://mods.doodesch.de) [![Polyfill](https://polyfill.doomods.com/badge/sideload.svg)](https://polyfill.doomods.com/mod/sideload)
 
 [![MLVScan Sideload.dll](https://mlvscan.com/attestations/att_hIMpD0Rjg1s5ohyLHhaRpmJA/badge.svg)](https://mlvscan.com/attestations/att_hIMpD0Rjg1s5ohyLHhaRpmJA)
 
