@@ -4,8 +4,6 @@
 
 **Download:** [Nexus Mods](https://www.nexusmods.com/schedule1/mods/2360) · [Thunderstore](https://thunderstore.io/c/schedule-i/p/DooDesch/Sideload/) · [GitHub Releases](https://github.com/DooDesch-Mods/ScheduleOne-Sideload/releases)
 
-[![Discord](https://mods.doodesch.de/img/badge.svg)](https://mods.doodesch.de)
-
 > Mod interfaces, written as `index.html` + `app.css` + `app.js` instead of hand assembled uGUI panels.
 > Sideload parses the HTML, resolves the CSS, runs the JavaScript and renders the result as real Unity UI
 > objects and TextMeshPro text. No browser, no native code, no subprocess. The in game phone is the first
@@ -16,7 +14,7 @@
 ![MelonLoader](https://img.shields.io/badge/MelonLoader-0.7.3+-green)
 ![Type](https://img.shields.io/badge/type-framework-orange)
 ![Status](https://img.shields.io/badge/status-working-brightgreen)
-[![Polyfill](https://polyfill.doomods.com/badge/sideload.svg)](https://polyfill.doomods.com/mod/sideload)
+[![Discord](https://mods.doodesch.de/img/badge.svg)](https://mods.doodesch.de) [![Polyfill](https://polyfill.doomods.com/badge/sideload.svg)](https://polyfill.doomods.com/mod/sideload)
 
 [![MLVScan Sideload.dll](https://mlvscan.com/attestations/att_hIMpD0Rjg1s5ohyLHhaRpmJA/badge.svg)](https://mlvscan.com/attestations/att_hIMpD0Rjg1s5ohyLHhaRpmJA)
 
