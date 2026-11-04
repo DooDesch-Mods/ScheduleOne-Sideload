@@ -2,6 +2,8 @@
 
 > 🛟 **Need help or found a bug?** Get support at [support.doodesch.de/sideload](https://support.doodesch.de/sideload).
 
+[![Discord](https://mods.doodesch.de/img/badge.svg)](https://mods.doodesch.de)
+
 > **A framework, not a feature.** Sideload renders mod interfaces written as `index.html` + `app.css` +
 > `app.js` into real Unity UI and TextMeshPro. No browser, no native code, no subprocess. Install it because
 > a mod you want depends on it.
@@ -59,6 +61,12 @@ that port can run code in your pages, so leave it off unless you are building an
 first page mounts. `DevToolsFetchFrontend` (`true`) lets Sideload download the DevTools interface once into
 `UserData/`, so the inspector works offline afterwards. `DevToolsFrontend` (empty) overrides that with a
 folder holding your own copy.
+
+## Community
+
+[![DooDesch Mods on Discord](https://mods.doodesch.de/img/card.svg)](https://mods.doodesch.de)
+
+Join the DooDesch Mods Discord: update pings, polls on what comes next, and playtests of new mods.
 
 ## License
 
