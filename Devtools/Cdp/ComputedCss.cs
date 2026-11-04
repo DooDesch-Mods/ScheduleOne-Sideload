@@ -109,7 +109,10 @@ namespace Sideload.Devtools.Cdp
             Put("border-right-width", style.BorderWidth.Right.ToString());
             Put("border-bottom-width", style.BorderWidth.Bottom.ToString());
             Put("border-left-width", style.BorderWidth.Left.ToString());
-            Put("border-color", Color(style.BorderColor));
+            Put("border-top-color", Color(style.BorderColor.Top));
+            Put("border-right-color", Color(style.BorderColor.Right));
+            Put("border-bottom-color", Color(style.BorderColor.Bottom));
+            Put("border-left-color", Color(style.BorderColor.Left));
             Put("border-radius", Radius(style.BorderRadius));
 
             Put("box-shadow", style.HasShadow

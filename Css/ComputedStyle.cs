@@ -139,7 +139,9 @@ namespace Sideload.Css
         internal float GradientAngleDeg = 180f;   // CSS default: top to bottom
 
         internal Edges BorderWidth = Edges.Zero;
-        internal RgbaColor BorderColor = RgbaColor.Transparent;
+        /// <summary>The colour of each side. Transparent until a declaration names one, so a width alone draws
+        /// nothing.</summary>
+        internal SideColors BorderColor = SideColors.All(RgbaColor.Transparent);
 
         /// <summary>
         /// `outline` - a ring drawn OUTSIDE the border box, taking no room.

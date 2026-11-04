@@ -303,13 +303,11 @@ namespace Sideload.Css
                     else Diagnostics.Report(DiagnosticKind.ValueRejected, "scrollbar-width", value);
                     break;
 
-                case "border-style":
-                    // `none` and `hidden` make the used width zero, which is what CSS says and what this engine
-                    // can honour exactly. `solid` is what it draws anyway. The rest are drawn solid and say so.
-                    if (Is(value, "none") || Is(value, "hidden")) s.BorderWidth = Edges.Zero;
-                    else if (!Is(value, "solid"))
-                        Diagnostics.Report(DiagnosticKind.ValueIgnored, "border-style", value);
-                    break;
+                case "border-style": ApplyBorderStyle(s, value); break;
+                case "border-top-style": ApplyBorderStyle(s, value, Side.Top); break;
+                case "border-right-style": ApplyBorderStyle(s, value, Side.Right); break;
+                case "border-bottom-style": ApplyBorderStyle(s, value, Side.Bottom); break;
+                case "border-left-style": ApplyBorderStyle(s, value, Side.Left); break;
 
                 // --------------------------------------------- already what this renderer does --
                 //
@@ -456,7 +454,11 @@ namespace Sideload.Css
                 case "border-bottom": ApplyBorder(s, value, Side.Bottom); break;
                 case "border-left": ApplyBorder(s, value, Side.Left); break;
                 case "border-width": if (Edges_(value, out Edges bw)) s.BorderWidth = bw; break;
-                case "border-color": if (Colour(value, out RgbaColor bc)) s.BorderColor = bc; break;
+                case "border-color": if (SideColours(value, out SideColors bc)) s.BorderColor = bc; break;
+                case "border-top-color": if (Colour(value, out RgbaColor btc)) s.BorderColor.Top = btc; break;
+                case "border-right-color": if (Colour(value, out RgbaColor brc)) s.BorderColor.Right = brc; break;
+                case "border-bottom-color": if (Colour(value, out RgbaColor bbc)) s.BorderColor.Bottom = bbc; break;
+                case "border-left-color": if (Colour(value, out RgbaColor blc)) s.BorderColor.Left = blc; break;
                 case "border-top-width": if (Length(value, out Len btw)) s.BorderWidth.Top = btw; break;
                 case "border-right-width": if (Length(value, out Len brw)) s.BorderWidth.Right = brw; break;
                 case "border-bottom-width": if (Length(value, out Len bbw)) s.BorderWidth.Bottom = bbw; break;
@@ -747,6 +749,28 @@ namespace Sideload.Css
                 // Not inherited in CSS, but `inherit` names the parent's value all the same, and these are the ones
                 // a real sheet asks it of - a border that follows the text colour, a control that takes the box's.
                 case "border-color": s.BorderColor = parent.BorderColor; return true;
+                case "border-top-color": s.BorderColor.Top = parent.BorderColor.Top; return true;
+                case "border-right-color": s.BorderColor.Right = parent.BorderColor.Right; return true;
+                case "border-bottom-color": s.BorderColor.Bottom = parent.BorderColor.Bottom; return true;
+                case "border-left-color": s.BorderColor.Left = parent.BorderColor.Left; return true;
+
+                // The shorthands carry width and colour. Style has no field of its own here (see ApplyBorderStyle),
+                // so the width the parent ended up with already says whether its style drew anything.
+                case "border": s.BorderWidth = parent.BorderWidth; s.BorderColor = parent.BorderColor; return true;
+                case "border-width": s.BorderWidth = parent.BorderWidth; return true;
+                case "border-top":
+                    s.BorderWidth.Top = parent.BorderWidth.Top; s.BorderColor.Top = parent.BorderColor.Top; return true;
+                case "border-right":
+                    s.BorderWidth.Right = parent.BorderWidth.Right; s.BorderColor.Right = parent.BorderColor.Right; return true;
+                case "border-bottom":
+                    s.BorderWidth.Bottom = parent.BorderWidth.Bottom; s.BorderColor.Bottom = parent.BorderColor.Bottom; return true;
+                case "border-left":
+                    s.BorderWidth.Left = parent.BorderWidth.Left; s.BorderColor.Left = parent.BorderColor.Left; return true;
+                case "border-top-width": s.BorderWidth.Top = parent.BorderWidth.Top; return true;
+                case "border-right-width": s.BorderWidth.Right = parent.BorderWidth.Right; return true;
+                case "border-bottom-width": s.BorderWidth.Bottom = parent.BorderWidth.Bottom; return true;
+                case "border-left-width": s.BorderWidth.Left = parent.BorderWidth.Left; return true;
+
                 case "background-color": s.BackgroundColor = parent.BackgroundColor; return true;
                 case "opacity": s.Opacity = parent.Opacity; return true;
 
@@ -1213,7 +1237,7 @@ namespace Sideload.Css
             if (Is(value, "none") || Is(value, "0"))
             {
                 SetWidth(s, side, Len.Px(0f));
-                if (side == Side.All) s.BorderColor = RgbaColor.Transparent;
+                if (side == Side.All) s.BorderColor = SideColors.All(RgbaColor.Transparent);
                 return;
             }
 
@@ -1225,8 +1249,108 @@ namespace Sideload.Css
                 // "dashed". Degrading a dash to a solid hairline is honest; silently losing the colour is not.
                 if (IsLineStyle(part)) continue;
                 if (ValueParser.TryLength(part, Context, out Len w) && w.IsDefinite) { SetWidth(s, side, w); continue; }
-                if (ValueParser.TryColor(part, out RgbaColor c)) s.BorderColor = c;
+
+                // A side shorthand writes its own side's colour and nothing else, the same as in a browser. It used
+                // to write the one shared colour, so `.note.info { border-top: 1px solid green }` recoloured every
+                // side and `border-top-color` had no field to land in at all.
+                if (ValueParser.TryColor(part, CurrentColor, out RgbaColor c)) { SetColour(s, side, c); continue; }
+
+                Diagnostics.Report(DiagnosticKind.ValueRejected, _applying, part);
             }
+        }
+
+        private static void SetColour(ComputedStyle s, Side side, RgbaColor colour)
+        {
+            switch (side)
+            {
+                case Side.Top: s.BorderColor.Top = colour; break;
+                case Side.Right: s.BorderColor.Right = colour; break;
+                case Side.Bottom: s.BorderColor.Bottom = colour; break;
+                case Side.Left: s.BorderColor.Left = colour; break;
+                default: s.BorderColor = SideColors.All(colour); break;
+            }
+        }
+
+        /// <summary>
+        /// `border-color` with one to four colours, distributed over the sides the way `margin` distributes lengths:
+        /// one for all, two for top/bottom and right/left, three for top, right/left and bottom, four clockwise.
+        /// </summary>
+        private static bool SideColours(string value, out SideColors colours)
+        {
+            colours = default;
+            string[] p = ValueParser.SplitTopLevel(value);
+            if (p.Length < 1 || p.Length > 4)
+            {
+                Diagnostics.Report(DiagnosticKind.ValueRejected, _applying, value);
+                return false;
+            }
+
+            var c = new RgbaColor[p.Length];
+            for (int i = 0; i < p.Length; i++)
+                if (!ValueParser.TryColor(p[i], CurrentColor, out c[i]))
+                {
+                    Diagnostics.Report(DiagnosticKind.ValueRejected, _applying, value);
+                    return false;
+                }
+
+            colours = p.Length switch
+            {
+                1 => SideColors.All(c[0]),
+                2 => new SideColors { Top = c[0], Right = c[1], Bottom = c[0], Left = c[1] },
+                3 => new SideColors { Top = c[0], Right = c[1], Bottom = c[2], Left = c[1] },
+                _ => new SideColors { Top = c[0], Right = c[1], Bottom = c[2], Left = c[3] },
+            };
+            return true;
+        }
+
+        /// <summary>
+        /// `border-style` (one to four values, distributed like `border-color`) and the four `border-*-style`
+        /// longhands.
+        ///
+        /// There is no style field. `none` and `hidden` make that side's width zero, which is what CSS says the used
+        /// width is and what this engine can honour exactly. `solid` is what it draws anyway. The other line styles
+        /// are drawn solid and reported as ignored, once per declaration. Anything that is not a line style is
+        /// rejected whole, so a typo never half-applies.
+        /// </summary>
+        private static void ApplyBorderStyle(ComputedStyle s, string value, Side side = Side.All)
+        {
+            string[] p = ValueParser.SplitTopLevel(value);
+            int max = side == Side.All ? 4 : 1;
+            if (p.Length < 1 || p.Length > max)
+            {
+                Diagnostics.Report(DiagnosticKind.ValueRejected, _applying, value);
+                return;
+            }
+
+            foreach (string part in p)
+                if (!IsLineStyle(part))
+                {
+                    Diagnostics.Report(DiagnosticKind.ValueRejected, _applying, value);
+                    return;
+                }
+
+            bool degraded = false;
+
+            void One(Side which, string style)
+            {
+                if (Is(style, "none") || Is(style, "hidden")) SetWidth(s, which, Len.Zero);
+                else if (!Is(style, "solid")) degraded = true;
+            }
+
+            if (side != Side.All) One(side, p[0]);
+            else
+            {
+                string top = p[0];
+                string right = p.Length > 1 ? p[1] : top;
+                string bottom = p.Length > 2 ? p[2] : top;
+                string left = p.Length > 3 ? p[3] : right;
+                One(Side.Top, top);
+                One(Side.Right, right);
+                One(Side.Bottom, bottom);
+                One(Side.Left, left);
+            }
+
+            if (degraded) Diagnostics.Report(DiagnosticKind.ValueIgnored, _applying, value);
         }
 
         /// <summary>

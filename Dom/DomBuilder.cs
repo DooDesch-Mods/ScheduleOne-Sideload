@@ -265,7 +265,7 @@ namespace Sideload.Dom
             inner.Padding = Edges.Zero;
             inner.Margin = Edges.Zero;
             inner.BorderWidth = Edges.Zero;
-            inner.BorderColor = RgbaColor.Transparent;
+            inner.BorderColor = SideColors.All(RgbaColor.Transparent);
             inner.BorderRadius = default;
             inner.BackgroundColor = RgbaColor.Transparent;
             inner.HasGradient = false;
