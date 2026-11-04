@@ -4,6 +4,8 @@
 
 **Download:** [Nexus Mods](https://www.nexusmods.com/schedule1/mods/2360) · [Thunderstore](https://thunderstore.io/c/schedule-i/p/DooDesch/Sideload/) · [GitHub Releases](https://github.com/DooDesch-Mods/ScheduleOne-Sideload/releases)
 
+[![Discord](https://mods.doodesch.de/img/badge.svg)](https://mods.doodesch.de)
+
 > Mod interfaces, written as `index.html` + `app.css` + `app.js` instead of hand assembled uGUI panels.
 > Sideload parses the HTML, resolves the CSS, runs the JavaScript and renders the result as real Unity UI
 > objects and TextMeshPro text. No browser, no native code, no subprocess. The in game phone is the first
@@ -570,6 +572,12 @@ Honest limits, because a browser sets different expectations:
   creates one panel and one icon per registered app and leaves the rest of the phone alone.
 - Purely client local. Nothing it does crosses the network to other players.
 - Two mods may register handlers of the same name; handlers are keyed by app id.
+
+## Community
+
+[![DooDesch Mods on Discord](https://mods.doodesch.de/img/card.svg)](https://mods.doodesch.de)
+
+Join the DooDesch Mods Discord: update pings, polls on what comes next, and playtests of new mods.
 
 ## Credits
 
