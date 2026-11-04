@@ -104,6 +104,13 @@ namespace Sideload.Css
 
         internal bool IsTransparent => A <= 0.0001f;
 
+        /// <summary>Straight per-channel blend from <paramref name="a"/> (t = 0) to <paramref name="b"/> (t = 1).</summary>
+        internal static RgbaColor Lerp(RgbaColor a, RgbaColor b, float t) => new RgbaColor(
+            a.R + (b.R - a.R) * t,
+            a.G + (b.G - a.G) * t,
+            a.B + (b.B - a.B) * t,
+            a.A + (b.A - a.A) * t);
+
         public override string ToString() =>
             string.Format(CultureInfo.InvariantCulture, "rgba({0:0.###}, {1:0.###}, {2:0.###}, {3:0.###})", R, G, B, A);
 
@@ -124,6 +131,38 @@ namespace Sideload.Css
         internal static Edges Zero => All(Len.Zero);
 
         public override string ToString() => $"{Top} {Right} {Bottom} {Left}";
+    }
+
+    /// <summary>
+    /// One colour per side, CSS order (top, right, bottom, left) - what `border-color` and the four
+    /// `border-*-color` longhands write.
+    ///
+    /// Four fields rather than one because a browser keeps four: `.note { border-top: 1px solid red }` followed by
+    /// `.note.info { border-top-color: green }` must leave a green top line, and with a single shared colour the
+    /// second rule had nowhere to land.
+    /// </summary>
+    internal struct SideColors
+    {
+        internal RgbaColor Top, Right, Bottom, Left;
+
+        internal static SideColors All(RgbaColor c) => new SideColors { Top = c, Right = c, Bottom = c, Left = c };
+
+        /// <summary>True when all four sides are the same colour, within <see cref="RgbaColor"/>'s own tolerance.</summary>
+        internal bool IsUniform => Top.Equals(Right) && Right.Equals(Bottom) && Bottom.Equals(Left);
+
+        /// <summary>True when no side shows any colour at all.</summary>
+        internal bool IsTransparent => Top.IsTransparent && Right.IsTransparent && Bottom.IsTransparent && Left.IsTransparent;
+
+        /// <summary>Each side blended on its own, which is how a transition between two border colourings runs.</summary>
+        internal static SideColors Lerp(SideColors a, SideColors b, float t) => new SideColors
+        {
+            Top = RgbaColor.Lerp(a.Top, b.Top, t),
+            Right = RgbaColor.Lerp(a.Right, b.Right, t),
+            Bottom = RgbaColor.Lerp(a.Bottom, b.Bottom, t),
+            Left = RgbaColor.Lerp(a.Left, b.Left, t),
+        };
+
+        public override string ToString() => IsUniform ? Top.ToString() : $"{Top} {Right} {Bottom} {Left}";
     }
 
     /// <summary>Four corner radii, CSS order (top-left, top-right, bottom-right, bottom-left).</summary>

@@ -177,7 +177,7 @@ namespace Sideload.Dom
             arrow.FlexShrink = 0f;
             arrow.Margin = new Edges { Top = Len.Zero, Right = Len.Px(2f), Bottom = Len.Px(3f), Left = Len.Px(8f) };
             arrow.BorderWidth = new Edges { Top = Len.Zero, Right = Len.Px(1.5f), Bottom = Len.Px(1.5f), Left = Len.Zero };
-            arrow.BorderColor = Faded(style.Color, 0.8f);
+            arrow.BorderColor = SideColors.All(Faded(style.Color, 0.8f));
             arrow.RotateDeg = 45f;
             node.Add(new LayoutNode(arrow) { Part = FormPart.SelectArrow });
 

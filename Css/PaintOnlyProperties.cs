@@ -34,6 +34,7 @@ namespace Sideload.Css
             "transform",
             "background", "background-color", "background-image",
             "border-color",
+            "border-top-color", "border-right-color", "border-bottom-color", "border-left-color",
             "border-radius",
             "border-top-left-radius", "border-top-right-radius",
             "border-bottom-right-radius", "border-bottom-left-radius",

@@ -165,7 +165,7 @@ namespace Sideload.Paint
             ComputedStyle blended = to.Clone();
 
             blended.BackgroundColor = Lerp(from.BackgroundColor, to.BackgroundColor, t);
-            blended.BorderColor = Lerp(from.BorderColor, to.BorderColor, t);
+            blended.BorderColor = SideColors.Lerp(from.BorderColor, to.BorderColor, t);
             blended.Color = Lerp(from.Color, to.Color, t);
             blended.ShadowColor = Lerp(from.ShadowColor, to.ShadowColor, t);
             blended.Opacity = from.Opacity + (to.Opacity - from.Opacity) * t;
@@ -179,10 +179,6 @@ namespace Sideload.Paint
             return blended;
         }
 
-        private static RgbaColor Lerp(RgbaColor a, RgbaColor b, float t) => new RgbaColor(
-            a.R + (b.R - a.R) * t,
-            a.G + (b.G - a.G) * t,
-            a.B + (b.B - a.B) * t,
-            a.A + (b.A - a.A) * t);
+        private static RgbaColor Lerp(RgbaColor a, RgbaColor b, float t) => RgbaColor.Lerp(a, b, t);
     }
 }

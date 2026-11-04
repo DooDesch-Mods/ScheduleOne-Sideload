@@ -20,7 +20,22 @@ namespace Sideload.Paint
         /// non-zero side becomes its own solid quad: the shader's ring is a single number and cannot express four.</summary>
         internal float EdgeTop, EdgeRight, EdgeBottom, EdgeLeft;
 
+        /// <summary>The colour of each edge quad. Only read for a side whose Edge width is above zero.</summary>
+        internal Color EdgeTopColor, EdgeRightColor, EdgeBottomColor, EdgeLeftColor;
+
+        /// <summary>
+        /// The edge quads stop where the corner curves begin instead of running to the box's corners. Set when the
+        /// shader's ring draws the rounded border underneath and the quads only recolour its straight runs - a square
+        /// strip carried into a rounded corner would stick out past the curve.
+        /// </summary>
+        internal bool EdgesClearCorners;
+
+        /// <summary>The colour of the shader's ring, which <see cref="BorderWidth"/> sizes.</summary>
         internal Color BorderColor;
+
+        /// <summary>Gives all four edge quads one colour.</summary>
+        internal void SetEdgeColors(Color color) =>
+            EdgeTopColor = EdgeRightColor = EdgeBottomColor = EdgeLeftColor = color;
 
         internal bool HasShadow;
         internal float ShadowOffsetX, ShadowOffsetY, ShadowBlur;
@@ -187,21 +202,31 @@ namespace Sideload.Paint
                      fillTL, fillTR, fillBR, fillBL,
                      visual.BorderWidth, blur: 0f, borderColor: visual.BorderColor);
 
-            // Single-side borders, drawn over the fill. Adjacent sides overlap in the corner by a fraction of a pixel;
-            // at hairline widths that is invisible, and anything thicker wants a uniform border anyway.
-            Color edge = visual.BorderColor;
-            EmitEdge(vertices, colors, uv0, uv1, uv2, uv3, triangles, ref v, ref t,
-                     centre + new Vector2(0f, half.y - visual.EdgeTop * 0.5f),
-                     new Vector2(half.x, visual.EdgeTop * 0.5f), visual.EdgeTop, edge);
-            EmitEdge(vertices, colors, uv0, uv1, uv2, uv3, triangles, ref v, ref t,
-                     centre - new Vector2(0f, half.y - visual.EdgeBottom * 0.5f),
-                     new Vector2(half.x, visual.EdgeBottom * 0.5f), visual.EdgeBottom, edge);
-            EmitEdge(vertices, colors, uv0, uv1, uv2, uv3, triangles, ref v, ref t,
-                     centre - new Vector2(half.x - visual.EdgeLeft * 0.5f, 0f),
-                     new Vector2(visual.EdgeLeft * 0.5f, half.y), visual.EdgeLeft, edge);
-            EmitEdge(vertices, colors, uv0, uv1, uv2, uv3, triangles, ref v, ref t,
-                     centre + new Vector2(half.x - visual.EdgeRight * 0.5f, 0f),
-                     new Vector2(visual.EdgeRight * 0.5f, half.y), visual.EdgeRight, edge);
+            // Single-side borders, drawn over the fill, each in its own side's colour. Top and bottom run the full
+            // width and own the corners; left and right stop where they begin. Overlapping strips drew every corner
+            // twice, which darkened it under a translucent hairline and, once the sides could differ, painted it in
+            // whichever side happened to be emitted last.
+            float clearTL = visual.EdgesClearCorners ? visual.RadiusTL : 0f;
+            float clearTR = visual.EdgesClearCorners ? visual.RadiusTR : 0f;
+            float clearBR = visual.EdgesClearCorners ? visual.RadiusBR : 0f;
+            float clearBL = visual.EdgesClearCorners ? visual.RadiusBL : 0f;
+
+            float left = -half.x, right = half.x, top = half.y, bottom = -half.y;
+
+            EmitEdge(vertices, colors, uv0, uv1, uv2, uv3, triangles, ref v, ref t, centre,
+                     left + clearTL, right - clearTR, top - visual.EdgeTop, top,
+                     visual.EdgeTop, visual.EdgeTopColor);
+            EmitEdge(vertices, colors, uv0, uv1, uv2, uv3, triangles, ref v, ref t, centre,
+                     left + clearBL, right - clearBR, bottom, bottom + visual.EdgeBottom,
+                     visual.EdgeBottom, visual.EdgeBottomColor);
+            EmitEdge(vertices, colors, uv0, uv1, uv2, uv3, triangles, ref v, ref t, centre,
+                     left, left + visual.EdgeLeft,
+                     bottom + Mathf.Max(clearBL, visual.EdgeBottom), top - Mathf.Max(clearTL, visual.EdgeTop),
+                     visual.EdgeLeft, visual.EdgeLeftColor);
+            EmitEdge(vertices, colors, uv0, uv1, uv2, uv3, triangles, ref v, ref t, centre,
+                     right - visual.EdgeRight, right,
+                     bottom + Mathf.Max(clearBR, visual.EdgeBottom), top - Mathf.Max(clearTR, visual.EdgeTop),
+                     visual.EdgeRight, visual.EdgeRightColor);
 
             Mesh mesh = MeshFor(rt.gameObject);
             mesh.Clear();
@@ -237,15 +262,23 @@ namespace Sideload.Paint
             mesh.SetUVs(channel, _channel);
         }
 
-        /// <summary>One flat, square-cornered strip in the border colour, or nothing when that side has no width.</summary>
+        /// <summary>
+        /// One flat, square-cornered strip spanning <paramref name="xMin"/>..<paramref name="xMax"/> by
+        /// <paramref name="yMin"/>..<paramref name="yMax"/> around <paramref name="centre"/>, or nothing when that side
+        /// has no width, no colour, or no length left once the corners are cleared.
+        /// </summary>
         private static void EmitEdge(Vector3[] vertices, Color32[] colors, Vector2[] uv0, Vector4[] uv1,
                                      Vector4[] uv2, Vector4[] uv3, int[] triangles, ref int v, ref int t,
-                                     Vector2 centre, Vector2 half, float width, Color color)
+                                     Vector2 centre, float xMin, float xMax, float yMin, float yMax,
+                                     float width, Color color)
         {
-            if (width <= 0f || color.a <= 0f) return;
+            if (width <= 0f || color.a <= 0f || xMax <= xMin || yMax <= yMin) return;
+
+            var half = new Vector2((xMax - xMin) * 0.5f, (yMax - yMin) * 0.5f);
+            Vector2 middle = centre + new Vector2((xMin + xMax) * 0.5f, (yMin + yMax) * 0.5f);
 
             EmitQuad(vertices, colors, uv0, uv1, uv2, uv3, triangles, ref v, ref t,
-                     centre, half, half, Vector4.zero,
+                     middle, half, half, Vector4.zero,
                      color, color, color, color,
                      borderWidth: 0f, blur: 0f, borderColor: new Color(0f, 0f, 0f, 0f));
         }

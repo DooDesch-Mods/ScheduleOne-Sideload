@@ -1,0 +1,48 @@
+<!--
+  Per-side border colours, drawn in the game. Served as an override of the self-test app by
+  tests/border-side-colors.py, which reads the borders back out of a screenshot.
+
+  Every box has a saturated fill no other box and nothing in the game world shares, so the script can find it by
+  colour alone. Borders are only ever red or green; the script classifies each pixel next to a fill as one of the
+  two, or neither.
+-->
+<style>
+  html, body { margin: 0; background: #000; }
+  .col { display: flex; flex-direction: column; gap: 22px; padding: 22px 30px; }
+  .box { width: 220px; height: 34px; flex: none; }
+
+  /* The reported case, exactly as written. */
+  .a { border-top: 1px solid red; }
+  .a.b { border-top-color: green; }
+
+  /* The same with the side shorthand twice. */
+  .c { border-top: 1px solid red; }
+  .c.d { border-top: 1px solid green; }
+
+  #thick { border: 6px solid red; border-top-color: green; background: #ffff00; }
+  #round { border: 4px solid red; border-left-color: green; border-radius: 12px; background: #00ffff; }
+  #script { border: 4px solid red; transition: border-color 0.2s; background: #8000ff; }
+  #pair { border-width: 4px; border-style: solid; border-color: red green; background: #ff00ff; }
+
+  #case1 { background: #0000ff; }
+  /* Navy, so a hairline blended with the fill still reads as green rather than teal. */
+  #case2 { background: #000080; }
+</style>
+
+<div class="col">
+  <div class="box a b" id="case1"></div>
+  <div class="box c d" id="case2"></div>
+  <div class="box" id="thick"></div>
+  <div class="box" id="round"></div>
+  <div class="box" id="script"></div>
+  <div class="box" id="pair"></div>
+</div>
+
+<script>
+  // The script case: one side recoloured through the CSSOM after the first paint, through the transition.
+  setTimeout(function () {
+    document.getElementById('script').style.borderTopColor = 'green';
+    console.log('border-side-colors: script set border-top-color to ' +
+                document.getElementById('script').style.borderTopColor);
+  }, 300);
+</script>

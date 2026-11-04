@@ -778,14 +778,28 @@ namespace Sideload.Paint
 
             // Same reasoning as Repaint: a native control draws itself, at both ends of the line.
             bool toggle = IsToggle(box.Node);
-            BoxVisual visual = toggle ? ToggleVisual(box.Node, to, out _) : ToVisual(to, w, h);
             BoxVisual before = toggle ? ToggleVisual(box.Node, from, out _) : ToVisual(from, w, h);
+
+            // The border is blended per side in the STYLE and only then turned into geometry. Its two ends need not
+            // be drawn the same way - a uniform red border is the shader's ring, the same box with a green top is
+            // edge quads - so lerping the finished visuals would fade a quad in from a colour it never had.
+            BoxVisual visual;
+            if (toggle)
+            {
+                visual = ToggleVisual(box.Node, to, out _);
+                visual.BorderColor = Color.Lerp(before.BorderColor, visual.BorderColor, t);
+            }
+            else
+            {
+                ComputedStyle mid = to.Clone();
+                mid.BorderColor = SideColors.Lerp(from.BorderColor, to.BorderColor, t);
+                visual = ToVisual(mid, w, h);
+            }
 
             visual.FillTL = Color.Lerp(before.FillTL, visual.FillTL, t);
             visual.FillTR = Color.Lerp(before.FillTR, visual.FillTR, t);
             visual.FillBR = Color.Lerp(before.FillBR, visual.FillBR, t);
             visual.FillBL = Color.Lerp(before.FillBL, visual.FillBL, t);
-            visual.BorderColor = Color.Lerp(before.BorderColor, visual.BorderColor, t);
             visual.ShadowColor = Color.Lerp(before.ShadowColor, visual.ShadowColor, t);
 
             RectTransform rt = box.Rect;
@@ -1013,7 +1027,7 @@ namespace Sideload.Paint
 
             ComputedStyle chrome = s.Clone();
             chrome.BorderWidth = Edges.All(Len.Px(1f));
-            chrome.BorderColor = new RgbaColor(s.Color.R, s.Color.G, s.Color.B, s.Color.A * 0.5f);
+            chrome.BorderColor = SideColors.All(new RgbaColor(s.Color.R, s.Color.G, s.Color.B, s.Color.A * 0.5f));
             chrome.BorderRadius = round
                 ? Corners.All(node.Width * 0.5f)
                 : Corners.All(MathF.Max(2f, node.Width * 0.2f));
@@ -1857,7 +1871,10 @@ namespace Sideload.Paint
                         && visual.RadiusBR <= 0f && visual.RadiusBL <= 0f;
 
             if (squared)
+            {
                 visual.EdgeTop = visual.EdgeRight = visual.EdgeBottom = visual.EdgeLeft = s.OutlineWidth;
+                visual.SetEdgeColors(visual.BorderColor);
+            }
             else
                 visual.BorderWidth = s.OutlineWidth;
 
@@ -1876,6 +1893,23 @@ namespace Sideload.Paint
             Math.Max(Math.Max(s.BorderWidth.Top.Resolve(0f), s.BorderWidth.Right.Resolve(0f)),
                      Math.Max(s.BorderWidth.Bottom.Resolve(0f), s.BorderWidth.Left.Resolve(0f)));
 
+        /// <summary>The colour most of the four sides share; on a tie, the first of them in CSS order.</summary>
+        private static Color SharedColour(Color top, Color right, Color bottom, Color left)
+        {
+            Color[] sides = { top, right, bottom, left };
+            Color best = top;
+            int bestCount = 0;
+
+            foreach (Color candidate in sides)
+            {
+                int count = 0;
+                foreach (Color other in sides) if (other == candidate) count++;
+                if (count > bestCount) { best = candidate; bestCount = count; }
+            }
+
+            return best;
+        }
+
         internal static BoxVisual ToVisual(ComputedStyle s, float width, float height)
         {
             Color fill = ToColor(s.BackgroundColor);
@@ -1887,7 +1921,6 @@ namespace Sideload.Paint
                 RadiusTR = s.BorderRadius.TopRight,
                 RadiusBR = s.BorderRadius.BottomRight,
                 RadiusBL = s.BorderRadius.BottomLeft,
-                BorderColor = ToColor(s.BorderColor),
                 HasShadow = s.HasShadow && !s.ShadowColor.IsTransparent,
                 ShadowOffsetX = s.ShadowOffsetX,
                 ShadowOffsetY = s.ShadowOffsetY,
@@ -1918,9 +1951,33 @@ namespace Sideload.Paint
             bool squared = s.BorderRadius.TopLeft <= 0f && s.BorderRadius.TopRight <= 0f
                         && s.BorderRadius.BottomRight <= 0f && s.BorderRadius.BottomLeft <= 0f;
 
-            if (uniform && (fillCarriesTheRing || !squared))
+            SideColors colours = s.BorderColor;
+            Color cTop = ToColor(colours.Top), cRight = ToColor(colours.Right);
+            Color cBottom = ToColor(colours.Bottom), cLeft = ToColor(colours.Left);
+
+            if (uniform && colours.IsUniform && (fillCarriesTheRing || !squared))
             {
                 visual.BorderWidth = top;
+                visual.BorderColor = cTop;
+            }
+            else if (uniform && !squared)
+            {
+                /*
+                  ONE WIDTH, ROUNDED CORNERS, SIDES IN DIFFERENT COLOURS. The ring is one colour in the vertex payload,
+                  and square edge quads alone would poke out past the curves. So the ring draws the whole rounded
+                  border in the colour most sides share, and an edge quad repaints each side that differs along its
+                  straight run only. The corners stay in the shared colour, where a browser would split each one
+                  between its two sides.
+                */
+                Color ring = SharedColour(cTop, cRight, cBottom, cLeft);
+                visual.BorderWidth = top;
+                visual.BorderColor = ring;
+                visual.EdgesClearCorners = true;
+
+                if (cTop != ring) { visual.EdgeTop = top; visual.EdgeTopColor = cTop; }
+                if (cRight != ring) { visual.EdgeRight = right; visual.EdgeRightColor = cRight; }
+                if (cBottom != ring) { visual.EdgeBottom = bottom; visual.EdgeBottomColor = cBottom; }
+                if (cLeft != ring) { visual.EdgeLeft = left; visual.EdgeLeftColor = cLeft; }
             }
             else
             {
@@ -1928,6 +1985,10 @@ namespace Sideload.Paint
                 visual.EdgeRight = right;
                 visual.EdgeBottom = bottom;
                 visual.EdgeLeft = left;
+                visual.EdgeTopColor = cTop;
+                visual.EdgeRightColor = cRight;
+                visual.EdgeBottomColor = cBottom;
+                visual.EdgeLeftColor = cLeft;
             }
 
             if (s.HasGradient) ApplyGradient(ref visual, s, width, height);
