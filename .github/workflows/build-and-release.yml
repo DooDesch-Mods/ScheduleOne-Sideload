@@ -61,6 +61,11 @@ jobs:
           path: Workspace
           ssh-key: ${{ secrets.WORKSPACE_TOKEN }}
 
+      # thunderstore/manifest.json is the one list of dependency versions; the Thunderstore upload reads its deps from
+      # there. A README that names another version of a DooDesch dependency stops the tag here.
+      - name: Preflight - README dependency versions match the manifest
+        run: python3 Workspace/tools/ci/readme-deps.py
+
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
@@ -447,6 +452,17 @@ jobs:
           mkdir -p thunderstore-package
           unzip -q "Sideload_${{ needs.build.outputs.version }}.zip" -d thunderstore-package/
 
+      # The package's dependencies are the ones in thunderstore/manifest.json, the file that also ships in the
+      # zip. There is no second list in this workflow to keep in step.
+      - name: Read dependencies from thunderstore/manifest.json
+        id: manifest-deps
+        run: |
+          set -euo pipefail
+          DEPS=$(jq -r '.dependencies[]' thunderstore/manifest.json)
+          if [ -z "$DEPS" ]; then echo "::error::thunderstore/manifest.json lists no dependencies."; exit 1; fi
+          echo "Thunderstore dependencies:"; echo "$DEPS"
+          { echo "deps<<DEPS_EOF"; echo "$DEPS"; echo "DEPS_EOF"; } >> "$GITHUB_OUTPUT"
+
       - name: Upload to Thunderstore
         uses: GreenTF/upload-thunderstore-package@v4.3
         with:
@@ -458,8 +474,7 @@ jobs:
           description: Write a mod interface as HTML, CSS and JavaScript. Sideload renders the web bundle into real Unity UI and puts it on the in game phone.
           version: ${{ needs.build.outputs.version }}
           path: thunderstore-package
-          deps: |
-            LavaGang-MelonLoader-0.7.3
+          deps: ${{ steps.manifest-deps.outputs.deps }}
           categories: |
             Mods
 
