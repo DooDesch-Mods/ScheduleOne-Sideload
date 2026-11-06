@@ -44,7 +44,8 @@ namespace Sideload.Devtools
 
             bool drag = parts[0].Equals("sideloaddrag", StringComparison.OrdinalIgnoreCase);
             bool key = parts[0].Equals("sideloadpopup", StringComparison.OrdinalIgnoreCase);
-            if (!drag && !key) return false;
+            bool gesture = parts[0].Equals("sideloadgesture", StringComparison.OrdinalIgnoreCase);
+            if (!drag && !key && !gesture) return false;
 
             // Both SubmitCommand overloads are patched and the string one calls the list one, so a single
             // submission arrives twice. Same guard as KeyConsole, for the same reason.
@@ -56,6 +57,7 @@ namespace Sideload.Devtools
             try
             {
                 if (drag) Drag(parts);
+                else if (gesture) Gesture(parts);
                 else Key(parts);
             }
             catch (Exception e) { Core.Log?.Warning(parts[0] + " failed: " + e.Message); }
@@ -80,6 +82,23 @@ namespace Sideload.Devtools
 
             string selector = string.Join(" ", parts, 5, parts.Length - 5);
             page.DebugDrag(selector, fromX, fromY, toX, toY, steps);
+        }
+
+        private static void Gesture(string[] parts)
+        {
+            if (parts.Length < 5
+                || !int.TryParse(parts[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out int hover)
+                || !int.TryParse(parts[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out int hold))
+            {
+                Core.Log?.Msg("usage: sideloadgesture <appId> <hoverFrames> <holdFrames> <selector> - rests on the element, "
+                              + "presses, holds and releases, for example 'sideloadgesture sideload-selftest 30 6 #go'.");
+                return;
+            }
+
+            Host.WebView page = Host.WebView.Find(parts[1]);
+            if (page == null) { Core.Log?.Msg($"sideloadgesture: no page mounted for {parts[1]}."); return; }
+
+            page.DebugGesture(string.Join(" ", parts, 4, parts.Length - 4), hover, hold);
         }
 
         private static void Key(string[] parts)

@@ -1650,6 +1650,9 @@ namespace Sideload.Host
         {
             if (_popup != null && _popup.Owns(element)) return;
 
+#if DEBUG
+            if (entered) _enterDispatches++;
+#endif
             int buttons = _interaction?.ButtonsHeld() ?? 0;
             _script?.Dispatch(element, entered ? "pointerenter" : "pointerleave", bubbles: false, buttons: buttons);
             _script?.Dispatch(element, entered ? "mouseenter" : "mouseleave", bubbles: false, buttons: buttons);

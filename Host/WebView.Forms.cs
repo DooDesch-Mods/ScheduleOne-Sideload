@@ -145,6 +145,9 @@ namespace Sideload.Host
         private void TickPointer()
         {
             if (_scripted != null) AdvanceScriptedDrag();
+#if DEBUG
+            if (_gesture != null) AdvanceGesture();
+#endif
 
             if (!_pressed)
             {
