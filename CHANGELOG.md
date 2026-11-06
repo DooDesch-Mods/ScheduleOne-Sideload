@@ -5,6 +5,13 @@ All notable changes to Sideload are documented here. This project adheres to
 
 ## [Unreleased]
 
+## [1.36.4] - 2026-11-06
+
+### Fixed
+
+- Buttons that show a tooltip on hover react on the first click. A click could get lost when the page rebuilt between
+  press and release.
+
 ## [1.36.3] - 2026-11-03
 
 ### Fixed
