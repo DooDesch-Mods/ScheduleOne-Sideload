@@ -129,6 +129,14 @@ namespace Sideload.Host
             }
             else ReleaseCapture();
 
+            // After mouseup, as in a browser: the click a rebuild took from uGUI - see Interaction.ReleasedAt.
+            IElement pressed = _interaction?.PressedElement;
+            RectTransform pressedRect = pressed != null && _painted != null
+                                        && _painted.TryGetValue(pressed, out Painter.PaintedBox pressedBox)
+                ? pressedBox.Rect
+                : null;
+            _interaction?.ReleasedAt(ray, pressedRect);
+
             if (drag == FormDrag.Range && dragged != null)
             {
                 string now = FormValues.RangeValue(dragged);

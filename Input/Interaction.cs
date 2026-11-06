@@ -111,7 +111,13 @@ namespace Sideload.Input
         internal StateFlags ForcedOn(IElement element) =>
             element != null && _forced.TryGetValue(element, out StateFlags f) ? f : StateFlags.None;
 
-        internal void Clear() => _states.Clear();
+        internal void Clear()
+        {
+            _states.Clear();
+            _entered.Clear();
+            _pressElement = null;
+            _pressHost = null;
+        }
 
         /// <summary>
         /// Start a fresh render. Hover and press are properties of the pointer against GameObjects that are about to
@@ -146,14 +152,21 @@ namespace Sideload.Input
         /// </summary>
         internal void RehoverFrom(IEnumerable<KeyValuePair<IElement, RectTransform>> boxes)
         {
-            if (!WantsRehover || boxes == null) return;
+            if (!WantsRehover || boxes == null) { _entered.Clear(); return; }
 
-            var ray = new PointerRay(UnityEngine.Input.mousePosition, _lastCamera);
-            if (!ray.Valid) return;
+            // Now() rather than the mouse, so a pointer driven by the debug probe is rehovered like the real one.
+            PointerRay ray = Now();
+            if (!ray.Valid) { _entered.Clear(); return; }
+
+            // An element the page was told the pointer entered stays entered only while the pointer still covers it.
+            // One it left during the rebuild gets no exit from its destroyed GameObject, and has to be able to
+            // announce its next enter.
+            var covered = new HashSet<IElement>();
 
             foreach (KeyValuePair<IElement, RectTransform> box in boxes)
             {
                 if (box.Value == null || !Covers(box.Value, ray)) continue;
+                covered.Add(box.Key);
 
                 // Notified, so the box repaints in this frame rather than waiting for the next pointer event. Set
                 // skips both the write and the notification when the flag is already there, which it is for every
@@ -162,7 +175,58 @@ namespace Sideload.Input
                 _hovered = box.Key;
                 _hoveredRect = box.Value;
             }
+
+            _entered.RemoveWhere(element => !covered.Contains(element));
         }
+
+        /// <summary>
+        /// Elements the page has had a `mouseenter` for and no `mouseleave` since. uGUI's own record of what the
+        /// pointer is in hangs on GameObjects, and a rebuild replaces those; this one hangs on the elements, which
+        /// survive it.
+        /// </summary>
+        private readonly HashSet<IElement> _entered = new HashSet<IElement>();
+
+        // ------------------------------------------------------------------ a press across a rebuild --
+
+        /// <summary>The element whose hit target took the last left press, the GameObject that took it, and whether
+        /// uGUI has since delivered the click.</summary>
+        private IElement _pressElement;
+        private GameObject _pressHost;
+        private bool _pressClicked;
+
+        /// <summary>
+        /// The button came up. uGUI clicks only when the GameObject that took the press is still the click handler
+        /// under the pointer, and a rebuild between press and release destroys it: the pointer never moved, the
+        /// element is the same, and the click was gone. This hands such a click back when the release lands on the
+        /// element the press started on. A press whose GameObject is still alive is uGUI's to click, so nothing is
+        /// raised twice.
+        /// </summary>
+        internal void ReleasedAt(PointerRay ray, RectTransform pressedRectNow)
+        {
+            IElement element = _pressElement;
+            GameObject host = _pressHost;
+            bool clicked = _pressClicked;
+            _pressElement = null;
+            _pressHost = null;
+            _pressClicked = false;
+
+            if (element == null || clicked) return;
+            if (host != null) return;   // alive: uGUI decides this click
+            if (_dragged && _dragOwned) return;
+
+            if (pressedRectNow == null || !Covers(pressedRectNow, ray))
+            {
+                Core.Log?.Msg($"[Sideload] press on <{element.LocalName}> rebuilt, and the release is not on it any more - no click, as for a slide off.");
+                return;
+            }
+
+            Core.Log?.Msg($"[Sideload] press on <{element.LocalName}> survived a rebuild - click raised on the release.");
+            _onClicked?.Invoke(element, SpotIn(pressedRectNow, ray), ray);
+            if (IsSecondClick(element)) _onPointer?.Invoke(element, "dblclick", SpotIn(pressedRectNow, ray), ray, 0, 2);
+        }
+
+        /// <summary>The element a left press is held on, for the view to measure at the release.</summary>
+        internal IElement PressedElement => _pressElement;
 
         /// <summary>False until a pointer event has been seen, because the camera one arrived through is the only
         /// way to convert a screen position - and a null camera is a valid answer, so its absence cannot say.</summary>
@@ -241,8 +305,17 @@ namespace Sideload.Input
             var trigger = handlerHost.AddComponent<EventTrigger>();
             AddWithData(trigger, EventTriggerType.PointerEnter, data =>
             {
+                // A rebuild under a resting pointer replaces this box's GameObject, and uGUI enters the new one. The
+                // element itself never left: RehoverFrom has already put its hover back. Telling the page again
+                // was not harmless. A tooltip that opens on `mouseenter` adds a node, the node rebuilds the page,
+                // the rebuild enters the new box, and the page rebuilt every frame while the pointer rested on an
+                // icon - so the GameObject a press landed on was gone by the release and the click never came.
+                bool stillInside = _entered.Contains(element);
+
                 Set(element, StateFlags.Hover, true);
                 Entered(element, measuredRect, data);
+                if (stillInside) return;
+                _entered.Add(element);
 
                 // The page hears about it too. :hover alone can only repaint, so anything that has to APPEAR on
                 // hover - a tooltip above all - was not buildable without this.
@@ -258,12 +331,16 @@ namespace Sideload.Input
                 Set(element, StateFlags.Hover, false);
                 Set(element, StateFlags.Active, false);
                 Left(element);
+                _entered.Remove(element);
                 _onHover?.Invoke(element, false);
                 Pointer(element, "mouseout", measuredRect, data);
             });
             AddWithData(trigger, EventTriggerType.PointerDown, data =>
             {
                 _dragged = false;
+                _pressElement = ButtonOf(data) == 0 ? element : null;
+                _pressHost = handlerHost;
+                _pressClicked = false;
                 Set(element, StateFlags.Active, true);
                 Pointer(element, "mousedown", measuredRect, data);
             });
@@ -282,6 +359,8 @@ namespace Sideload.Input
             // and the element's is the one whose size the page reasons about.
             AddWithData(trigger, EventTriggerType.PointerClick, data =>
             {
+                _pressClicked = true;
+
                 // A pan that ends on the element it started on is still a click as far as uGUI is concerned. A page
                 // that took the gesture gets the drag and not a click on top of it; one that let the drag scroll the
                 // list underneath still gets its click, exactly as an element with no drag listener does.

@@ -196,7 +196,7 @@ namespace Sideload.Host
 
             Core.Log?.Msg($"[Sideload/probe] gesture on '{g.Selector}' released: renders {g.RendersAtPress - g.RendersAtStart} while hovering, "
                           + $"{_renders - g.RendersAtPress} while held; mouseenter {g.EntersAtPress - g.EntersAtStart} while hovering, "
-                          + $"{_enterDispatches - g.EntersAtPress} while held; pressed object {(g.PressedOn == null ? "none" : pressed == null ? "destroyed" : "alive")} "
+                          + $"{_enterDispatches - g.EntersAtPress} while held; pressed object {(ReferenceEquals(g.PressedOn, null) ? "none" : pressed == null ? "destroyed" : "alive")} "
                           + $"at release; uGUI up {(g.UpSent ? "sent" : "lost")}, uGUI click {(g.ClickSent ? "sent" : "lost")}.");
         }
 
