@@ -1523,9 +1523,11 @@ namespace Sideload.Host
         /// </summary>
         private void Rehover()
         {
-            if (_interaction == null || _painted == null || _wired.Count == 0) return;
+            if (_interaction == null) return;
 
+            // An empty list still goes in: nothing wired means nothing the pointer can still be inside.
             var boxes = new List<KeyValuePair<IElement, UnityEngine.RectTransform>>(_wired.Count);
+            if (_painted == null) { _interaction.RehoverFrom(boxes); return; }
             foreach (IElement element in _wired)
                 if (_painted.TryGetValue(element, out Painter.PaintedBox box) && box.Rect != null)
                     boxes.Add(new KeyValuePair<IElement, UnityEngine.RectTransform>(element, box.Rect));
@@ -1650,6 +1652,9 @@ namespace Sideload.Host
         {
             if (_popup != null && _popup.Owns(element)) return;
 
+#if DEBUG
+            if (entered) _enterDispatches++;
+#endif
             int buttons = _interaction?.ButtonsHeld() ?? 0;
             _script?.Dispatch(element, entered ? "pointerenter" : "pointerleave", bubbles: false, buttons: buttons);
             _script?.Dispatch(element, entered ? "mouseenter" : "mouseleave", bubbles: false, buttons: buttons);
