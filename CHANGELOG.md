@@ -5,6 +5,13 @@ All notable changes to Sideload are documented here. This project adheres to
 
 ## [Unreleased]
 
+## [1.36.5] - 2026-11-09
+
+### Fixed
+
+- With a controller, the phone home screen no longer spills outside the phone when it scrolls. The grid follows the
+  selected app.
+
 ## [1.36.4] - 2026-11-06
 
 ### Fixed
