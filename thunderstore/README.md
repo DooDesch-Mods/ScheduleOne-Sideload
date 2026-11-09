@@ -12,7 +12,7 @@
 ![Type](https://img.shields.io/badge/type-framework-orange)
 [![Discord](https://mods.doodesch.de/img/badge.svg)](https://mods.doodesch.de) [![Polyfill](https://polyfill.doomods.com/badge/sideload.svg)](https://polyfill.doomods.com/mod/sideload)
 
-[![MLVScan Sideload.dll](https://mlvscan.com/attestations/att_AI1ZU5kYM2Q-dc5kMZ6_dNd2/badge.svg)](https://mlvscan.com/attestations/att_AI1ZU5kYM2Q-dc5kMZ6_dNd2)
+[![MLVScan Sideload.dll](https://mlvscan.com/attestations/att_mVhE7Zt0yE7Cw_Ea5GOEobzO/badge.svg)](https://mlvscan.com/attestations/att_mVhE7Zt0yE7Cw_Ea5GOEobzO)
 
 **[Source + docs](https://github.com/DooDesch-Mods/ScheduleOne-Sideload)** · **[Reference app (WhatsDab)](https://github.com/DooDesch-Mods/ScheduleOne-WhatsDab)** · **[Support](https://support.doodesch.de/sideload)**
 
