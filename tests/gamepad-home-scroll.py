@@ -63,15 +63,26 @@ def shot(game, out, name):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--slot", required=True)
-    ap.add_argument("--presses", type=int, default=8, help="d-pad downs, enough to pass the visible rows")
+    ap.add_argument("--presses", type=int, default=0, help="d-pad downs; 0 = down to the last row")
     ap.add_argument("--out", default=os.path.join(HERE, "_out"))
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
 
     game = s1.Game(a.slot)
-    game.run("sideloadpad open", max_wait_ms=3000)
 
-    first = press(game, "up", 1)
+    def fresh_phone():
+        """Phone in hand, home screen at the top, first icon selected. Pressing up from the top row would leave the
+        phone for the hotbar instead, and down never leads back, so the start is set rather than navigated to."""
+        game.run("sideloadpad open", until="sideloadpad open", max_wait_ms=3000)
+        press(game, "right", 1)  # the first pad press switches the game to controller input
+        game.run("sideloadpad select 1", until="sideloadpad select", max_wait_ms=3000)
+        answer = game.run("sideloadpad dump", until="dump: selected|nothing selected|not a home", max_wait_ms=5000)
+        found = [l for l in lines_of(answer) if "sideloadpad dump:" in l and "icons " not in l]
+        for l in found:
+            print("    " + l.split("sideloadpad dump:", 1)[1].strip())
+        return found[-1] if found else ""
+
+    first = fresh_phone()
     check("selected icon" in first, "a home icon is selected after a controller press")
     icons = 0
     for l in lines_of(game.run("sideloadpad dump", until="sideloadpad dump: icons", max_wait_ms=5000)):
@@ -79,29 +90,33 @@ def main():
         if m:
             icons = int(m.group(1))
             check(m.group(2) != "none", "the home grid sits in a scroll view (%s, %d icons)" % (m.group(2), icons))
+    rows = max(1, (icons + 2) // 3)
+    downs = a.presses or rows - 1
 
     # Before: the repair off reproduces the report.
     game.run("sideloadpad fix off", max_wait_ms=3000)
-    press(game, "up", a.presses)
-    before = press(game, "down", a.presses)
+    fresh_phone()
+    before = press(game, "down", downs)
     check("OUTSIDE the frame" in before and "draws outside the phone screen" in before,
           "without the repair the selection leaves the grid and its frame draws outside (bug reproduced)")
     shot(game, a.out, "gamepad-home-before.png")
 
     # After: the repair on keeps the selection in view and its frame clipped.
     game.run("sideloadpad fix on", max_wait_ms=3000)
-    press(game, "up", a.presses)
-    after = press(game, "down", a.presses)
+    fresh_phone()
+    after = press(game, "down", downs)
     check("inside the frame" in after, "with the repair the grid scrolls to the selected icon")
     check("maskable=True" in after, "with the repair the selected icon's frame is clipped by the grid mask")
-    m = re.search(r"normPos ([0-9.]+)", " ".join(lines_of(game.run("sideloadpad dump", until="sideloadpad dump: icons", max_wait_ms=5000))))
+    m = re.search(r"normPos (-?[0-9.]+)", " ".join(lines_of(game.run("sideloadpad dump", until="sideloadpad dump: icons", max_wait_ms=5000))))
     check(m is not None and float(m.group(1)) < 0.5, "the grid scrolled down (normPos %s)" % (m.group(1) if m else "?"))
     shot(game, a.out, "gamepad-home-after.png")
 
-    back = press(game, "up", a.presses)
-    check("inside the frame" in back, "scrolling back up keeps the selection in view")
+    back = press(game, "up", downs)
+    check("inside the frame" in back and any("(#%d)" % i in back for i in range(3)),
+          "scrolling back up reaches the top row and keeps it in view")
 
     game.run("sideloadpad off", max_wait_ms=3000)
+    game.run("sideloadpad close", max_wait_ms=3000)
     print("%d check(s) failed" % failed if failed else "all checks passed")
     return 1 if failed else 0
 
