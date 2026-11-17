@@ -294,7 +294,7 @@ namespace Sideload.Paint
                                      float borderWidth, float blur, Color borderColor)
         {
             cTL = ToVertex(cTL); cTR = ToVertex(cTR); cBR = ToVertex(cBR); cBL = ToVertex(cBL);
-            borderColor = ToVertex(borderColor);
+            borderColor = ToRing(borderColor);
 
             var offsets = new[]
             {
@@ -344,7 +344,22 @@ namespace Sideload.Paint
         }
 
         /// <summary>
-        /// Whether the conversion above applies to the view being painted right now. Set per render by
+        /// The ring colour, which travels in TEXCOORD3 rather than in the vertex colour. No canvas converts a texture
+        /// coordinate, whatever <c>vertexColorAlwaysGammaSpace</c> says, and the box shader uses it as it comes, so it
+        /// is converted here in linear colour space on every canvas. Through <see cref="ToVertex"/> it was converted
+        /// only where the fills were, and on an overlay or surface canvas a #5a5a5a ring showed as #a0a0a0 beside fills
+        /// in their right colour - a selected outline that looked like the unselected one.
+        /// </summary>
+        private static Color ToRing(Color c)
+        {
+            if (QualitySettings.activeColorSpace != ColorSpace.Linear) return c;
+            Color linear = c.linear;
+            linear.a = c.a;
+            return linear;
+        }
+
+        /// <summary>
+        /// Whether the conversion in <see cref="ToVertex"/> applies to the view being painted right now. Set per render by
         /// <see cref="Host.WebView"/> from the canvas the view hangs under.
         ///
         /// It is not a global truth, which is what made this so quiet. A canvas with
