@@ -1,0 +1,65 @@
+<!--
+  A border colour written after the first paint, drawn in the game. Served as an override of the self-test app by
+  tests/border-color-repaint.py, which reads the borders back out of a screenshot.
+
+  Every box starts with a red border and is turned green after the first paint, through a different route each.
+  #static is green from the start and is the control. Every box has a saturated fill no other box and nothing in
+  the game world shares, so the script can find it by colour alone.
+
+  The grey boxes are Clipwise's tile in its own colours. The script holds their outline brightness against the
+  declared 160 and 90, on the phone canvas as it is and on one that converts vertex colours itself.
+-->
+<style>
+  html, body { margin: 0; background: #000; }
+  .col { display: flex; flex-direction: column; flex-wrap: wrap; gap: 20px 30px; padding: 20px 30px; height: 400px; }
+  .box { width: 220px; height: 30px; flex: none; border: 4px solid red; }
+  /* Clipwise's tile: a fractional width and rounded corners over a fill, the shader's ring. */
+  .tile { border: 3.4px solid red; border-radius: 9px; }
+
+  /* Clipwise's selected tile: only the colour, from a more specific rule. */
+  .box.sel { border-color: green; }
+
+  /* Clipwise's own numbers: a 160 grey outline, 90 when selected. */
+  .grey { border: 3.4px solid #a0a0a0; border-radius: 9px; }
+  .box.grey.sel { border-color: #5a5a5a; }
+  #greyoff { background: #ff0080; }
+  #greyon { background: #0080ff; }
+  #greyscript { background: #80ff00; }
+
+  #static { background: #000080; }
+  #inline { background: #0000ff; }
+  #setprop { background: #ff80ff; }
+  #klass { background: #00ffff; }
+  #shorthand { background: #ff00ff; }
+  /* No fill of its own: a square uniform border over a transparent box is drawn as four strips, not the ring.
+     The child fills the inside so the script can still find the box. */
+  #strips { background: transparent; }
+  #strips > div { flex: 1; background: #8000ff; }
+</style>
+
+<div class="col">
+  <div class="box tile sel" id="static"></div>
+  <div class="box tile" id="inline"></div>
+  <div class="box" id="setprop"></div>
+  <div class="box tile" id="klass"></div>
+  <div class="box tile" id="shorthand"></div>
+  <div class="box" id="strips"><div></div></div>
+  <div class="box grey" id="greyoff"></div>
+  <div class="box grey sel" id="greyon"></div>
+  <div class="box grey" id="greyscript"></div>
+</div>
+
+<script>
+  setTimeout(function () {
+    var byId = function (id) { return document.getElementById(id); };
+    byId('inline').style.borderColor = 'green';
+    byId('setprop').style.setProperty('border-color', 'green');
+    byId('klass').classList.add('sel');
+    byId('shorthand').style.border = '3.4px solid green';
+    byId('strips').style.borderColor = 'green';
+    byId('greyscript').classList.add('sel');
+    console.log('border-color-repaint: written, inline=' + byId('inline').style.borderColor +
+                ' setprop=' + byId('setprop').style.getPropertyValue('border-color') +
+                ' klass=' + byId('klass').className + ' strips=' + byId('strips').style.borderColor);
+  }, 300);
+</script>
