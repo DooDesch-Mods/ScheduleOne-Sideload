@@ -5,6 +5,13 @@ All notable changes to Sideload are documented here. This project adheres to
 
 ## [Unreleased]
 
+## [1.36.6] - 2026-11-17
+
+### Fixed
+
+- Borders on overlay and surface canvases draw in their declared colour. They showed lighter before, a `#5a5a5a`
+  outline as `#a0a0a0`.
+
 ## [1.36.5] - 2026-11-09
 
 ### Fixed
