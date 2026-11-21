@@ -69,6 +69,8 @@
     <Compile Remove="examples/**/*.cs" />
     <!-- tools/ holds build-time programs (tools/S1ApiGen) with their own csproj and their own bin/obj. -->
     <Compile Remove="tools/**" />
+    <!-- tests/ holds in-game check scripts and their helper plugins (tests/resize-probe), each its own assembly. -->
+    <Compile Remove="tests/**" />
   </ItemGroup>
 
   <!-- Generates DooDesch.ModVersion.Current from this project's own version property, so MelonInfo carries the
