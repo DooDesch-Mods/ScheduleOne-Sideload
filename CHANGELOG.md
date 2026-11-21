@@ -5,6 +5,13 @@ All notable changes to Sideload are documented here. This project adheres to
 
 ## [Unreleased]
 
+## [1.36.7] - 2026-11-21
+
+### Fixed
+
+- A box whose `min-width` or `min-height` is larger than its max no longer stops the page from rendering. The min
+  wins, as in a browser.
+
 ## [1.36.6] - 2026-11-17
 
 ### Fixed
