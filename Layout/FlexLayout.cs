@@ -367,7 +367,7 @@ namespace Sideload.Layout
             // is the first thing that can be affected by it.
             if (s.FlexWrap != FlexWrap.NoWrap)
                 foreach (Item item in items)
-                    item.MainSize = Math.Clamp(item.BaseSize, MinOf(item, measure), item.MaxMain);
+                    item.MainSize = ClampMinWins(item.BaseSize, MinOf(item, measure), item.MaxMain);
 
             List<List<Item>> lines = BreakIntoLines(items, s.FlexWrap, mainAvail, mainGap);
 
@@ -614,14 +614,17 @@ namespace Sideload.Layout
                                                stretchedCross ? crossAvail : float.NaN).Height;
             }
 
+            // A percentage max against an unknown main size (a column of undeclared height) is no limit, like an
+            // unresolvable percentage anywhere else.
+            float maxMain = ResolveOrNaN(maxProperty, mainAvail);
+            item.MaxMain = float.IsNaN(maxMain) ? float.PositiveInfinity : maxMain;
             item.MinMain = AutomaticMinimum(item, minProperty, row, mainAvail, out bool pending);
             item.MinPending = pending;
-            item.MaxMain = maxProperty.IsDefinite ? maxProperty.Resolve(mainAvail) : float.PositiveInfinity;
 
             // A floor that has not been measured yet does not clamp here. It cannot bind in the ordinary cases -
             // a measured base size IS the max-content width and a declared one is its own floor - and the case
             // where it can (`flex: 1`, whose basis is 0%) is caught before the lines are broken.
-            item.MainSize = Math.Clamp(item.BaseSize, pending ? 0f : item.MinMain, item.MaxMain);
+            item.MainSize = ClampMinWins(item.BaseSize, pending ? 0f : item.MinMain, item.MaxMain);
             return item;
         }
 
@@ -645,7 +648,8 @@ namespace Sideload.Layout
             float content = GridLayout.MinContentWidth(item.Node, measure, honourDeclaredWidth: false);
             if (item.Node.Style.Width.IsDefinite) content = Math.Min(content, item.ContentMain);
 
-            item.MinMain = content;
+            // And by the max size, the same cap as down a column in AutomaticMinimum.
+            item.MinMain = Math.Min(content, item.MaxMain);
             return item.MinMain;
         }
 
@@ -684,7 +688,10 @@ namespace Sideload.Layout
             ComputedStyle cs = item.Node.Style;
             if (cs.OverflowY != OverflowKind.Visible || cs.OverflowX != OverflowKind.Visible) return 0f;
 
-            if (!row) return item.ContentMain;
+            // Capped at the max size, as Flexbox 4.5 caps the content size suggestion: `height: 760px;
+            // max-height: 86%` is 86% tall, not 760. Only the automatic floor - a declared min-height beats a
+            // declared max-height, see ClampMinWins.
+            if (!row) return Math.Min(item.ContentMain, item.MaxMain);
 
             pending = true;
             return 0f;
@@ -753,7 +760,7 @@ namespace Sideload.Layout
             for (int i = 0; i < count; i++)
             {
                 Item item = line[i];
-                item.MainSize = Math.Clamp(item.BaseSize, MinOf(item, measure), item.MaxMain);
+                item.MainSize = ClampMinWins(item.BaseSize, MinOf(item, measure), item.MaxMain);
 
                 // An item with no flex factor in the active direction keeps its base size, clamped.
                 float factor = growing ? item.Node.Style.FlexGrow : item.Node.Style.FlexShrink;
@@ -794,7 +801,7 @@ namespace Sideload.Layout
                     Item item = line[i];
 
                     unclamped[i] = item.BaseSize + Weight(item, growing) / weightTotal * free;
-                    item.MainSize = Math.Clamp(unclamped[i], MinOf(item, measure), item.MaxMain);
+                    item.MainSize = ClampMinWins(unclamped[i], MinOf(item, measure), item.MaxMain);
                     violation += item.MainSize - unclamped[i];
                 }
 
@@ -1056,18 +1063,32 @@ namespace Sideload.Layout
             return len.Resolve(basis);
         }
 
+        /// <summary>The box's own min/max clamp. Max first, then min, so a min above the max wins - see
+        /// <see cref="ClampMinWins"/>.</summary>
         private static float Clamp(float value, Len min, Len max, float basis)
         {
-            if (min.IsDefinite)
-            {
-                float m = min.Resolve(basis);
-                if (!float.IsNaN(m)) value = Math.Max(value, m);
-            }
             if (max.IsDefinite)
             {
                 float m = max.Resolve(basis);
                 if (!float.IsNaN(m)) value = Math.Min(value, m);
             }
+            if (min.IsDefinite)
+            {
+                float m = min.Resolve(basis);
+                if (!float.IsNaN(m)) value = Math.Max(value, m);
+            }
+            return value;
+        }
+
+        /// <summary>
+        /// Clamp a flex item's main size the way CSS does: when the minimum is above the maximum, the minimum wins
+        /// (`min-width: 760px; max-width: 660px` is 760). <c>Math.Clamp</c> throws there instead, and one throw
+        /// takes the whole page down with it. A NaN bound - a percentage against an unknown size - is no bound.
+        /// </summary>
+        private static float ClampMinWins(float value, float min, float max)
+        {
+            if (!float.IsNaN(max)) value = Math.Min(value, max);
+            if (!float.IsNaN(min)) value = Math.Max(value, min);
             return value;
         }
 

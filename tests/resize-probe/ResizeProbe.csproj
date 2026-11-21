@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Test-only MelonPlugin for tests/min-over-max.ps1: resizes the game window from inside, which an outside
+       SetWindowPos does not (Unity keeps its backbuffer). Never shipped. The empty Directory.Build.* files next
+       to it keep the workspace's deploy targets out of this build. -->
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <AssemblyName>ResizeProbe</AssemblyName>
+    <Nullable>disable</Nullable>
+    <NoWarn>$(NoWarn);MSB3277;MSB3245</NoWarn>
+    <Lib>$(MSBuildThisFileDirectory)..\..\..\Workspace\lib\il2cpp</Lib>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="MelonLoader"><HintPath>$(Lib)\melonloader\MelonLoader.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Il2CppInterop.Runtime"><HintPath>$(Lib)\melonloader\Il2CppInterop.Runtime.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Il2Cppmscorlib"><HintPath>$(Lib)\game\Il2Cppmscorlib.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>$(Lib)\game\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>
